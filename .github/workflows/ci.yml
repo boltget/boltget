@@ -1,33 +1,17 @@
 # Rust CI: formatting, lints, tests on Windows and Linux, and cargo-deny.
-# Docs-only changes do not run this workflow (see the path filters).
+# Always triggers so the required "CI ok" check reports on every PR; the Rust
+# jobs are skipped when no Rust-related file changed (see the `changes` job).
 name: CI
 
 on:
   pull_request:
-    paths:
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "rustfmt.toml"
-      - "clippy.toml"
-      - "deny.toml"
-      - ".github/workflows/ci.yml"
   push:
     branches: [main]
-    paths:
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "rustfmt.toml"
-      - "clippy.toml"
-      - "deny.toml"
-      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -41,8 +25,33 @@ env:
   PROPTEST_CASES: 4096
 
 jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - "crates/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - "rustfmt.toml"
+              - "clippy.toml"
+              - "deny.toml"
+              - ".github/workflows/ci.yml"
+
   fmt:
     name: rustfmt
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +65,8 @@ jobs:
 
   test:
     name: clippy + test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +88,8 @@ jobs:
 
   deny:
     name: cargo-deny (${{ matrix.checks }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -91,3 +104,20 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2.1.1
         with:
           command: check ${{ matrix.checks }}
+
+  # Single required check for branch protection: passes when every job above
+  # succeeded or was skipped, fails if any failed or was cancelled.
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [changes, fmt, test, deny]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) exit 1 ;; esac
+          done
