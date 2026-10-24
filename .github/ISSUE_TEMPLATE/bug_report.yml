@@ -1,0 +1,105 @@
+name: Bug report
+description: Something in BoltGet does not work as it should.
+title: "bug: "
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        - **Security issue?** Do not file it here. Report it privately as described in [SECURITY.md](https://github.com/boltget/boltget/blob/main/SECURITY.md).
+        - **Question or idea?** Please use [Discussions](https://github.com/boltget/boltget/discussions) instead.
+        - Please search existing issues first.
+
+  - type: input
+    id: version
+    attributes:
+      label: BoltGet version
+      description: Settings → About, or `boltget --version`. For builds from source, the commit hash.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Desktop app
+        - CLI
+        - Browser extension
+        - Video downloads (yt-dlp / ffmpeg)
+        - Installer / updater
+        - Website / docs
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Windows edition, version and build (run `winver`).
+      placeholder: "Windows 11 Pro 24H2 (26100.xxxx)"
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version (if the extension is involved)
+      placeholder: "Chrome 140, BoltGet extension 0.3.0"
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps. If a specific download is involved, describe the site and file type; do not paste private or signed URLs.
+      placeholder: |
+        1. Add a download of a ~2 GB file from ...
+        2. Pause at ~50%
+        3. Close and reopen BoltGet
+        4. Resume
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include error messages exactly as shown.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Settings → About → Open logs folder, or run the CLI with `--verbose`.
+        BoltGet redacts URL query strings by default, but please check logs for private information before pasting.
+      render: text
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Network setup (proxy, VPN), destination drive type (NTFS, exFAT, network share), antivirus, screenshots.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am using an official build from GitHub Releases or boltget.app (or building from source).
+          required: true

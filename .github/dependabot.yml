@@ -1,0 +1,49 @@
+# Dependabot version updates.
+# Commit messages follow Conventional Commits: "build(deps): ..." / "ci(deps): ...".
+# The npm and cargo entries are commented out until the corresponding
+# directories and lockfiles exist (Dependabot errors on missing manifests).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - area:deps
+      - area:ci
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Enable when Cargo.toml (workspace root) and Cargo.lock land in v0.1.
+  # - package-ecosystem: cargo
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #   commit-message:
+  #     prefix: build
+  #     include: scope
+  #   labels:
+  #     - area:deps
+  #   groups:
+  #     rust-minor-patch:
+  #       update-types: ["minor", "patch"]
+
+  # Enable when the pnpm workspace (package.json + pnpm-lock.yaml at the root) lands in v0.2.
+  # Dependabot resolves the whole pnpm workspace from the root lockfile
+  # (apps/desktop, apps/extension, apps/web, packages/ui).
+  # - package-ecosystem: npm
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #   commit-message:
+  #     prefix: build
+  #     include: scope
+  #   labels:
+  #     - area:deps
+  #   groups:
+  #     js-minor-patch:
+  #       update-types: ["minor", "patch"]

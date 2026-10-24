@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose a concrete feature or improvement.
+title: "feat: "
+labels: ["type:feature", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening a request, please check:
+
+        - the [roadmap](https://github.com/boltget/boltget/blob/main/docs/ROADMAP.md) and [feature matrix](https://github.com/boltget/boltget/blob/main/docs/FEATURES.md): it may already be planned;
+        - the [non-goals](https://github.com/boltget/boltget/blob/main/docs/VISION.md#non-goals): some things are out of scope on purpose.
+
+        Early-stage ideas are better discussed in [Discussions → Ideas](https://github.com/boltget/boltget/discussions) first. Architectural changes need an [RFC](https://github.com/boltget/boltget/blob/main/CONTRIBUTING.md#rfcs).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Engine (speed, resume, connections)
+        - CLI
+        - Desktop app
+        - Browser extension
+        - Video downloads
+        - Website / docs
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today? Describe the problem, not just the solution.
+      placeholder: "When I download from ..., I have to ... every time."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How you imagine it working. UI sketches welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve it, including how other download managers (IDM, FDM, ...) handle it.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked the roadmap, feature matrix and non-goals.
+          required: true
+        - label: I searched existing issues and discussions.
+          required: true

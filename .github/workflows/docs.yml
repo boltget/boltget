@@ -1,0 +1,43 @@
+# Checks links in Markdown files with lychee.
+# Domains and repository URLs that do not exist yet are excluded in .lycheeignore.
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - ".lycheeignore"
+      - ".github/workflows/docs.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.md"
+      - ".lycheeignore"
+      - ".github/workflows/docs.yml"
+  schedule:
+    - cron: "0 6 * * 1" # weekly, to catch external links that rot
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    name: Markdown links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2.0.2
+        with:
+          args: >-
+            --no-progress
+            --cache
+            --max-cache-age 1d
+            --exclude-path node_modules
+            --exclude-path LICENSE
+            './**/*.md'
+          fail: true

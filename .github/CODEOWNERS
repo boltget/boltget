@@ -1,0 +1,15 @@
+# Code owners are requested for review automatically.
+# See GOVERNANCE.md. While the team is small, everything is owned by the
+# maintainers team; split per area as maintainers take ownership.
+# Later rules take precedence over earlier ones.
+
+*                       @boltget/maintainers
+
+# Brand assets and the website: same team for now.
+/brand/                 @boltget/maintainers
+/apps/web/              @boltget/maintainers
+
+# Security-sensitive areas (split to dedicated owners once they exist):
+# /crates/engine/       @boltget/engine
+# /apps/extension/      @boltget/extension
+# /.github/workflows/   @boltget/maintainers
