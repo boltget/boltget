@@ -1,0 +1,62 @@
+# cargo-deny configuration: https://embarkstudios.github.io/cargo-deny/
+# BoltGet is GPL-3.0-or-later; every dependency must be GPL-3.0-compatible.
+
+[graph]
+all-features = false
+# Platforms BoltGet builds for (Windows first; Linux in CI; macOS post-1.0).
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+# RustSec advisories; unmaintained crates are reported for the whole graph.
+unmaintained = "all"
+yanked = "deny"
+ignore = []
+
+[licenses]
+# GPL-3.0-compatible licenses only. Notably absent: OpenSSL / SSLeay (the
+# reason the rustls crypto provider is `ring` and not `aws-lc-rs`), and any
+# "-only" GPL-2.0 license.
+allow = [
+    "GPL-3.0-or-later",  # BoltGet's own crates
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "0BSD",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0", # webpki-root-certs data (Linux platform verifier fallback)
+]
+confidence-threshold = 0.9
+# The allow list is the project policy (CONTRIBUTING.md), not just what is used today.
+unused-allowed-license = "allow"
+
+[licenses.private]
+# Our crates are `publish = false`; still check their declared license.
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # Keep TLS on rustls + ring; OpenSSL-licensed code is not GPL-3.0-compatible.
+    { crate = "openssl-sys", reason = "OpenSSL license; use rustls" },
+    { crate = "aws-lc-sys", reason = "includes OpenSSL-licensed code; use ring" },
+    { crate = "native-tls", reason = "ADR-002: rustls only" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
