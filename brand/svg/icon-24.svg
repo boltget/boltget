@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <title>BoltGet (24 px)</title>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="5" y1="5" x2="19" y2="19">
+      <stop offset="0" stop-color="#A7F3D0"/>
+      <stop offset="0.5" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect width="24" height="24" rx="5" fill="#0B0B0F"/>
+  <path fill="url(#g)" d="M15 5L15 11L19 11L19 13L17 13L17 15L15 15L15 17L13 17L13 19L11 19L11 17L9 17L9 15L7 15L7 13L5 13L5 11L9 11L9 5Z"/>
+</svg>
