@@ -561,6 +561,33 @@ async fn throttled_429_with_retry_after_is_honoured() {
 }
 
 #[tokio::test]
+async fn retry_after_holds_back_every_worker() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(cfg()).unwrap();
+    // Requests 3..6 get 429 with Retry-After: 1. After the first of them, no
+    // worker may send a new request for a second.
+    let done = get(
+        &engine,
+        &srv.url("/data?size=4194304&fail_status=429&fail_from=3&fail_count=3&retry_after=1&key=hold&throttle=4194304"),
+        dir.path(),
+    )
+    .await
+    .unwrap();
+    assert_content(&done, 1, 4 * MIB);
+    let reqs = srv.requests();
+    let first_429 = reqs.iter().find(|r| r.status == 429).expect("a 429").at;
+    // Requests already on their way (worker start-up stagger) may still arrive.
+    let quiet_from = first_429 + Duration::from_millis(150);
+    let quiet_to = first_429 + Duration::from_millis(900);
+    let early: Vec<_> = reqs
+        .iter()
+        .filter(|r| r.at > quiet_from && r.at < quiet_to)
+        .collect();
+    assert!(early.is_empty(), "requests during Retry-After: {early:?}");
+}
+
+#[tokio::test]
 async fn service_unavailable_503_is_retried() {
     let srv = TestServer::start().await;
     let dir = tempfile::tempdir().unwrap();

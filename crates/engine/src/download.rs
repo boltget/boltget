@@ -142,6 +142,8 @@ pub(crate) struct Env {
 struct WorkerStat {
     /// Payload bytes read from the network (including bytes later discarded).
     net: AtomicU64,
+    /// Bytes read but not yet claimed (the coalescing buffer).
+    buffered: AtomicU64,
     /// Current segment, `u32::MAX` if none.
     seg: AtomicU32,
     /// Set by the slow-connection detector: reconnect from the cursor.
@@ -176,6 +178,9 @@ struct Core {
     next_worker: AtomicU32,
     rtt_micros: AtomicU64,
     retrying: AtomicU32,
+    /// No new request may be sent before this instant (set by 429/503 and
+    /// `Retry-After`, so one throttled worker holds back all of them).
+    hold_until: Mutex<Option<tokio::time::Instant>>,
     stats: Mutex<HashMap<WorkerId, Arc<WorkerStat>>>,
     sup: mpsc::UnboundedSender<SupMsg>,
     /// Cancels workers (user cancel or a fatal error).
@@ -213,6 +218,33 @@ impl Core {
             .lock()
             .map_err(|_| Error::Internal("url lock poisoned".into()))?
             .clone())
+    }
+
+    /// Holds back new requests for `d` (never shortens an existing hold).
+    fn hold_for(&self, d: Duration) {
+        let until = tokio::time::Instant::now() + d;
+        if let Ok(mut h) = self.hold_until.lock()
+            && h.is_none_or(|cur| cur < until)
+        {
+            *h = Some(until);
+        }
+    }
+
+    /// Waits until requests are allowed again.
+    async fn wait_for_hold(&self) -> Result<()> {
+        let until = self.hold_until.lock().ok().and_then(|h| *h);
+        match until {
+            Some(t) if t > tokio::time::Instant::now() => {
+                self.retrying.fetch_add(1, Ordering::Relaxed);
+                let r = tokio::select! {
+                    () = self.stop.cancelled() => Err(Error::Cancelled),
+                    () = tokio::time::sleep_until(t) => Ok(()),
+                };
+                self.retrying.fetch_sub(1, Ordering::Relaxed);
+                r
+            }
+            _ => Ok(()),
+        }
     }
 
     fn rtt(&self) -> Duration {
@@ -484,6 +516,7 @@ async fn run_inner(
         next_worker: AtomicU32::new(0),
         rtt_micros: AtomicU64::new(0),
         retrying: AtomicU32::new(0),
+        hold_until: Mutex::new(None),
         stats: Mutex::new(HashMap::new()),
         sup: sup_tx,
         stop: shared.cancel.child_token(),
@@ -625,11 +658,11 @@ async fn run_inner(
                     }
                     Exit::GaveUp(e) => last_error = Some(e),
                     Exit::Throttled(e) => {
-                        // Fewer connections is the point; if nobody is left, carry on with one.
-                        let delay = e.retry_after().unwrap_or(cfg.backoff_base);
+                        // Fewer connections is the point; if nobody is left, carry on
+                        // with one (it waits for the hold set by the throttled worker).
                         last_error = Some(e);
                         if workers.is_empty() {
-                            spawn(&mut workers, Start::Fresh { delay }, None);
+                            spawn(&mut workers, Start::Fresh { delay: Duration::ZERO }, None);
                         }
                     }
                 }
@@ -808,8 +841,10 @@ impl Monitor {
             };
             let seg = stat.seg.load(Ordering::Relaxed);
             if seg != u32::MAX {
-                let ahead =
-                    core.cfg.coalesce_size as u64 + (entry.1 * reaction.as_secs_f64()) as u64;
+                // In-flight estimate from the split rule: throughput × (RTT +
+                // reaction slack), plus what the worker holds unclaimed.
+                let ahead = stat.buffered.load(Ordering::Relaxed)
+                    + (entry.1 * reaction.as_secs_f64()) as u64;
                 let _ = core.table(|t| t.update_stats(seg, entry.1, ahead));
                 rates.push(entry.1);
             }
@@ -1006,11 +1041,19 @@ async fn worker(
             }
         };
         stat.seg.store(seg, Ordering::Relaxed);
+        let t0 = Instant::now();
+        if tracing::enabled!(tracing::Level::DEBUG)
+            && let Ok(Some((start, cursor, end))) =
+                core.table(|t| t.get(seg).map(|s| (s.start, s.cursor(), s.end)))
+        {
+            tracing::debug!(worker = id, seg, start, cursor, end, "segment assigned");
+        }
         let r = run_segment(&core, id, &stat, seg, live, &mut conn).await;
         stat.seg.store(u32::MAX, Ordering::Relaxed);
         if let Err(exit) = r {
             return exit;
         }
+        tracing::debug!(worker = id, seg, elapsed = ?t0.elapsed(), "segment done");
     }
 }
 
@@ -1024,6 +1067,7 @@ async fn duplicate(
     to: u64,
     conn: &mut Option<Conn>,
 ) -> Option<(u32, Response)> {
+    core.wait_for_hold().await.ok()?;
     let url = core.current_url().ok()?;
     let resp = tokio::select! {
         () = core.stop.cancelled() => return None,
@@ -1178,6 +1222,7 @@ async fn run_segment(
             let (resp, resp_end) = if let Some(l) = live.take() {
                 (l.resp, l.end)
             } else {
+                core.wait_for_hold().await?;
                 let r = tokio::select! {
                     () = core.stop.cancelled() => return Err(Error::Cancelled),
                     r = open_range(core, &used_url, conn.take(), cursor, req_end) => r?,
@@ -1228,18 +1273,21 @@ async fn run_segment(
                 return Err(Exit::Fatal(err));
             }
             ErrorKind::Throttled => {
+                let Some(delay) = probe::retry_delay(&err, &core.connector, attempts) else {
+                    return Err(Exit::Fatal(err));
+                };
+                // The server is pushing back: nobody sends a new request before
+                // the delay is over, and this connection goes away if others
+                // remain (multiplicative-style decrease of the connection count).
+                core.hold_for(delay);
                 let others = core.table(|t| t.active_workers()).unwrap_or(1) > 1;
                 if others {
                     return Err(Exit::Throttled(err));
                 }
-                let Some(delay) = probe::retry_delay(&err, &core.connector, attempts) else {
-                    return Err(Exit::Fatal(err));
-                };
                 attempts += 1;
                 if attempts >= core.cfg.max_attempts {
                     return Err(Exit::GaveUp(err));
                 }
-                backoff_sleep(core, delay).await?;
             }
             ErrorKind::Transient => {
                 attempts += 1;
@@ -1340,9 +1388,11 @@ async fn stream(
     let mut pos = cursor;
 
     macro_rules! flush {
-        () => {
-            flush(core, id, seg, &tx, &mut buf, &mut buf_start).await?
-        };
+        () => {{
+            let kept = flush(core, id, seg, &tx, &mut buf, &mut buf_start).await?;
+            stat.buffered.store(0, Ordering::Relaxed);
+            kept
+        }};
     }
 
     loop {
@@ -1394,6 +1444,7 @@ async fn stream(
                 stat.net.fetch_add(data.len() as u64, Ordering::Relaxed);
                 let take = (end - pos).min(data.len() as u64) as usize;
                 buf.extend_from_slice(&data[..take]);
+                stat.buffered.store(buf.len() as u64, Ordering::Relaxed);
                 pos += take as u64;
                 if (buf.len() >= coalesce || pos >= end) && !flush!() {
                     return Ok(StreamEnd::Done);

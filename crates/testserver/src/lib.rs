@@ -106,10 +106,13 @@ pub struct RequestRecord {
     pub status: u16,
     /// HTTP method.
     pub method: String,
+    /// When the request arrived, relative to server start.
+    pub at: Duration,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct State {
+    started: std::time::Instant,
     counters: Mutex<HashMap<String, usize>>,
     log: Mutex<Vec<RequestRecord>>,
     active: AtomicUsize,
@@ -141,7 +144,17 @@ impl TestServer {
             .await
             .expect("bind test server");
         let addr = listener.local_addr().expect("local addr");
-        let state = Arc::new(State::default());
+        let state = Arc::new(State {
+            started: std::time::Instant::now(),
+            counters: Mutex::default(),
+            log: Mutex::default(),
+            active: AtomicUsize::default(),
+            max_active: AtomicUsize::default(),
+            connections: AtomicUsize::default(),
+            body_bytes: AtomicU64::default(),
+            tokens: Mutex::default(),
+            next_token: AtomicUsize::default(),
+        });
         let stop = CancellationToken::new();
         let (s, st) = (state.clone(), stop.clone());
         tokio::spawn(async move {
@@ -270,6 +283,7 @@ fn handle(state: &Arc<State>, addr: SocketAddr, req: &Request<Incoming>) -> Resp
         authorization: req.headers().contains_key(header::AUTHORIZATION),
         status: 0,
         method: req.method().to_string(),
+        at: state.started.elapsed(),
     };
     let q = query_map(&query);
     let resp = if path == "/redirect" {
