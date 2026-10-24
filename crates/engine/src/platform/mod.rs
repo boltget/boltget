@@ -50,6 +50,13 @@ pub(crate) fn create_preallocated(
 
 /// Marks the file sparse. A no-op success on Unix, where `ftruncate` already
 /// creates sparse files on the common file systems.
+#[cfg_attr(
+    not(windows),
+    expect(
+        clippy::unnecessary_wraps,
+        reason = "signature is shared with the fallible Windows implementation"
+    )
+)]
 pub(crate) fn set_sparse(file: &File) -> io::Result<()> {
     #[cfg(windows)]
     {
