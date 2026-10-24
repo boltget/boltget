@@ -29,7 +29,7 @@ BoltGet uses a **BDFL-style model** ("benevolent dictator for life", in practice
 
 ### Contributors
 
-- Anyone who opens an issue, comments in a discussion, reviews, or sends a pull request. Contributors keep the copyright in their contributions, licensed to everyone under GPL-3.0-or-later via the [DCO](CONTRIBUTING.md#developer-certificate-of-origin-dco).
+- Anyone who opens an issue, comments in a discussion, reviews, or sends a pull request. Contributors keep the copyright in their contributions, licensed to everyone under GPL-3.0-or-later (see [License of contributions](CONTRIBUTING.md#license-of-contributions)).
 
 ## Becoming a maintainer
 

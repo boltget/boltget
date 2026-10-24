@@ -21,7 +21,6 @@ Fixes #
 ## Checklist
 
 - [ ] PR title follows [Conventional Commits](https://github.com/boltget/boltget/blob/main/CONTRIBUTING.md#commit-messages-conventional-commits) (`type(scope): subject`, ≤ 72 chars)
-- [ ] Every commit is signed off (`git commit -s`, [DCO](https://github.com/boltget/boltget/blob/main/CONTRIBUTING.md#developer-certificate-of-origin-dco))
 - [ ] One logical change; linked issue for non-trivial work (RFC for architectural changes)
 - [ ] Tests added or updated (regression test for bug fixes)
 - [ ] Docs updated (`docs/` design docs, CLI help, user docs) where behaviour changed

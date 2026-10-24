@@ -11,6 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Design documents: vision, features, architecture, engine specification, browser integration, video, tech stack, design principles, website, roadmap and release process (`docs/`).
 - Project policies: GPL-3.0-or-later license, contributing guide, governance, support, security policy and code of conduct.
-- GitHub configuration: issue forms, pull request template, code owners, Dependabot, label taxonomy, and workflows for PR title, DCO and documentation link checks.
+- GitHub configuration: issue forms, pull request template, code owners, Dependabot, label taxonomy, and workflows for PR title and documentation link checks.
 
 [Unreleased]: https://github.com/boltget/boltget/commits/main

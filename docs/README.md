@@ -40,7 +40,7 @@ Design documents for BoltGet. They define what we are building and how; code tha
 | Document | Covers |
 |---|---|
 | [README.md](../README.md) | Project overview |
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | The contribution rulebook: commits, DCO, branching, PRs, RFCs, code style, tests, labels, AI policy |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | The contribution rulebook: commits, branching, PRs, RFCs, code style, tests, labels, AI policy |
 | [GOVERNANCE.md](../GOVERNANCE.md) | Roles, becoming a maintainer, decision making |
 | [SUPPORT.md](../SUPPORT.md) | Where to ask questions and report problems |
 | [SECURITY.md](../SECURITY.md) | How to report vulnerabilities privately |

@@ -15,7 +15,7 @@ By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). 
 - [Development setup](#development-setup) *(once the code lands)*
 - [Branching and merging](#branching-and-merging)
 - [Commit messages: Conventional Commits](#commit-messages-conventional-commits)
-- [Developer Certificate of Origin (DCO)](#developer-certificate-of-origin-dco)
+- [License of contributions](#license-of-contributions)
 - [Pull requests](#pull-requests)
 - [Code style](#code-style)
 - [Tests](#tests)
@@ -33,7 +33,7 @@ By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). 
 
 1. Non-trivial change? Open or find an **issue** first. Architectural change? Write an **[RFC](#rfcs)**.
 2. Branch from `main`: `feat/short-name` or `fix/short-name`.
-3. Commit with **[Conventional Commits](#commit-messages-conventional-commits)** and **sign off** every commit: `git commit -s`.
+3. Commit with **[Conventional Commits](#commit-messages-conventional-commits)**.
 4. Keep the PR to **one logical change**, with tests and docs updated, and a **Conventional Commit PR title** (it becomes the squash commit).
 5. CI green + one maintainer approval → **squash-merge**.
 
@@ -138,7 +138,6 @@ We use [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.
 <body: what and why, wrapped at 72 columns>
 
 <footers>
-Signed-off-by: Your Name <you@example.com>
 ```
 
 **Types:**
@@ -173,29 +172,9 @@ Signed-off-by: Your Name <you@example.com>
 
 Individual commits inside a PR should follow the format too (it makes review easier), but only the PR title is enforced, because it becomes the squash commit.
 
-## Developer Certificate of Origin (DCO)
+## License of contributions
 
-BoltGet uses the **[Developer Certificate of Origin 1.1](https://developercertificate.org/)** instead of a Contributor License Agreement (CLA).
-
-**Why DCO, not a CLA:** BoltGet is GPL-3.0-or-later and intends to stay that way. A CLA typically grants the project owner extra rights (for example to relicense contributions), which a copyleft project does not need and which many contributors are rightly wary of. The DCO is a lightweight statement that you have the right to submit your contribution under the project's license. There is nothing to sign up for; you add one line per commit.
-
-**How:** add a `Signed-off-by` trailer to every commit, matching the commit author:
-
-```sh
-git commit -s -m "fix(engine): handle 416 on empty files"
-```
-
-which produces:
-
-```
-Signed-off-by: Your Name <you@example.com>
-```
-
-- Use your real name (or the name you are publicly known by) and an email you control.
-- Forgot? Fix the last commit with `git commit --amend -s --no-edit`, or all commits on your branch with `git rebase --signoff main`, then force-push your branch.
-- The [DCO check](.github/workflows/dco.yml) runs on every PR and verifies that every commit is signed off by its author. Bot commits (Dependabot) are exempt.
-
-By signing off, you certify the DCO 1.1 statements, in short: the contribution is yours (or you have the right to submit it), and you submit it under the project's open-source license.
+BoltGet is GPL-3.0-or-later. Contributions are accepted under the same license ("inbound = outbound"): by opening a pull request you confirm that you have the right to submit the change and that it is licensed under GPL-3.0-or-later. There is no CLA and no sign-off line to add to your commits. Contributors keep the copyright in their work.
 
 ## Pull requests
 
@@ -206,7 +185,7 @@ By signing off, you certify the DCO 1.1 statements, in short: the contribution i
 - **Tests** added or updated for every behaviour change (see [Tests](#tests)).
 - **Docs** updated in the same PR when behaviour, settings, CLI, protocols or architecture change. If a PR contradicts a document in `docs/`, update the document (or the PR is not done).
 - **Changelog** entry for user-visible changes (see [Changelog](#changelog)).
-- **CI green.** Formatting, lint, type checks, tests, PR title, DCO and link checks all pass.
+- **CI green.** Formatting, lint, type checks, tests, PR title and link checks all pass.
 - **At least one maintainer approval.** Changes to `crates/engine` that touch segmentation, the write path, checkpointing or security-relevant code (native messaging, IPC, sidecars, updater) need approval from a maintainer who owns that area (see [CODEOWNERS](.github/CODEOWNERS) and [GOVERNANCE.md](GOVERNANCE.md)).
 - **UI changes include screenshots** (dark and light theme) or a short recording.
 - **Performance claims include numbers**: before/after, how measured, on what hardware and network.
@@ -280,7 +259,7 @@ Localization is a possible post-1.0, community-driven effort, not a current goal
 
 ## Dependencies and licensing
 
-- **License of contributions:** GPL-3.0-or-later, the license of the repository (see [LICENSE](LICENSE)), certified through the [DCO](#developer-certificate-of-origin-dco).
+- **License of contributions:** GPL-3.0-or-later, the license of the repository (see [LICENSE](LICENSE)), see [License of contributions](#license-of-contributions).
 - **New dependencies** must be GPL-3.0-compatible (MIT, Apache-2.0, BSD-2/3-Clause, ISC, Zlib, MPL-2.0, Unlicense, and similar). `cargo-deny` and a JS license check enforce this in CI once the code lands.
 - Justify new dependencies in the PR: what it does, why not write it, maintenance status, size. Prefer well-maintained, widely used crates and packages. Large or security-sensitive dependencies need an RFC.
 - Do not vendor or copy code from other projects without preserving its license notice and confirming compatibility in the PR.
@@ -332,7 +311,7 @@ Using AI tools (code assistants, chat models, agents) to help write code, tests 
 - **You are fully responsible** for everything you submit, exactly as if you had typed every character. "The AI wrote it" is never an explanation for a bug, a license problem or a security issue.
 - **You must understand the code** you submit and be able to explain and defend it in review. If a reviewer asks why something works, "I'm not sure" means the PR is not ready.
 - **You must have tested it**: run it, run the tests, and check the edge cases yourself.
-- **Licensing:** you must have the right to submit the output under GPL-3.0-or-later, and you certify that through your DCO sign-off. Do not submit output that reproduces code from other projects in a license-incompatible way.
+- **Licensing:** you must have the right to submit the output under GPL-3.0-or-later, as described in [License of contributions](#license-of-contributions). Do not submit output that reproduces code from other projects in a license-incompatible way.
 - **Keep it focused.** AI tools make it easy to produce large, sprawling diffs. The [one logical change](#rules) rule applies; very large generated PRs will be asked to split.
 - **No unattended agents opening PRs or issues** against this repository, and no AI-generated review comments posted as if they were your own analysis. Automated tools configured by maintainers (for example Dependabot) are the exception.
 - Disclosure is appreciated but not required for small assists; for substantially generated contributions, a short note in the PR description helps reviewers calibrate.

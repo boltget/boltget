@@ -33,7 +33,6 @@ Workflows (planned):
 |---|---|---|
 | `ci.yml` | every push and PR | Rust: fmt, clippy `-D warnings`, tests (Windows + Linux), `cargo-deny`. JS: Prettier, ESLint, `svelte-check`, Vitest, extension build. Website: build + Lighthouse CI on PRs touching `apps/web`. |
 | `pr-title.yml` | PR opened/edited | Validates the PR title as a Conventional Commit (exists now) |
-| `dco.yml` | PR | DCO sign-off check (exists now) |
 | `docs.yml` | changes to Markdown | Link check with lychee (exists now) |
 | `release.yml` | tag `v*` pushed by a maintainer | Builds, signs, publishes. See below. |
 | `nightly.yml` | schedule | Unsigned builds from `main`, plus long-running fuzz and crash-resume suites |

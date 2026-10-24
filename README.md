@@ -110,7 +110,7 @@ The complete index is [docs/README.md](docs/README.md).
 
 ## Contributing
 
-BoltGet is designed in the open, and the best time to shape it is now, while the design is still on paper. Start with [CONTRIBUTING.md](CONTRIBUTING.md). It is the rulebook for everything: Conventional Commits, DCO sign-off, branching, PR rules, the RFC process, code style, the string catalog and our policy on AI-assisted contributions.
+BoltGet is designed in the open, and the best time to shape it is now, while the design is still on paper. Start with [CONTRIBUTING.md](CONTRIBUTING.md). It is the rulebook for everything: Conventional Commits, branching, PR rules, the RFC process, code style, the string catalog and our policy on AI-assisted contributions.
 
 - Questions and ideas: [GitHub Discussions](https://github.com/boltget/boltget/discussions) (see [SUPPORT.md](SUPPORT.md))
 - Bugs and concrete feature requests: [Issues](https://github.com/boltget/boltget/issues)

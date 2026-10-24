@@ -215,7 +215,7 @@ Details: [RELEASE.md](RELEASE.md).
 - **MPL-2.0:** file-level copyleft is too easy to work around for an application.
 - **AGPL-3.0:** its network clause targets software offered as a service, which BoltGet is not; it adds friction without benefit.
 
-**Consequences.** Dependencies must be GPL-3.0 compatible (MIT, Apache-2.0, BSD, ISC, MPL-2.0, Unlicense, Zlib are fine). CI will check licenses with `cargo-deny` and a JavaScript license checker. Contributions are accepted under the DCO (see [CONTRIBUTING.md](../CONTRIBUTING.md#developer-certificate-of-origin-dco)).
+**Consequences.** Dependencies must be GPL-3.0 compatible (MIT, Apache-2.0, BSD, ISC, MPL-2.0, Unlicense, Zlib are fine). CI will check licenses with `cargo-deny` and a JavaScript license checker. Contributions are accepted under the same license, without a CLA (see [CONTRIBUTING.md](../CONTRIBUTING.md#license-of-contributions)).
 
 ## ADR-015: English-only product with a central string catalog
 
