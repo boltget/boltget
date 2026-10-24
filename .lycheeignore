@@ -1,0 +1,12 @@
+# URLs excluded from the link check (one regex per line).
+# Remove entries as the targets come to life.
+
+# Website not live yet.
+^https?://(www\.)?boltget\.app
+
+# Organization and repository not created / public yet.
+^https://github\.com/boltget/
+^https://github\.com/apps/
+
+# Placeholder e-mail addresses.
+^mailto:
