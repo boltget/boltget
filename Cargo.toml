@@ -1,0 +1,78 @@
+[workspace]
+resolver = "3"
+members = ["crates/engine", "crates/cli", "crates/testserver"]
+
+[workspace.package]
+version = "0.1.0-dev"
+edition = "2024"
+rust-version = "1.88"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/boltget/boltget"
+homepage = "https://boltget.app"
+authors = ["BoltGet contributors"]
+publish = false
+
+[workspace.dependencies]
+boltget-engine = { path = "crates/engine" }
+boltget-testserver = { path = "crates/testserver" }
+
+anyhow = "1.0.100"
+bytes = "1.10"
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+fastrand = "2.3"
+http = "1.3"
+http-body = "1.0"
+http-body-util = "0.1.3"
+httpdate = "1.0.3"
+hyper = { version = "1.7", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1.17", features = ["tokio"] }
+indicatif = "0.18"
+percent-encoding = "2.3"
+proptest = "1.8"
+rustls = { version = "0.23.31", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-platform-verifier = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tempfile = "3.20"
+thiserror = "2.0"
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util"] }
+tokio-rustls = { version = "0.26.2", default-features = false, features = ["ring", "tls12", "logging"] }
+tokio-util = "0.7.16"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+url = "2.5"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl", "Win32_Storage_FileSystem"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+# "Pedantic-lite": pedantic on, minus the lints that are mostly noise for this codebase.
+pedantic = { level = "warn", priority = -1 }
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+# Correctness guards that matter in a downloader.
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+print_stdout = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev.package."*"]
+# Dependencies (hashing, TLS) are painfully slow unoptimised; tests stream tens of MiB.
+opt-level = 2

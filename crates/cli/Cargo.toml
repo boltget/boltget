@@ -1,0 +1,34 @@
+[package]
+name = "boltget-cli"
+description = "BoltGet command-line downloader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "boltget"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+boltget-engine.workspace = true
+clap.workspace = true
+indicatif.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+boltget-testserver.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,2 @@
+//! BoltGet CLI.
+fn main() {}

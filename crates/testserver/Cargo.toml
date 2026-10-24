@@ -1,0 +1,26 @@
+[package]
+name = "boltget-testserver"
+description = "Misbehaving local HTTP server used by BoltGet's integration tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+httpdate.workspace = true
+hyper = { workspace = true, features = ["server"] }
+hyper-util.workspace = true
+percent-encoding.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[lints]
+workspace = true
