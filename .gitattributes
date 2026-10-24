@@ -1,0 +1,27 @@
+# Normalize line endings: store LF in the repository and check out LF.
+* text=auto eol=lf
+
+# Windows-only scripts need CRLF to run correctly.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary files: no line-ending conversion, no textual diff.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.avif   binary
+*.ico    binary
+*.icns   binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.zip    binary
+*.exe    binary
+*.dll    binary
+
+# Lockfiles: treat as generated in diffs.
+Cargo.lock      linguist-generated=true -diff
+pnpm-lock.yaml  linguist-generated=true -diff
