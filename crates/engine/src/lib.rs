@@ -15,3 +15,4 @@ pub use config::EngineConfig;
 pub use error::{Error, ErrorKind, Result};
 pub use headers::Validators;
 pub use request::{RequestContext, redact_url};
+pub mod segment;
