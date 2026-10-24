@@ -1,0 +1,67 @@
+# Validates that the PR title is a Conventional Commit. The title becomes the
+# squash commit on main. See CONTRIBUTING.md#commit-messages-conventional-commits.
+#
+# pull_request_target is used so the check also works for PRs from forks.
+# This is safe here because the workflow never checks out or runs PR code;
+# it only reads the PR title through the API.
+name: PR title
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  conventional-title:
+    name: Conventional Commit title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5.5.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+          scopes: |
+            engine
+            cli
+            desktop
+            extension
+            web
+            ui
+            brand
+            docs
+            deps
+            rfc
+          requireScope: false
+          # Subject must not start with an uppercase letter.
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" in "{title}" must start with a lowercase letter
+            and use the imperative mood, e.g. "fix(engine): handle 416 on empty files".
+          validateSingleCommit: false
+
+  title-length:
+    name: Title length (max 72)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check length
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          len=${#TITLE}
+          if [ "$len" -gt 72 ]; then
+            echo "::error::PR title is $len characters; the limit is 72."
+            exit 1
+          fi
+          echo "PR title length OK ($len/72)."
