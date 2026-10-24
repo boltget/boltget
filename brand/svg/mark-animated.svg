@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="36 36 108 108" width="108" height="108">
+  <title>BoltGet mark, animated</title>
+  <style>.r{fill:url(#g);opacity:0.15;animation:arrive 2.6s linear infinite}@keyframes arrive{0%{opacity:0.15}12%{opacity:1}85%{opacity:1}100%{opacity:0.15}}@media (prefers-reduced-motion:reduce){.r{animation:none;opacity:1}}</style>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="36" y1="36" x2="144" y2="144">
+      <stop offset="0" stop-color="#A7F3D0"/>
+      <stop offset="0.5" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <path class="r" style="animation-delay:0s" d="M73 37h10v10h-10zM85 37h10v10h-10zM97 37h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.12s" d="M73 49h10v10h-10zM85 49h10v10h-10zM97 49h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.24s" d="M73 61h10v10h-10zM85 61h10v10h-10zM97 61h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.36s" d="M73 73h10v10h-10zM85 73h10v10h-10zM97 73h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.48s" d="M37 85h10v10h-10zM49 85h10v10h-10zM61 85h10v10h-10zM73 85h10v10h-10zM85 85h10v10h-10zM97 85h10v10h-10zM109 85h10v10h-10zM121 85h10v10h-10zM133 85h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.6s" d="M49 97h10v10h-10zM61 97h10v10h-10zM73 97h10v10h-10zM85 97h10v10h-10zM97 97h10v10h-10zM109 97h10v10h-10zM121 97h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.72s" d="M61 109h10v10h-10zM73 109h10v10h-10zM85 109h10v10h-10zM97 109h10v10h-10zM109 109h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.84s" d="M73 121h10v10h-10zM85 121h10v10h-10zM97 121h10v10h-10z"/>
+  <path class="r" style="animation-delay:0.96s" d="M85 133h10v10h-10z"/>
+</svg>

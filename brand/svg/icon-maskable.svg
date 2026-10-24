@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <title>BoltGet (maskable)</title>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="36" y1="36" x2="144" y2="144">
+      <stop offset="0" stop-color="#A7F3D0"/>
+      <stop offset="0.5" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" fill="#0B0B0F"/>
+  <path fill="url(#g)" transform="matrix(0.9375 0 0 0.9375 5.625 5.625)" d="M73 37h10v10h-10zM85 37h10v10h-10zM97 37h10v10h-10zM73 49h10v10h-10zM85 49h10v10h-10zM97 49h10v10h-10zM73 61h10v10h-10zM85 61h10v10h-10zM97 61h10v10h-10zM73 73h10v10h-10zM85 73h10v10h-10zM97 73h10v10h-10zM37 85h10v10h-10zM49 85h10v10h-10zM61 85h10v10h-10zM73 85h10v10h-10zM85 85h10v10h-10zM97 85h10v10h-10zM109 85h10v10h-10zM121 85h10v10h-10zM133 85h10v10h-10zM49 97h10v10h-10zM61 97h10v10h-10zM73 97h10v10h-10zM85 97h10v10h-10zM97 97h10v10h-10zM109 97h10v10h-10zM121 97h10v10h-10zM61 109h10v10h-10zM73 109h10v10h-10zM85 109h10v10h-10zM97 109h10v10h-10zM109 109h10v10h-10zM73 121h10v10h-10zM85 121h10v10h-10zM97 121h10v10h-10zM85 133h10v10h-10z"/>
+</svg>

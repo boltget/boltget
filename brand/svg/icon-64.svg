@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>BoltGet (64 px)</title>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="14" y1="14" x2="50" y2="50">
+      <stop offset="0" stop-color="#A7F3D0"/>
+      <stop offset="0.5" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0B0B0F"/>
+  <path fill="url(#g)" d="M26 14h3v3h-3zM30 14h3v3h-3zM34 14h3v3h-3zM26 18h3v3h-3zM30 18h3v3h-3zM34 18h3v3h-3zM26 22h3v3h-3zM30 22h3v3h-3zM34 22h3v3h-3zM26 26h3v3h-3zM30 26h3v3h-3zM34 26h3v3h-3zM14 30h3v3h-3zM18 30h3v3h-3zM22 30h3v3h-3zM26 30h3v3h-3zM30 30h3v3h-3zM34 30h3v3h-3zM38 30h3v3h-3zM42 30h3v3h-3zM46 30h3v3h-3zM18 34h3v3h-3zM22 34h3v3h-3zM26 34h3v3h-3zM30 34h3v3h-3zM34 34h3v3h-3zM38 34h3v3h-3zM42 34h3v3h-3zM22 38h3v3h-3zM26 38h3v3h-3zM30 38h3v3h-3zM34 38h3v3h-3zM38 38h3v3h-3zM26 42h3v3h-3zM30 42h3v3h-3zM34 42h3v3h-3zM30 46h3v3h-3z"/>
+</svg>
