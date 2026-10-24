@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <title>BoltGet</title>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="36" y1="36" x2="144" y2="144">
+      <stop offset="0" stop-color="#A7F3D0"/>
+      <stop offset="0.5" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="40" fill="#0B0B0F"/>
+  <g fill="url(#g)">
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0s" repeatCount="indefinite"/>
+      <rect x="73" y="37" width="10" height="10"/><rect x="85" y="37" width="10" height="10"/><rect x="97" y="37" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.12s" repeatCount="indefinite"/>
+      <rect x="73" y="49" width="10" height="10"/><rect x="85" y="49" width="10" height="10"/><rect x="97" y="49" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.24s" repeatCount="indefinite"/>
+      <rect x="73" y="61" width="10" height="10"/><rect x="85" y="61" width="10" height="10"/><rect x="97" y="61" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.36s" repeatCount="indefinite"/>
+      <rect x="73" y="73" width="10" height="10"/><rect x="85" y="73" width="10" height="10"/><rect x="97" y="73" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.48s" repeatCount="indefinite"/>
+      <rect x="37" y="85" width="10" height="10"/><rect x="49" y="85" width="10" height="10"/><rect x="61" y="85" width="10" height="10"/><rect x="73" y="85" width="10" height="10"/><rect x="85" y="85" width="10" height="10"/><rect x="97" y="85" width="10" height="10"/><rect x="109" y="85" width="10" height="10"/><rect x="121" y="85" width="10" height="10"/><rect x="133" y="85" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.6s" repeatCount="indefinite"/>
+      <rect x="49" y="97" width="10" height="10"/><rect x="61" y="97" width="10" height="10"/><rect x="73" y="97" width="10" height="10"/><rect x="85" y="97" width="10" height="10"/><rect x="97" y="97" width="10" height="10"/><rect x="109" y="97" width="10" height="10"/><rect x="121" y="97" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.72s" repeatCount="indefinite"/>
+      <rect x="61" y="109" width="10" height="10"/><rect x="73" y="109" width="10" height="10"/><rect x="85" y="109" width="10" height="10"/><rect x="97" y="109" width="10" height="10"/><rect x="109" y="109" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.84s" repeatCount="indefinite"/>
+      <rect x="73" y="121" width="10" height="10"/><rect x="85" y="121" width="10" height="10"/><rect x="97" y="121" width="10" height="10"/></g>
+    <g opacity="0.15"><animate attributeName="opacity" values="0.15;1;1;0.15" keyTimes="0;0.12;0.85;1" dur="2.6s" begin="0.96s" repeatCount="indefinite"/>
+      <rect x="85" y="133" width="10" height="10"/></g>
+  </g>
+</svg>
