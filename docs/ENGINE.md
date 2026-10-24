@@ -94,6 +94,8 @@ Every request the engine sends adds:
 - `Accept-Encoding: identity`. Byte ranges apply to the *encoded* representation. If a server compresses on the fly, ranges and sizes become meaningless. We always request the raw bytes.
 - `User-Agent`: the browser's if provided, otherwise `BoltGet/<version>`. (Some servers block non-browser agents; the browser-provided value is preferred for that reason, not to impersonate.)
 
+> **Implementation note (v0.1 phase 1):** `RequestContext` carries the URL, the allowlisted headers and the browser-suggested name. Cookies, proxy and auth fields arrive with their features in later phases.
+
 ## Probing
 
 The probe determines: total size, whether byte ranges work, validators, filename, MIME type and the final URL. It MUST NOT waste a round trip: **the probe connection becomes worker 0.**
@@ -129,6 +131,11 @@ So the engine probes with the request it needs anyway.
 4. Check `Content-Encoding`. If it is present and not `identity` despite our `Accept-Encoding: identity`, the server is compressing anyway: ranges are unsafe. Fall back to a single connection and mark not resumable.
 5. Resolve the filename ([below](#filename-resolution-content-disposition)) and destination, then check free disk space for `n` bytes plus a safety margin. If insufficient, fail with `Disk` before writing anything.
 
+> **Implementation notes (v0.1 phase 1):**
+> - The verification request is skipped when it cannot pay off (fewer than 2 connections allowed, or `n < 2 × min_split_size`); the download then runs on one connection. `Engine::probe` (for the add dialog) does send it, so it can report range support.
+> - A response with a non-identity `Content-Encoding` is treated as unknown size even if it has a `Content-Length` (that length describes the encoded bytes).
+> - The free-space check (safety margin design target: 16 MiB) is implemented on Windows only; on Unix it is skipped until the Unix port. The FAT32 4 GiB check needs a file handle, so it runs right after creating the empty `.boltget` file, which is deleted again on failure.
+
 ### Validators on every subsequent range request
 
 Every range request after the probe MUST carry a validator so a changed resource is detected instead of silently mixing two versions of a file:
@@ -141,6 +148,8 @@ Weak ETags MUST NOT be used in `If-Range` (RFC 9110 forbids it).
 
 If a range request with `If-Range` returns `200` instead of `206`, the resource changed. The worker MUST NOT write those bytes at the requested offset. The download moves to `ResourceChanged`.
 
+> **Implementation note (v0.1 phase 1):** one exception: a `200` to a range that *starts at offset 0* is accepted if its `ETag`/`Last-Modified` and `Content-Length` match the probe. The bytes are then at the right offset, and some servers answer every range starting at 0 with `200` (the "ignores `bytes=0-`" row above). Any `206` whose `ETag`/`Last-Modified` differ from the probe's is also `ResourceChanged`, with or without `If-Range`.
+
 ### Initial split
 
 After a successful probe with known size `n` and range support:
@@ -151,6 +160,8 @@ After a successful probe with known size `n` and range support:
 - Worker 0 keeps its open-ended request but its segment is set to `[0, n/k)`. It stops reading when it reaches its segment end (see [Ending a segment early](#ending-a-segment-early)).
 - Segments `[i·n/k, (i+1)·n/k)` for `i = 1..k-1` are created, with boundaries aligned down to 64 KiB (alignment keeps writes page- and cluster-friendly and makes logs readable). The last segment ends at `n`.
 - Workers 1..k-1 are started. They are not all started at once: they are started with a short stagger (design target: 50 ms) to avoid a synchronized burst of TLS handshakes that some servers rate-limit.
+
+> **Implementation note (v0.1 phase 1):** `per_host_available` counts the free per-host and global slots at the time of the split (plus the probe's own slot). Workers that cannot get a slot wait for one.
 
 ## Filename resolution (Content-Disposition)
 
@@ -177,6 +188,8 @@ Sanitization (Windows rules applied on all platforms, so a file name that works 
 
 Collision handling: if the target exists (or another queued download targets the same path), append ` (1)`, ` (2)`, ... before the extension. The add dialog shows the final name before starting.
 
+> **Implementation notes (v0.1 phase 1):** a name typed by the user (`Destination::File`, CLI `-o file`) is sanitized but gets no MIME-based extension. Collision checks also treat an existing `<name>.boltget` as taken, and the check is repeated just before the final rename. Callers can choose `Overwrite` or `Fail` instead of renaming. `\\?\` long-path prefixes are not applied yet; the desktop app is expected to be long-path aware through its manifest.
+
 ## Redirects
 
 - Follow up to 10 redirects (`301`, `302`, `303`, `307`, `308`). `303` switches to `GET`; the engine only downloads with `GET` anyway.
@@ -187,6 +200,8 @@ Collision handling: if the target exists (or another queued download targets the
   - Keep `Referer` as provided by the browser.
 - Redirect from `https` to `http` is allowed only if the user opted in (setting off by default); otherwise fail with a clear error.
 - **Expiring redirect targets.** Many hosts redirect a stable URL to a short-lived signed URL (release assets on code-hosting sites, cloud storage, CDNs). When a segment request to `final_url` fails with `LinkExpired`, the engine MUST first re-resolve from the original `url` (fresh redirect chain), validate the new `final_url` like a [link refresh](#link-refresh), and continue. Only if that fails does the download move to `NeedsNewLink`.
+
+> **Implementation notes (v0.1 phase 1):** re-resolution happens on every expiry (a signed URL can expire several times during a long download), not once per download; it fails the download only if the request that started from the original URL is itself rejected. The new target is validated like any range response (status, `Content-Range` start and total, validators), not with the link-refresh sample bytes. `NeedsNewLink` does not exist yet, so the download fails with `LinkExpired`. `Authorization` is dropped on every request to an origin other than the original one (per-origin credentials come with auth support).
 
 ## Dynamic segmentation
 
@@ -214,6 +229,8 @@ Invariants (checked in debug builds and property tests):
 3. A byte is written to disk by exactly one worker.
 4. The persisted checkpoint for a segment never exceeds its `durable` value.
 
+> **Implementation notes (v0.1 phase 1), concurrency model:** the table (`boltget_engine::segment::SegmentTable`, pure logic, property-tested) lives behind a `std::sync::Mutex` shared by the supervisor ("download actor") and its workers, instead of being owned by a single task. A worker *claims* each coalesced chunk (at most 1 MiB) under the lock immediately before handing it to the writer, after reserving a slot in the writer channel so no `.await` separates claim and send; a split shrinks `end` under the same lock. Claims and splits are therefore linearised: a claim is truncated at the current `end`, and a split never moves `end` below the claim cursor. That is what makes invariant 3 hold by construction (`received` = claimed bytes). The lock is held for a few instructions, never across an `.await`. An idle worker runs the split rule itself under the lock rather than asking the actor. The writer additionally checks that every segment's chunks arrive contiguously and fails with `Internal` otherwise. `SegmentTable::checkpoint()` exposes what phase 2 will persist, taken from `durable` only (invariant 4).
+
 ### Steady state
 
 Each worker runs a loop on its assigned segment: read chunks from the response body and forward them to the writer until `start + received == end`. Then it reports `SegmentFinished` and asks the actor for more work.
@@ -231,6 +248,8 @@ When a worker becomes free (its segment finished) or a new connection slot opens
 7. Tell the owner its new end. If the owner has already received bytes past `mid` by the time it sees the message (the in-flight estimate was too low), it MUST discard the bytes beyond `mid` rather than write them, since the new worker owns them now. A discard is a small waste, never a correctness problem.
 
 Unassigned segments (from a resumed download, or from a worker that failed) are always picked before splitting an active one.
+
+> **Implementation notes (v0.1 phase 1):** `in_flight` is `throughput × (rtt_estimate + reaction_slack)` plus the bytes the owner holds in its coalescing buffer (read but not yet claimed). Throughput is a per-worker moving average sampled by the supervisor every 500 ms; `rtt_estimate` is a moving average of request-to-headers time, which includes connection setup for fresh connections and so errs on the large side. If the largest segment cannot be split, the next largest is tried. A smoke test against a CDN showed the cost of the `2 × min_split_size` floor at ~100 MB/s: one connection running at ~3 MB/s kept a ~2.5 MB remainder that was too small to split and finished ~1.4 s after all others (see [open question 1](#open-questions)).
 
 Splitting the *largest remaining* segment in half is what keeps all connections finishing at roughly the same time: the work is continuously rebalanced toward wherever the most bytes remain. This is the same idea IDM describes as dynamic file segmentation.
 
@@ -253,11 +272,15 @@ When no segment has enough remaining bytes to split, but some connections are id
 
 Endgame is marked **experimental** for v0.1 and is only enabled by default if benchmarks show a benefit.
 
+> **Implementation notes (v0.1 phase 1):** implemented and off by default (`EngineConfig::endgame`). The duplicate takes ownership of the tail (a `split_at` that only succeeds if the slow owner's claim cursor has not reached it) as soon as its `206` response is validated, rather than on its first body byte. A handful of runs against a 100 MB CDN file did not show a consistent benefit; benchmarks decide.
+
 ### Single-connection downloads
 
 If `resumable = false`, the download runs on worker 0 only, with no splits. If interrupted, it restarts from zero (the UI says so up front: "This server does not support resuming").
 
 If the size is unknown but ranges work (`Content-Range: bytes 0-x/*`), the download is resumable from its cursor but cannot be split.
+
+> **Implementation note (v0.1 phase 1):** "restarts from zero" applies to retries within a run too: a non-resumable download that loses its connection replaces its segment with a fresh one from byte 0. A response that ends cleanly before the expected end is retried from the cursor when ranges work, and restarted otherwise.
 
 ## Connection management and adaptive concurrency
 
@@ -285,6 +308,8 @@ Fixed connection counts are wrong for most servers: too few leaves throughput on
 
 Per-host learned ceilings are kept in memory for the session and persisted (design target: for 24 hours) so the next download from a strict server starts at a sensible count instead of rediscovering the limit.
 
+> **Implementation notes (v0.1 phase 1):** the controller is not implemented yet; a download uses a fixed `N` (`initial_connections`, or the per-download override). Only the decrease path exists: a worker that gets `429`/`503` while others are active gives its segment back and exits, so the count only goes down. In addition, a `429`/`503` sets a download-wide hold: no worker sends a new request until `Retry-After` (or the backoff delay) has passed. Without it, the remaining workers picked up the released segments at once and collected more `429`s from a real speed-test host that allows about 4 connections per IP.
+
 The controller is deliberately simple. If benchmarks show it oscillating, alternatives to evaluate are a BBR-style probe-and-drain cycle or a fixed schedule based on file size. Any change MUST come with benchmark data.
 
 ### Connection reuse and DNS
@@ -294,6 +319,8 @@ The controller is deliberately simple. If benchmarks show it oscillating, altern
 - TCP: `TCP_NODELAY` is irrelevant for bulk download; receive buffer sizes are left to the OS autotuning by default.
 - TLS: rustls, session resumption enabled (tickets), so additional workers to the same host skip the full handshake.
 - Happy Eyeballs (RFC 8305) for dual-stack hosts.
+
+> **Implementation notes (v0.1 phase 1):** DNS results are cached per download. Connecting interleaves IPv6 and IPv4 addresses and starts the next attempt every 250 ms until one succeeds (the connection-attempt part of RFC 8305, without its asynchronous DNS racing). Each worker connection is created with `hyper::client::conn::{http1, http2}` over `tokio-rustls`, with ALPN `h2` and `http/1.1` and the server's choice accepted.
 
 ## HTTP/2 considerations
 
@@ -311,6 +338,8 @@ Therefore:
 5. `GOAWAY` handling: finish the current range if the stream is below the last-stream-id, otherwise reconnect and continue from the cursor without counting it as an error.
 
 HTTP/3 (QUIC) is post-1.0. QUIC's per-connection congestion control has the same multiplexing caveat; the per-worker-connection model carries over.
+
+> **Implementation note (v0.1 phase 1):** points 1–3 are implemented (one connection per worker, ALPN, 8 MiB windows). `GOAWAY` and refused streams are handled as ordinary connection errors (reconnect from the cursor, counted as an attempt). The test server speaks HTTP/1.1 only, so HTTP/2 is exercised only against real servers so far.
 
 ## Preallocation and sparse files
 
@@ -340,6 +369,8 @@ Other file systems:
 
 Unix (post-1.0): `ftruncate` creates sparse files by default on ext4, XFS, Btrfs and APFS. `fallocate(FALLOC_FL_KEEP_SIZE)` / `F_PREALLOCATE` is an optional full-preallocation mode.
 
+> **Implementation notes (v0.1 phase 1):** `FSCTL_SET_SPARSE` (via `windows-sys`, in the engine's only `unsafe` module, `platform/windows.rs`) is attempted on every partial file; if it fails, plain `set_len` is used and the download reports `Preallocation::SetLen`. A unit test writes the last 4 KiB of an 8 GiB file first and checks that it neither stalls nor loses the sparse attribute on NTFS. The FAT32 check is in place; the exFAT write window is **not** implemented yet, so exFAT destinations still risk a zero-fill stall on large files. The sparse flag is left set on completion (open question 3 stays open).
+
 ## Write path
 
 ### Positional writes
@@ -357,6 +388,8 @@ All writes are positional; there is no shared file cursor:
 - When the channel is full, workers await, stop reading the socket, and TCP flow control slows the sender. This is the intended backpressure, not an error.
 - The writer tracks, per segment, the highest contiguous offset written (`received` on disk but not yet flushed).
 - Unbuffered (`FILE_FLAG_NO_BUFFERING`) or overlapped I/O is not used in v0.1. The OS page cache plus 1 MiB writes is expected to be adequate; if benchmarks show the writer is the bottleneck at multi-gigabit speeds, evaluate overlapped I/O or io_uring (Linux) then.
+
+> **Implementation note (v0.1 phase 1):** the writer is a plain OS thread per download, not one from a pool; with a handful of concurrent downloads that is simpler and costs the same. It consumes a Tokio bounded channel with `blocking_recv`. Interval flushes are checked as chunks arrive, so an idle download flushes on the next chunk or at the end rather than on a timer.
 
 ### Flush (fsync) policy
 
@@ -424,6 +457,8 @@ delay = random_uniform(0, min(max_delay, base × 2^attempt))
 - **Stall:** no bytes received on a connection for `stall_timeout` (design target: 30 s) → abort and reconnect from the cursor.
 - **Connect timeout:** design target 15 s. **TLS handshake timeout:** design target 15 s. **First byte after request:** design target 30 s.
 - **Slow connection:** a worker whose throughput stays below a fraction of the per-worker median (design target: 10% for 20 s), while others are healthy, is closed and its segment reassigned (or split). This handles a single connection landing on a bad CDN edge.
+
+> **Implementation notes (v0.1 phase 1):** the slow connection is reconnected from its cursor (counted as an attempt) rather than reassigned. The median is the last one measured while at least two workers were transferring, kept after the others finish, because the typical victim is the last connection still running. While every active worker is waiting to retry, the download state is `Retrying`. Not implemented yet: pausing retries while the OS reports no connectivity, and pausing (instead of failing) when `Retry-After` exceeds 15 minutes, since pause arrives with checkpointing.
 
 ## Link refresh
 
@@ -577,6 +612,8 @@ pub enum EngineEvent {
 }
 ```
 
+> **Implementation notes (v0.1 phase 1):** there is no database yet, so the phase-1 API is in-memory: `Engine::new(EngineConfig)` (no owner lock or migrations), `Engine::probe`, `Engine::add(AddRequest) -> DownloadHandle` (the handle exposes `id`, `state`, `progress`, `info`, `cancel` and `wait`), `Engine::subscribe`, `Engine::progress`, `Engine::cancel` and `Engine::shutdown` (cancels everything). `pause`/`resume`/`remove`/`list`/`refresh_link`/`set_limit` arrive with checkpointing and their features. Events: `Added`, `Probed` (new: carries the resolved destination and probe result), `StateChanged`, `SegmentsChanged`, `Completed`; all are `serde`-serializable and are what `boltget get --json` prints. A progress snapshot takes the segment-table lock briefly (to copy the segments) rather than reading only atomics. Cancelled and failed downloads keep their flushed `.boltget` file for the resume feature. Completed files get the Mark of the Web with `HostUrl` stripped of query string and credentials, because signed URLs carry secrets there.
+
 The CLI maps directly onto this API:
 
 ```
@@ -595,6 +632,8 @@ boltget bench <url> [--runs 5] [--connections 8,16,32] [--json]
 - **Unit tests:** probe interpretation table, Content-Disposition parsing (a corpus of real-world headers, including broken ones), filename sanitization, split rule arithmetic, token bucket timing (with Tokio's paused clock), backoff.
 - **Property tests (`proptest`):** random sequences of chunk arrivals, splits, worker failures, pauses and crashes against an in-memory model; assert the four [segment invariants](#segment-table) and that the final file equals the source.
 - **Integration tests against a local test server** (a small Rust server in `crates/engine/tests/support` built on hyper) that can: disable ranges, ignore `bytes=0-`, change content mid-download, return 200 to `If-Range`, throttle per connection, reset connections at random, expire URLs after N requests, redirect through signed URLs, serve wrong `Content-Length`, and speak HTTP/1.1 or HTTP/2.
+
+  > **Implementation note (v0.1 phase 1):** the server is its own crate, `crates/testserver` (`boltget-testserver`), so the CLI's end-to-end tests can use it too. It covers everything above except HTTP/2, plus 416/429/503 with `Retry-After`, stalls, one-slow-connection, `Content-Disposition`/`Content-Encoding` variants, chunked and unknown-total responses and an `Authorization`-checking endpoint. Resets and failures are triggered deterministically (first N requests, or requests K..K+N) rather than at random, so failures reproduce. Every download test compares SHA-256 with the generated content.
 - **Crash tests:** a harness that starts a download in a child process, kills it (`TerminateProcess`) at random times, resumes, repeats, and compares the final SHA-256. Run thousands of iterations nightly.
 - **Fuzzing (`cargo-fuzz`):** header parsers (Content-Disposition, Content-Range, Retry-After, cookies) and the native messaging decoder.
 - **File system matrix (Windows CI and manual):** NTFS, exFAT USB drive, FAT32 (4 GiB check), ReFS where available, an SMB share.
@@ -658,9 +697,11 @@ The v0.1 milestone ships with a published benchmark. The goal is a fair, reprodu
 These need a decision, ideally backed by measurement, during v0.1:
 
 1. **Default connection count and `min_split_size`.** 8 and 1 MiB are starting points chosen for comparability with IDM, not measured optima.
+   *Phase-1 smoke test (not a benchmark), 100 MB public test files, ~1 Gbps line in Turkey:* CacheFly, 1 connection ~100 MiB/s (0.96–1.01 s, 3 runs) vs 8 connections 41–86 MiB/s (1.16–2.43 s, 3 runs): one connection already fills the line, and extra connections only add handshakes and tail risk. nforce.com (farther, RTT-limited per connection): 1 connection 18–20 MiB/s vs 8 connections 24–30 MiB/s (2 runs each). A connection-limited host (about 4 per IP, `429` beyond) worked but was slower with 8 because of a slow last connection. This suggests the adaptive controller matters more than the default.
 2. **HTTP/1.1 vs HTTP/2 for workers.** Prefer whatever the server negotiates, or prefer HTTP/1.1 for bulk ranges? Decide from benchmark data.
 3. **Clear the sparse flag on completion?** Measure whether any tool or file system behaviour depends on it.
 4. **exFAT write window size.** How far ahead of the lowest incomplete offset to allow segments on non-sparse file systems.
 5. **rustls crypto provider** (`aws-lc-rs` vs `ring`): performance at multi-gigabit TLS throughput vs build friction on Windows CI.
+   **Decided for v0.1: `ring`.** `aws-lc-sys` is licensed `ISC AND (Apache-2.0 OR ISC) AND OpenSSL`, and the OpenSSL license is not GPL-3.0-compatible; `ring` (0.17.10+) is `Apache-2.0 AND ISC`. `ring` also builds on Windows MSVC with no CMake or NASM. One TLS connection reached ~100 MiB/s in the smoke test without the engine being the bottleneck. `deny.toml` bans `aws-lc-sys`, `openssl-sys` and `native-tls`. Revisit only with multi-gigabit benchmark data and a GPL-compatible build of the alternative.
 6. **Benchmark publication and IDM's EULA.** Confirm that publishing comparative benchmark results does not conflict with IDM's license terms.
 7. **Measuring IDM's throughput curve.** IDM's partial-file layout is not documented; NIC counters on a dedicated benchmark machine may be the only reliable source.

@@ -14,10 +14,12 @@ mod windows;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Preallocation {
-    /// Marked sparse, then extended (NTFS, ReFS): no zero-fill stalls.
+    /// Sparse: on Windows marked with `FSCTL_SET_SPARSE` before `set_len`
+    /// (NTFS, ReFS); on Unix `ftruncate`, which is sparse on the common file
+    /// systems. Writes far ahead do not trigger zero-fill stalls.
     Sparse,
-    /// Extended with `set_len` only. On Unix this is sparse by default; on
-    /// Windows it means the file system refused `FSCTL_SET_SPARSE` (FAT, exFAT, SMB).
+    /// Extended with `set_len` only because the file system refused
+    /// `FSCTL_SET_SPARSE` (FAT32, exFAT, some SMB shares), or the file is empty.
     SetLen,
     /// Size unknown: the file grows as data arrives.
     None,
@@ -129,7 +131,7 @@ pub fn is_sparse(path: &Path) -> bool {
 }
 
 /// Writes the `Zone.Identifier` alternate data stream (Mark of the Web), as
-/// browsers do, so `SmartScreen` and Office Protected View keep working.
+/// browsers do, so SmartScreen and Office Protected View keep working.
 /// Silently does nothing where alternate data streams are unsupported.
 pub(crate) fn mark_of_the_web(path: &Path, host_url: &str, referrer: Option<&str>) {
     #[cfg(windows)]
