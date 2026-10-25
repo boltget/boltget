@@ -6,6 +6,7 @@
 //! boltget pause <id>
 //! boltget resume <id> [--restart] [--limit <rate>] [--json]
 //! boltget remove <id> [--delete-file]
+//! boltget refresh <id> <new-url> [-H ...]
 //! boltget config list|get|set|unset [limit] [<value>]
 //! ```
 //!
@@ -43,7 +44,8 @@ Exit codes:
        TLS certificate errors, too many or insecure redirects
   5    local disk problem (no space, permission denied, file system limit,
        partial file missing)
-  6    the file changed on the server or the link stopped working mid-download
+  6    the file changed on the server, the link stopped working (give it a new
+       one with `boltget refresh`), or `refresh` rejected a link to another file
   7    the download database is in use by another boltget process, or cannot
        be opened
   8    no download with that id, or the command does not apply to it in its
@@ -61,7 +63,11 @@ With --json, stdout carries one JSON object per line. Every object has an
                      path, partial_path, preallocation, initial_connections}}
   resumed           {id, downloaded, total}  continuing from a checkpoint
   state_changed     {id, state, error}  state: probing, downloading, retrying,
-                     verifying, paused, completed, failed, cancelled, corrupt
+                     verifying, paused, completed, failed, cancelled, corrupt,
+                     needs_new_link
+  refreshed         {id, evidence: {kind, ...}, final_url}  refresh only: the new
+                     link was accepted; kind is same_etag, samples (with ranges,
+                     bytes) or nothing_downloaded
   segments_changed  {id}
   progress          {id, downloaded, total, speed, eta_secs, connections,
                      segments} (every 500 ms)
@@ -121,6 +127,16 @@ enum Command {
     /// Continue a paused, interrupted or failed download in the foreground.
     #[command(after_long_help = format!("{EXIT_CODES}\n\n{JSON_HELP}"))]
     Resume(ResumeArgs),
+    /// Give a download a new link (its old one expired) and continue it.
+    ///
+    /// The new link must lead to the same file: its size must match, and either
+    /// its `ETag` equals the old one or a few ranges fetched from it equal the
+    /// bytes already downloaded. Nothing from it is written before that check.
+    /// Headers given with -H replace the saved ones.
+    #[command(after_long_help = format!("{EXIT_CODES}
+
+{JSON_HELP}"))]
+    Refresh(RefreshArgs),
     /// Remove a download from the list.
     #[command(after_long_help = EXIT_CODES)]
     Remove(RemoveArgs),
@@ -224,6 +240,18 @@ struct ResumeArgs {
     /// download that failed verification as it is.
     #[arg(long, conflicts_with = "checksum")]
     no_checksum: bool,
+
+    #[command(flatten)]
+    run: RunArgs,
+}
+
+#[derive(Debug, Args)]
+struct RefreshArgs {
+    /// Download id (see `boltget list`).
+    id: u64,
+
+    /// The new URL for the same file (http or https).
+    url: String,
 
     #[command(flatten)]
     run: RunArgs,
@@ -378,7 +406,18 @@ fn hints_for(e: &Error, id: Option<DownloadId>, command: &str) -> Vec<String> {
             }
             v
         }
+        (Error::RefreshRejected(_), Some(id)) => vec![
+            "nothing was changed; the download keeps its old link".to_owned(),
+            format!("give it a link to the same file: boltget refresh {id} <new-url>"),
+        ],
         (_, Some(id)) => match e.kind() {
+            ErrorKind::LinkExpired => vec![
+                format!(
+                    "the progress is saved; give the download a new link with: boltget refresh {id} <new-url>"
+                ),
+                "(for example the link the site gives you when you start the download again)"
+                    .to_owned(),
+            ],
             ErrorKind::ResourceChanged | ErrorKind::RangeUnsupported => vec![format!(
                 "the saved progress cannot be used; start over with: boltget resume {id} --restart"
             )],
@@ -389,10 +428,7 @@ fn hints_for(e: &Error, id: Option<DownloadId>, command: &str) -> Vec<String> {
             _ if matches!(e, Error::PartialMissing { .. }) => {
                 vec![format!("start over with: boltget resume {id} --restart")]
             }
-            ErrorKind::Transient
-            | ErrorKind::Throttled
-            | ErrorKind::LinkExpired
-            | ErrorKind::Disk => {
+            ErrorKind::Transient | ErrorKind::Throttled | ErrorKind::Disk => {
                 vec![format!(
                     "the progress is saved; try again with: boltget resume {id}"
                 )]
@@ -565,6 +601,70 @@ async fn resume(args: ResumeArgs, state: Option<&Path>, verbose: u8) -> u8 {
     }
 }
 
+async fn refresh(args: RefreshArgs, state: Option<&Path>, verbose: u8) -> u8 {
+    let json = args.run.json;
+    let usage = |e: &anyhow::Error| {
+        if json {
+            json::failed_usage(e, 2);
+        } else {
+            eprintln!("boltget: {e:#}");
+        }
+        2
+    };
+    let headers = match parse_headers(&args.run.headers) {
+        Ok(h) => h,
+        Err(e) => return usage(&e),
+    };
+    let mut ctx = match RequestContext::new(&args.url) {
+        Ok(c) => c,
+        Err(e) => return report(&e, json, Some(DownloadId(args.id)), &[]),
+    };
+    for (name, value) in &headers {
+        if !ctx.header(name.clone(), value.clone()) {
+            return usage(&anyhow::anyhow!(
+                "header {name} is not allowed (the engine controls it)"
+            ));
+        }
+    }
+    let engine = match open(state, engine_config(&args.run), json, "refresh") {
+        Ok(e) => e,
+        Err(code) => return code,
+    };
+    let id = DownloadId(args.id);
+    match engine.refresh_link(id, ctx).await {
+        Ok(out) => {
+            if json {
+                json::refreshed(&out);
+            } else if !args.run.quiet {
+                println!("New link accepted: {}", display::evidence(&out.evidence));
+            }
+        }
+        Err(e) => {
+            engine.shutdown().await;
+            return report(&e, json, Some(id), &hints_for(&e, Some(id), "refresh"));
+        }
+    }
+    let mut opts = ResumeOptions::default();
+    opts.connections = args.run.connections;
+    if let Some(Rate(r)) = args.run.limit {
+        opts = opts.speed_limit(r);
+    }
+    if let Some(c) = &args.run.checksum {
+        opts = opts.checksum(Some(c.clone()));
+    }
+    for (name, value) in headers {
+        opts = opts.header(name, value);
+    }
+    let events = engine.subscribe();
+    match engine.resume(id, opts).await {
+        Ok(handle) => run_download(&engine, handle, events, &args.run, verbose).await,
+        Err(e) => {
+            engine.shutdown().await;
+            report(&e, json, Some(id), &hints_for(&e, Some(id), "resume"))
+        }
+    }
+}
+
 async fn pause(args: &IdArgs, state: Option<&Path>) -> u8 {
     let id = DownloadId(args.id);
     let dir = match data_dir(state) {
@@ -638,6 +738,7 @@ async fn main() -> ExitCode {
         Command::List(args) => list::run(&args, state).await,
         Command::Pause(args) => pause(&args, state).await,
         Command::Resume(args) => resume(args, state, cli.verbose).await,
+        Command::Refresh(args) => refresh(args, state, cli.verbose).await,
         Command::Remove(args) => remove(&args, state).await,
         Command::Config(args) => settings::run(&args, state).await,
     };

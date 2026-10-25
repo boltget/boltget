@@ -107,6 +107,25 @@ pub(crate) fn is_encoded(headers: &HeaderMap) -> bool {
         .any(|v| !v.is_empty() && !v.eq_ignore_ascii_case("identity"))
 }
 
+/// Whether a `Content-Type` value is an HTML page (`text/html`, XHTML).
+pub(crate) fn is_html_type(content_type: &str) -> bool {
+    let media = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    media == "text/html" || media == "application/xhtml+xml"
+}
+
+/// Whether the response says its body is an HTML page.
+pub(crate) fn is_html(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(is_html_type)
+}
+
 /// Validators recorded from the probe response, used to detect a changed resource.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Validators {

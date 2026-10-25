@@ -164,3 +164,17 @@ pub(crate) fn failed_usage(e: &anyhow::Error, exit_code: u8) {
         exit_code,
     });
 }
+
+/// Prints the `refreshed` line after a new link was accepted.
+pub(crate) fn refreshed(out: &boltget_engine::RefreshOutcome) {
+    #[derive(Serialize)]
+    struct Refreshed<'a> {
+        event: &'static str,
+        #[serde(flatten)]
+        out: &'a boltget_engine::RefreshOutcome,
+    }
+    emit(&Refreshed {
+        event: "refreshed",
+        out,
+    });
+}

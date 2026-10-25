@@ -603,6 +603,85 @@ impl Engine {
         Ok(self.spawn(shared, job))
     }
 
+    /// Gives a stopped download a new link (`docs/ENGINE.md`, "Link refresh"),
+    /// typically one waiting in [`State::NeedsNewLink`]. Before anything from the
+    /// new link is written, its size must match and either its strong `ETag`
+    /// must equal the old one or sample ranges must equal the bytes on disk;
+    /// otherwise this fails with [`Error::RefreshRejected`] and nothing changes.
+    ///
+    /// On success the new link (and `ctx`'s headers, without secrets) replaces
+    /// the old one for good: re-resolution starts there, and the old link stays
+    /// in the download's history. Continue the download with [`Engine::resume`],
+    /// passing secret headers such as `Authorization` again.
+    pub async fn refresh_link(
+        &self,
+        id: DownloadId,
+        ctx: RequestContext,
+    ) -> Result<crate::refresh::RefreshOutcome> {
+        let store = self.store()?.clone();
+        if self.running(id).is_some() {
+            return Err(Error::InvalidState {
+                id,
+                reason: "is running; pause it before giving it a new link".into(),
+            });
+        }
+        let saved = store
+            .call(move |c| records::load(c, id))
+            .await?
+            .ok_or(Error::UnknownDownload(id))?;
+        if saved.state == State::Completed {
+            return Err(Error::InvalidState {
+                id,
+                reason: "is already completed".into(),
+            });
+        }
+        let connector = Connector::new(self.inner.env.tls.clone(), self.inner.cfg.clone());
+        let cancel = self.inner.root.child_token();
+        let partial = saved.temp_path.as_deref().map(Path::new);
+        let target = crate::refresh::Target {
+            total: saved.total_size,
+            validators: &saved.validators,
+            segments: &saved.segments,
+            partial,
+        };
+        let accepted = crate::refresh::validate(&connector, &ctx, &target, &cancel).await?;
+        tracing::info!(
+            id = %id,
+            evidence = ?accepted.evidence,
+            url = %redact_url(ctx.url()),
+            "new link accepted"
+        );
+        let refreshed = records::Refreshed {
+            url: ctx.url().to_string(),
+            request_ctx: ctx.to_saved(),
+            final_url: accepted.final_url.to_string(),
+            validators: accepted.validators,
+            mime: accepted.content_type,
+        };
+        store
+            .call(move |c| records::apply_refresh(c, id, &refreshed))
+            .await?;
+        Ok(crate::refresh::RefreshOutcome {
+            id,
+            evidence: accepted.evidence,
+            final_url: redact_url(&accepted.final_url),
+        })
+    }
+
+    /// The links a download has used, oldest first, with their role
+    /// (`primary`: as added, `refreshed`: given later). Redacted.
+    pub async fn sources(&self, id: DownloadId) -> Result<Vec<(String, String)>> {
+        let store = self.store()?;
+        let rows = store.call(move |c| records::sources(c, id)).await?;
+        Ok(rows
+            .into_iter()
+            .map(|(u, role)| {
+                let shown = url::Url::parse(&u).map_or_else(|_| u.clone(), |u| redact_url(&u));
+                (shown, role)
+            })
+            .collect())
+    }
+
     /// Asks a running download to pause without waiting. Returns false if it is
     /// not running in this engine.
     pub fn request_pause(&self, id: DownloadId) -> bool {

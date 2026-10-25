@@ -22,7 +22,8 @@ pub enum ErrorKind {
     Transient,
     /// 429/503 (with or without `Retry-After`): retry after the indicated delay.
     Throttled,
-    /// 401/403/410 on a URL that previously worked.
+    /// 401/403/410 on a URL that previously worked, or a login page instead of
+    /// the file: the download needs a new link.
     LinkExpired,
     /// The resource changed under us (validator mismatch, size change).
     ResourceChanged,
@@ -221,6 +222,16 @@ pub enum Error {
         detail: String,
     },
 
+    /// The link stopped leading to the file (a login page instead of the file, or
+    /// a redirect to an error somewhere else). A new link is needed.
+    #[error("the link no longer leads to the file: {0}")]
+    LinkExpired(String),
+
+    /// A new link offered by [`Engine::refresh_link`](crate::Engine::refresh_link)
+    /// does not lead to the same file.
+    #[error("the new link was not accepted: {0}")]
+    RefreshRejected(String),
+
     /// The downloaded file does not match the expected checksum.
     #[error("checksum mismatch: expected {expected} ({origin}), got {actual}")]
     ChecksumMismatch {
@@ -251,7 +262,7 @@ impl Error {
                 ..
             } => classify_status(*status, *previously_worked),
             Error::Network { .. } | Error::Timeout(_) | Error::Protocol(_) => ErrorKind::Transient,
-            Error::ResourceChanged(_) => ErrorKind::ResourceChanged,
+            Error::ResourceChanged(_) | Error::RefreshRejected(_) => ErrorKind::ResourceChanged,
             Error::RangeUnsupported(_) => ErrorKind::RangeUnsupported,
             Error::Disk { .. }
             | Error::InsufficientSpace { .. }
@@ -264,6 +275,7 @@ impl Error {
             Error::UnknownDownload(_) => ErrorKind::NotFound,
             Error::InvalidState { .. } => ErrorKind::InvalidState,
             Error::ChecksumMismatch { .. } => ErrorKind::Integrity,
+            Error::LinkExpired(_) => ErrorKind::LinkExpired,
         }
     }
 
@@ -305,6 +317,8 @@ impl Error {
             Error::InvalidState { .. } => "error.invalid_state",
             Error::PartialMissing { .. } => "error.partial_missing",
             Error::ChecksumMismatch { .. } => "error.checksum_mismatch",
+            Error::LinkExpired(_) => "error.link_expired",
+            Error::RefreshRejected(_) => "error.refresh_rejected",
         }
     }
 

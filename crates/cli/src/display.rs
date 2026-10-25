@@ -169,6 +169,22 @@ fn stream_style() -> ProgressStyle {
 }
 
 /// The final line after a successful download.
+/// Why `refresh` accepted a new link, for people.
+pub(crate) fn evidence(e: &boltget_engine::RefreshEvidence) -> String {
+    match e {
+        boltget_engine::RefreshEvidence::SameEtag => "same size and ETag".into(),
+        boltget_engine::RefreshEvidence::Samples { ranges, bytes } => format!(
+            "same size, and {ranges} sample range{} ({}) equal the bytes already downloaded",
+            if *ranges == 1 { "" } else { "s" },
+            HumanBytes(*bytes)
+        ),
+        boltget_engine::RefreshEvidence::NothingDownloaded => {
+            "same size (nothing was downloaded yet)".into()
+        }
+        _ => "accepted".into(),
+    }
+}
+
 pub(crate) fn summary(done: &Completed) {
     let secs = done.elapsed.as_secs_f64().max(1e-3);
     let fetched = done.bytes.saturating_sub(done.resumed_from);

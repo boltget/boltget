@@ -32,6 +32,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 3,
         sql: include_str!("migrations/0003_checksum.sql"),
     },
+    Migration {
+        version: 4,
+        sql: include_str!("migrations/0004_download_source.sql"),
+    },
 ];
 
 /// The schema version this build writes.

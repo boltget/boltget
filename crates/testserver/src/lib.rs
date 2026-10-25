@@ -30,10 +30,14 @@
 //! | `key=K` | Request counter key (defaults to the whole query string) |
 //! | `digest=repr|content|legacy|md5|goog|amz` | Advertise the content's digest: `Repr-Digest` / `Content-Digest` (SHA-256), `Digest` (SHA-512), `Content-MD5`, `x-goog-hash` (MD5), `x-amz-checksum-sha256`. Body digests (`content`, `md5`) describe the bytes of this response |
 //! | `digest_bad=1` | ... but advertise a wrong digest |
+//! | `etag_salt=X` | Same content, different `ETag` (another storage backend) |
+//! | `html_from=K` | From request K on, answer `200` with an HTML page (a login page) |
 //!
 //! Other routes:
 //!
 //! - `/redirect?hops=N&code=C&to=<pct-encoded URL>`: a chain of N redirects ending at `to`.
+//! - `/switch?after=K&to=<url>&then=<url>`: redirects to `to` for the first K requests,
+//!   then to `then` (a redirect target that moved).
 //! - `/signed?valid=M&...`: redirects to a fresh `/s/<token>?...` URL that serves
 //!   `/data` for M requests, then answers 403 (an expiring signed URL).
 //! - `/auth?...`: like `/data`, but 401 unless `Authorization` is present.
@@ -290,6 +294,26 @@ fn handle(state: &Arc<State>, addr: SocketAddr, req: &Request<Incoming>) -> Resp
     let q = query_map(&query);
     let resp = if path == "/redirect" {
         redirect(&q, addr)
+    } else if path == "/switch" {
+        let n = {
+            let mut c = state.counters.lock().expect("counter lock");
+            let e = c.entry(format!("switch:{query}")).or_insert(0);
+            *e += 1;
+            *e - 1
+        };
+        let after = num(&q, "after").unwrap_or(1) as usize;
+        let to = q
+            .get(if n < after { "to" } else { "then" })
+            .cloned()
+            .unwrap_or_default();
+        Response::builder()
+            .status(StatusCode::FOUND)
+            .header(
+                header::LOCATION,
+                percent_decode_str(&to).decode_utf8_lossy().into_owned(),
+            )
+            .body(empty())
+            .expect("valid response")
     } else if path == "/signed" {
         let token = state.next_token.fetch_add(1, Ordering::SeqCst).to_string();
         let valid = num(&q, "valid").unwrap_or(1) as usize;
@@ -428,11 +452,26 @@ fn data(
         }
     }
 
+    // Another storage backend can tag the same bytes differently.
+    let salt = q
+        .get("etag_salt")
+        .map_or(String::new(), |s| format!("-{s}"));
     let etag = match q.get("etag").map_or("strong", String::as_str) {
         "none" => None,
-        "weak" => Some(format!("W/\"{seed}-{size}-{version}\"")),
-        _ => Some(format!("\"{seed}-{size}-{version}\"")),
+        "weak" => Some(format!("W/\"{seed}-{size}-{version}{salt}\"")),
+        _ => Some(format!("\"{seed}-{size}-{version}{salt}\"")),
     };
+    if num(q, "html_from").is_some_and(|k| n >= k) {
+        // A login or error page served with a success status.
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+            .body(text(
+                "<html><body>Please log in</body></html>
+",
+            ))
+            .expect("valid response");
+    }
     let now = SystemTime::now();
     let last_modified = (num(q, "lastmod") == Some(1)).then(|| {
         // Fixed per version, so it is a usable validator; a changed resource has a new date.

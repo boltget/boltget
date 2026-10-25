@@ -46,6 +46,10 @@ pub enum State {
     Failed,
     /// Stopped by the caller.
     Cancelled,
+    /// The link stopped working (expired, or leads to a login page) and
+    /// re-resolving the original URL did not help. Continue it with
+    /// [`Engine::refresh_link`](crate::Engine::refresh_link).
+    NeedsNewLink,
     /// Every byte arrived but the file does not match its checksum. The partial
     /// file is kept; resuming with `restart` downloads it again.
     Corrupt,
@@ -57,7 +61,12 @@ impl State {
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            State::Completed | State::Failed | State::Cancelled | State::Paused | State::Corrupt
+            State::Completed
+                | State::Failed
+                | State::Cancelled
+                | State::Paused
+                | State::Corrupt
+                | State::NeedsNewLink
         )
     }
 
@@ -82,6 +91,7 @@ impl State {
             State::Failed => "failed",
             State::Cancelled => "cancelled",
             State::Corrupt => "corrupt",
+            State::NeedsNewLink => "needs_new_link",
         }
     }
 
@@ -98,6 +108,7 @@ impl State {
             "failed" => State::Failed,
             "cancelled" => State::Cancelled,
             "corrupt" => State::Corrupt,
+            "needs_new_link" => State::NeedsNewLink,
             _ => return None,
         })
     }

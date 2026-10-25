@@ -272,7 +272,10 @@ pub(crate) fn set_state(
     state: State,
     error: Option<&ErrorInfo>,
 ) -> Result<()> {
-    let keep_error = matches!(state, State::Failed | State::Retrying | State::Corrupt);
+    let keep_error = matches!(
+        state,
+        State::Failed | State::Retrying | State::Corrupt | State::NeedsNewLink
+    );
     let (kind, key, detail) = match error.filter(|_| keep_error) {
         Some(e) => (
             Some(e.kind.as_str()),
@@ -567,4 +570,66 @@ pub(crate) fn set_checksum_actual(conn: &Connection, id: DownloadId, hex: &str) 
         params![int(id.0)?, hex, now_ms()],
     )?;
     Ok(())
+}
+
+/// A new link accepted by link refresh.
+#[derive(Debug, Clone)]
+pub(crate) struct Refreshed {
+    pub(crate) url: String,
+    pub(crate) request_ctx: String,
+    pub(crate) final_url: String,
+    pub(crate) validators: Validators,
+    pub(crate) mime: Option<String>,
+}
+
+/// Switches a download to a new link: re-resolution starts from it, its
+/// validators replace the old ones, and both links are kept in
+/// `download_source`. A download waiting for a new link becomes paused.
+pub(crate) fn apply_refresh(conn: &mut Connection, id: DownloadId, r: &Refreshed) -> Result<()> {
+    let tx = conn.transaction()?;
+    let now = now_ms();
+    let old: String = tx.query_row(
+        "SELECT url FROM download WHERE id = ?1",
+        [int(id.0)?],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT OR IGNORE INTO download_source (download_id, url, role, added_at)
+         VALUES (?1, ?2, 'primary', ?3)",
+        params![int(id.0)?, old, now],
+    )?;
+    tx.execute(
+        "INSERT INTO download_source (download_id, url, role, added_at) VALUES (?1, ?2, 'refreshed', ?3)
+         ON CONFLICT (download_id, url) DO UPDATE SET added_at = excluded.added_at, last_error = NULL",
+        params![int(id.0)?, r.url, now],
+    )?;
+    tx.execute(
+        "UPDATE download SET url = ?2, request_ctx = ?3, final_url = ?4, etag = ?5,
+                last_modified = ?6, validator_date = ?7, mime = coalesce(?8, mime),
+                state = CASE WHEN state = 'needs_new_link' THEN 'paused' ELSE state END,
+                error_kind = NULL, error_key = NULL, error_detail = NULL, updated_at = ?9
+         WHERE id = ?1",
+        params![
+            int(id.0)?,
+            r.url,
+            r.request_ctx,
+            r.final_url,
+            r.validators.etag,
+            r.validators.last_modified,
+            r.validators.date,
+            r.mime,
+            now
+        ],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Links a download has used, oldest first: `(url, role)`.
+pub(crate) fn sources(conn: &Connection, id: DownloadId) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT url, role FROM download_source WHERE download_id = ?1 ORDER BY added_at, role <> 'primary', url",
+    )?;
+    let rows = stmt.query_map([int(id.0)?], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
 }

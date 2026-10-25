@@ -218,6 +218,9 @@ struct Core {
     resumable: AtomicBool,
     /// The server encodes the body: never send ranges.
     encoded: bool,
+    /// `Content-Type` of the file (probe or checkpoint); an HTML page where the
+    /// file was not HTML means the link now leads to a login or error page.
+    mime: Option<String>,
     writer: Mutex<Option<mpsc::Sender<WriteChunk>>>,
     next_worker: AtomicU32,
     rtt_micros: AtomicU64,
@@ -339,6 +342,10 @@ pub(crate) async fn run(shared: Arc<Shared>, env: Env, job: Job) -> Result<Compl
         }
         Err(Error::Cancelled) if shared.pause_requested() => shared.set_state(State::Paused, None),
         Err(Error::Cancelled) => shared.set_state(State::Cancelled, None),
+        Err(e) if e.kind() == ErrorKind::LinkExpired => {
+            tracing::warn!(id = %shared.id, error = %e, "the download needs a new link");
+            shared.set_state(State::NeedsNewLink, Some(e));
+        }
         Err(e) if e.kind() == ErrorKind::Integrity => {
             tracing::warn!(id = %shared.id, error = %e, "download is corrupt");
             shared.set_state(State::Corrupt, Some(e));
@@ -1097,6 +1104,7 @@ async fn execute(
         total,
         resumable: AtomicBool::new(resumable),
         encoded,
+        mime: info.probe.content_type.clone(),
         writer: Mutex::new(Some(w.tx.clone())),
         next_worker: AtomicU32::new(0),
         rtt_micros: AtomicU64::new(0),
@@ -1767,6 +1775,18 @@ async fn open_range(
         if prev == 0 { rtt } else { (prev * 7 + rtt) / 8 },
         Ordering::Relaxed,
     );
+    if resp.status.is_client_error()
+        && !matches!(resp.status.as_u16(), 401 | 403 | 408 | 410 | 416 | 429)
+        && resp.url.host_str() != Some(core.original.host.as_str())
+        && resp.url.host_str() != Some(core.worker_origin.host.as_str())
+    {
+        // The redirect chain now ends somewhere else entirely, with an error.
+        return Err(Error::LinkExpired(format!(
+            "it now leads to {}, which answered {}",
+            redact_url(&resp.url),
+            resp.status
+        )));
+    }
     if resp.status.as_u16() >= 400 {
         return Err(probe::status_error(
             resp.status,
@@ -1783,6 +1803,12 @@ async fn open_range(
 fn validate(core: &Core, resp: &Response, cursor: u64, ranged: bool) -> Result<()> {
     if headers::is_encoded(&resp.headers) != core.encoded {
         return Err(Error::ResourceChanged("Content-Encoding changed".into()));
+    }
+    if headers::is_html(&resp.headers) && !core.mime.as_deref().is_some_and(headers::is_html_type) {
+        return Err(Error::LinkExpired(format!(
+            "the server sent an HTML page ({}) instead of the file",
+            resp.status
+        )));
     }
     let later = Validators::from_headers(&resp.headers);
     match resp.status {

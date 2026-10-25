@@ -618,3 +618,66 @@ async fn checksum_match_mismatch_and_keep() {
     .await;
     assert_eq!(out.status.code(), Some(2));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn expired_link_is_refreshed() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let size = 4 * 1024 * 1024;
+    let target = dir.path().join("big.bin");
+    let out = boltget(
+        state.path(),
+        vec![
+            s("get"),
+            srv.url(&format!(
+                "/data?size={size}&seed=31&throttle=2097152&slow_index=1&slow_bps=131072&fail_status=403&fail_from=4"
+            )),
+            s("-o"),
+            target.display().to_string(),
+            s("-c"),
+            s("4"),
+            s("--min-split-size"),
+            s("65536"),
+            s("-q"),
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(6), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("boltget refresh 1"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(list_json(state.path()).await[0]["state"], "needs_new_link");
+
+    let out = boltget(
+        state.path(),
+        vec![
+            s("refresh"),
+            s("1"),
+            srv.url(&format!("/data?size={}&seed=31&key=x", size + 1)),
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(6), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("size differs"), "{}", stderr(&out));
+
+    let out = boltget(
+        state.path(),
+        vec![
+            s("refresh"),
+            s("1"),
+            srv.url(&format!("/data?size={size}&seed=31&etag_salt=b")),
+            s("--json"),
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let events = lines(&out);
+    assert_eq!(events[0]["event"], "refreshed");
+    assert_eq!(events[0]["evidence"]["kind"], "samples");
+    assert_eq!(events.last().unwrap()["event"], "completed");
+    let got = std::fs::read(&target).unwrap();
+    assert_eq!(Sha256::digest(&got), Sha256::digest(content(31, size)));
+}

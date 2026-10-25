@@ -39,6 +39,7 @@ mod integrity;
 mod platform;
 mod probe;
 mod ratelimit;
+mod refresh;
 mod request;
 pub mod segment;
 mod store;
@@ -56,6 +57,7 @@ pub use integrity::{Checksum, ChecksumSource, HashAlgo};
 pub use platform::{Preallocation, is_sparse};
 pub use probe::{ProbeResult, RangeSupport};
 pub use ratelimit::parse_rate;
+pub use refresh::{RefreshEvidence, RefreshOutcome};
 pub use request::{RequestContext, redact_url};
 pub use store::{
     ChecksumStatus, DB_FILE, DownloadSummary, LOCK_FILE, SavedError, default_data_dir,
