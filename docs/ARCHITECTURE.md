@@ -82,6 +82,8 @@ Two modes, chosen automatically:
 - **Client mode** (app is running): the CLI connects to the named pipe and asks the running engine to add, list, pause or resume downloads. Progress is streamed back over the pipe. This avoids two engines writing the same database.
 - **Standalone mode** (app is not running, or `--standalone`): the CLI embeds the engine directly, takes the [single owner lock](#single-owner-rule), and runs to completion. This is what `boltget bench` and server/CI usage rely on. Standalone mode can use a separate database (`--state <path>`) or none at all (`--no-state`, keeps resume data in a sidecar file next to the download).
 
+> **Implementation note (v0.1):** only standalone mode exists; client mode arrives with the desktop app's IPC server (v0.2). `--state <dir>` (also `BOLTGET_DATA_DIR`) is a directory holding `boltget.db`, not a database path. `get --no-state` records nothing and keeps no sidecar yet, so such a download cannot be resumed. While one `boltget` owns the database, a second invocation that needs it exits with code 7 and says why (`pause` explains that Ctrl-C in the owning terminal pauses it); `boltget list` instead opens the database read-only, without the lock, and shows the owner's last checkpoint (WAL lets a reader in another process see committed data safely).
+
 ### Sidecars
 
 `yt-dlp.exe` and `ffmpeg.exe` are child processes started by the engine with an explicit argument vector (never through a shell), with stdout parsed for progress. They are installed on demand and verified before first use. See [VIDEO.md](VIDEO.md) and [Security](#security).
@@ -91,6 +93,7 @@ Two modes, chosen automatically:
 Exactly one process at a time may own the engine state for a given database:
 
 - Ownership is a lock file (`boltget.db.lock`, held with an exclusive OS file lock for the lifetime of the owner) next to the database.
+  - *Implemented (v0.1)* with `std::fs::File::try_lock` (`LockFileEx` on Windows, `flock` on Unix), taken before the database is opened and released only after it is closed. The OS drops the lock when the owner dies, so a crash never leaves a stale lock. A second owner gets `Error::DatabaseLocked`.
 - The desktop app takes it on start. If it cannot (a standalone CLI is running), the app shows a "BoltGet CLI is running a download" state and becomes a client until the lock is released.
 - Clients talk to the owner over IPC. This is simpler and safer than having multiple processes coordinate on SQLite rows.
 
@@ -172,11 +175,11 @@ Same framing as native messaging (4-byte little-endian length prefix + JSON) so 
 
 All persistent state lives in one SQLite database per user:
 
-- Windows: `%APPDATA%\BoltGet\boltget.db` (roaming is fine for settings, but downloads reference local paths; see open question below)
+- Windows: `%LOCALAPPDATA%\BoltGet\boltget.db`
 - macOS (post-1.0): `~/Library/Application Support/app.boltget/boltget.db`
 - Linux (post-1.0): `$XDG_DATA_HOME/boltget/boltget.db`
 
-Open question: whether to place the DB in `%LOCALAPPDATA%` instead, since download state references local file paths and roaming profiles would sync stale state. Current leaning: `%LOCALAPPDATA%\BoltGet` for the DB and logs, settings exportable as a file.
+Decided in v0.1 (this was an open question between `%APPDATA%` and `%LOCALAPPDATA%`): the local, non-roaming directory, because download state references local file paths and a roaming profile would sync stale state to other machines. Logs go next to it; settings will be exportable as a file. The directory is resolved with the `directories` crate (`boltget_engine::default_data_dir`); the CLI overrides it with `--state <dir>` or `BOLTGET_DATA_DIR`, and tests always use a temporary directory.
 
 ### Entities
 
@@ -282,6 +285,14 @@ CREATE INDEX download_queue_idx ON download(queue_id, queue_position);
 
 Settings are typed in Rust (`struct Settings` with `serde` defaults) and stored as one row per key, so adding a setting never needs a migration and unknown keys from a newer version are preserved.
 
+> **Implemented in v0.1 (schema version 1, `crates/engine/src/store/migrations/0001_initial.sql`):** the `download`, `segment` and `setting` tables. Differences from the draft above:
+> - **Ids are integers** (`INTEGER PRIMARY KEY AUTOINCREMENT`), not ULIDs: a CLI user types them (`boltget resume 7`), and `AUTOINCREMENT` guarantees an id is never reused after a remove. Events and JSON output carry the same number (`DownloadId(u64)`).
+> - `download` also stores how the destination was requested (`requested_kind` `dir`/`file`, `requested_dest`, `conflict`), so a download that never got past the probe can be started again exactly as added; `file_name` and `dest_dir` are `NULL` until the probe resolves them. `validator_date` (the probe's `Date`, needed for the `If-Range` rule), `encoded` (a `Content-Encoding` makes resuming impossible) and `error_key` (message-catalog key) are added.
+> - `segment."end"` is `NULL` while the total size is unknown (a single open segment).
+> - `request_ctx` is plain JSON **without secrets** (no `Authorization`) instead of a DPAPI-encrypted blob, until cookies make encryption necessary; see [Security](#security).
+> - `queue`, `category`, `download_source` and `media_job` are not created yet; they arrive with their features as new migrations. `setting` exists but is unused.
+> - Segment rows of a completed download are deleted.
+
 ### Download state machine
 
 ```mermaid
@@ -307,13 +318,17 @@ stateDiagram-v2
 
 `Postprocessing` (ffmpeg muxing) sits between `Verifying` and `Completed` for media jobs.
 
+> **Implemented in v0.1:** `Queued`, `Probing`, `Downloading`, `Retrying`, `Paused`, `Completed`, `Failed` and `Cancelled` (stopped by the caller; resumable like `Paused`). There is no scheduler yet, so resuming goes straight from `Paused`/`Failed`/`Cancelled` to `Downloading` (or `Probing` when it has to start over) instead of through `Queued`, and `Verifying`, `NeedsNewLink` and `Corrupt` arrive with checksums and link refresh. A download a dead process left in `Probing`/`Downloading`/`Retrying` is set to `Paused` when the database is next opened.
+
 ## Persistence
 
 - **Library:** `rusqlite` with the bundled SQLite build, accessed only from a dedicated **DB actor thread**. Async code sends commands over a channel and awaits a oneshot reply. This keeps SQLite usage single-threaded and off the Tokio worker threads. (Rationale and the sqlx alternative: [TECH-STACK.md](TECH-STACK.md#adr-005-sqlite-via-rusqlite-on-a-dedicated-thread).)
 - **Pragmas:** `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`.
   - With WAL + `NORMAL`, a power loss can lose the most recent commits but never corrupts the database. For BoltGet this is the safe direction: the DB can only lag behind the data file, never run ahead of it (see [ENGINE.md, Checkpointing](ENGINE.md#checkpointing-and-crash-safe-resume)).
 - **Migrations:** plain SQL files embedded in the binary (`include_str!`), applied in order, tracked with `PRAGMA user_version`. Migrations are forward-only. Before applying a migration, the DB file is copied to `boltget.db.bak-<version>`.
+  - *Implemented (v0.1):* each migration runs in one transaction together with its `user_version` bump, so a failing migration leaves the previous version intact. The backup is written with `VACUUM INTO` (a consistent copy that includes WAL content) and only for an existing database, not a new one. A database with a higher version than the build knows is refused rather than opened.
 - **Write batching:** segment checkpoints for all active downloads are written in one transaction per checkpoint interval, not one transaction per segment update.
+  - *v0.1 deviation:* one transaction per download per writer flush (see [ENGINE.md, Checkpointing](ENGINE.md#checkpointing-and-crash-safe-resume)); still never one per segment update.
 - **Secrets in the DB:** `request_ctx` (cookies, Authorization header, proxy credentials) is encrypted with Windows DPAPI (`CryptProtectData`, current-user scope) before storage. It is deleted when the download completes, unless the user opts to keep it for re-downloads. On other platforms: the OS keychain via the `keyring` crate holds a per-install key used to encrypt this column.
 - **Logs:** rotating files in `%LOCALAPPDATA%\BoltGet\logs` via `tracing` + `tracing-appender`. URLs are logged with query strings redacted by default (signed URLs are credentials).
 

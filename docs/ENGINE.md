@@ -95,6 +95,8 @@ Every request the engine sends adds:
 - `User-Agent`: the browser's if provided, otherwise `BoltGet/<version>`. (Some servers block non-browser agents; the browser-provided value is preferred for that reason, not to impersonate.)
 
 > **Implementation note (v0.1 phase 1):** `RequestContext` carries the URL, the allowlisted headers and the browser-suggested name. Cookies, proxy and auth fields arrive with their features in later phases.
+>
+> **Implementation note (v0.1 phase 2):** the context is persisted as plain JSON (`download.request_ctx`) **without secrets**: `Authorization` is never written to the database, so a resumed download that needs it must be given it again (`ResumeOptions::header`, CLI `resume -H`). DPAPI encryption of the column arrives together with cookies, the first secret that has to survive a restart. The URL itself is stored as given; signed URLs carry credentials in the query, which is why every URL in logs, events and `boltget list` is redacted.
 
 ## Probing
 
@@ -390,6 +392,8 @@ All writes are positional; there is no shared file cursor:
 - Unbuffered (`FILE_FLAG_NO_BUFFERING`) or overlapped I/O is not used in v0.1. The OS page cache plus 1 MiB writes is expected to be adequate; if benchmarks show the writer is the bottleneck at multi-gigabit speeds, evaluate overlapped I/O or io_uring (Linux) then.
 
 > **Implementation note (v0.1 phase 1):** the writer is a plain OS thread per download, not one from a pool; with a handful of concurrent downloads that is simpler and costs the same. It consumes a Tokio bounded channel with `blocking_recv`. Interval flushes are checked as chunks arrive, so an idle download flushes on the next chunk or at the end rather than on a timer.
+>
+> **Implementation note (v0.1 phase 2):** coalescing is also bounded in time: a worker hands its buffer to the writer when it reaches 1 MiB **or** when its oldest byte is 250 ms old (`coalesce_delay`, design target), whichever comes first. Without the bound, a connection running at 100 KB/s held up to 10 s of data in memory, where neither progress display nor checkpoint could see it and a crash lost it; the kill-and-resume harness showed most kills finding no checkpoint at all. Fast connections fill 1 MiB well within 250 ms, so their write size is unchanged.
 
 ### Flush (fsync) policy
 
@@ -430,9 +434,25 @@ On startup (or when a paused download is resumed):
 4. Validate: `206` with consistent `Content-Range` total, matching ETag / Last-Modified. Any mismatch → `ResourceChanged` (or [link refresh](#link-refresh) flow if the URL is dead).
 5. Rebuild the segment table from `start + done` cursors, merge completed segments, assign workers to incomplete segments, and continue normally.
 
+> **Implementation notes (v0.1 phase 2), checkpoints:**
+> - Storage is the SQLite database described in [ARCHITECTURE.md, Persistence](ARCHITECTURE.md#persistence), on its DB thread (`crates/engine/src/store`). The supervisor queues a checkpoint after **every** durable report from the writer (that is, after every successful `sync_data`, at most every `flush_interval` or `flush_bytes`); the checkpoint is built from `SegmentTable::checkpoint()`, which reads `durable` only. Steps 3–5 above are therefore exactly the code path, and the DB thread runs jobs in submission order, so a checkpoint never overtakes the flush it describes.
+> - One transaction per download per flush, not one per checkpoint interval for all active downloads ("write batching" in ARCHITECTURE.md). WAL commits with `synchronous=NORMAL` do not fsync, so this costs little; batch across downloads if profiling ever shows the DB thread.
+> - Each checkpoint replaces the download's segment rows as a whole (it also carries splits, `resumable` once a verification request confirmed ranges, the current final URL, and the total once an unknown-size download reached its end). Downloads that cannot resume are not checkpointed during the transfer: their progress is worthless after a crash.
+> - Pause, cancel, failure and shutdown drain the writer (final flush), then write a final checkpoint and **wait** for the commit before the state changes. On success, the checkpoint "all bytes durable, final name `<name>`" is committed before the `.boltget` file is renamed; completion then records the final path and drops the segment rows. A process killed between the rename and the completion record is recognised on resume (partial gone, checkpoint complete, final file present with the right size) and simply marked completed.
+> - On open, downloads left `probing`/`downloading`/`retrying` by a process that died are marked `paused`; their checkpoint is valid by construction.
+
+> **Implementation notes (v0.1 phase 2), resume procedure:**
+> - Step 2: a missing `.boltget` file, or one whose length is not `total_size` (for unknown-size downloads: shorter than the checkpoint), fails with `Error::PartialMissing` (`Disk` kind) instead of silently starting over; the caller "offers" the restart with `ResumeOptions::restart` (CLI `boltget resume <id> --restart`), which keeps the resolved destination. When nothing was checkpointed yet, or the server cannot resume (`resumable = false`, `Content-Encoding`), the download starts over without asking, as [Single-connection downloads](#single-connection-downloads) promises.
+> - Step 3: the re-probe is not a separate step: each worker's first request is the normal range request from its segment's cursor with `If-Range`, validated exactly like every other range response (`206`, `Content-Range` start and total, `ETag`/`Last-Modified`). It starts from the **original** URL, not the saved `final_url`, so an expired signed redirect target costs nothing; the new final URL is recorded from the response.
+> - Step 4: `ResourceChanged` fails the resume (exit code 6 in the CLI, with a hint to `--restart`); the error is stored with the download.
+> - Step 5: `SegmentTable::from_checkpoint` rebuilds the table with `received = durable = done` and merges every fully done segment into its successor (a segment's progress stays contiguous from its start), so the table does not grow over many resume cycles. Workers then take the incomplete segments (lowest offset first) and dynamic splitting continues as usual; the worker count is the configured count, capped by the remaining bytes over `min_split_size`.
+> - Free space is checked again for the bytes still missing (sparse files allocate on write).
+
 ### Shutdown
 
 On app exit (including Windows logoff/shutdown, `WM_QUERYENDSESSION` / `WM_ENDSESSION`), the engine pauses all downloads, which flushes and checkpoints. Design target: complete within 2 seconds; if the OS kills the process sooner, the invariant still guarantees a correct resume.
+
+> **Implementation note (v0.1 phase 2):** `Engine::shutdown` pauses every running download, waits for their final checkpoints, then closes the database and releases the owner lock. Hooking it to logoff/shutdown messages is the desktop app's job (v0.2). The CLI pauses on the first Ctrl-C (exit code 130) and exits immediately on a second one, which the invariant makes safe.
 
 ## Retries, backoff and stall detection
 
@@ -458,7 +478,7 @@ delay = random_uniform(0, min(max_delay, base × 2^attempt))
 - **Connect timeout:** design target 15 s. **TLS handshake timeout:** design target 15 s. **First byte after request:** design target 30 s.
 - **Slow connection:** a worker whose throughput stays below a fraction of the per-worker median (design target: 10% for 20 s), while others are healthy, is closed and its segment reassigned (or split). This handles a single connection landing on a bad CDN edge.
 
-> **Implementation notes (v0.1 phase 1):** the slow connection is reconnected from its cursor (counted as an attempt) rather than reassigned. The median is the last one measured while at least two workers were transferring, kept after the others finish, because the typical victim is the last connection still running. While every active worker is waiting to retry, the download state is `Retrying`. Not implemented yet: pausing retries while the OS reports no connectivity, and pausing (instead of failing) when `Retry-After` exceeds 15 minutes, since pause arrives with checkpointing.
+> **Implementation notes (v0.1 phase 1):** the slow connection is reconnected from its cursor (counted as an attempt) rather than reassigned. The median is the last one measured while at least two workers were transferring, kept after the others finish, because the typical victim is the last connection still running. While every active worker is waiting to retry, the download state is `Retrying`. Not implemented yet: pausing retries while the OS reports no connectivity, and pausing (instead of failing) when `Retry-After` exceeds 15 minutes. Pause and checkpointing exist since phase 2, but the long-`Retry-After` case still fails the download (with its checkpoint kept, so `resume` continues it).
 
 ## Link refresh
 
@@ -612,7 +632,9 @@ pub enum EngineEvent {
 }
 ```
 
-> **Implementation notes (v0.1 phase 1):** there is no database yet, so the phase-1 API is in-memory: `Engine::new(EngineConfig)` (no owner lock or migrations), `Engine::probe`, `Engine::add(AddRequest) -> DownloadHandle` (the handle exposes `id`, `state`, `progress`, `info`, `cancel` and `wait`), `Engine::subscribe`, `Engine::progress`, `Engine::cancel` and `Engine::shutdown` (cancels everything). `pause`/`resume`/`remove`/`list`/`refresh_link`/`set_limit` arrive with checkpointing and their features. Events: `Added`, `Probed` (new: carries the resolved destination and probe result), `StateChanged`, `SegmentsChanged`, `Completed`; all are `serde`-serializable and are what `boltget get --json` prints. A progress snapshot takes the segment-table lock briefly (to copy the segments) rather than reading only atomics. Cancelled and failed downloads keep their flushed `.boltget` file for the resume feature. Completed files get the Mark of the Web with `HostUrl` stripped of query string and credentials, because signed URLs carry secrets there.
+> **Implementation notes (v0.1 phase 1):** there is no database yet, so the phase-1 API is in-memory: `Engine::new(EngineConfig)` (no owner lock or migrations), `Engine::probe`, `Engine::add(AddRequest) -> DownloadHandle` (the handle exposes `id`, `state`, `progress`, `info`, `cancel` and `wait`), `Engine::subscribe`, `Engine::progress`, `Engine::cancel` and `Engine::shutdown` (cancels everything). `pause`/`resume`/`remove`/`list`/`refresh_link`/`set_limit` arrive with checkpointing and their features.
+>
+> **Implementation notes (v0.1 phase 2):** `Engine::open(EngineConfig, data_dir)` (synchronous: takes the owner lock, runs migrations, recovers interrupted downloads; `Error::DatabaseLocked` if another process owns it) and the in-memory `Engine::new` stay side by side. `add` stays synchronous and returns the `DownloadHandle`: ids are allocated in memory (the single owner makes that safe) and the insert is queued ahead of everything the download writes later. Added: `resume(id, ResumeOptions { connections, headers, restart }) -> DownloadHandle`, `pause(id) -> State` (waits for the final checkpoint), `request_pause(id)` (does not wait, for signal handlers), `remove(id, delete_file) -> Removed`, `list() -> Vec<DownloadSummary>`, `Engine::peek(data_dir)` (read-only list without the lock), `DownloadHandle::pause`, and an `async shutdown`. `DownloadId` stays a `u64` (see [ARCHITECTURE.md, Data model](ARCHITECTURE.md#data-model)). New state `Paused` (`State::is_terminal` now means "the task has stopped": completed, failed, paused or cancelled), new event `Resumed { id, downloaded, total }` (after `Probed`, whose info then comes from the checkpoint), `Completed::resumed_from` (bytes already on disk when the run started, so speeds count only what the run fetched), and new error kinds `Busy`, `Database`, `NotFound`, `InvalidState`. A paused download's `wait()` returns `Error::Cancelled`; its state tells pause from cancel. Events: `Added`, `Probed` (new: carries the resolved destination and probe result), `StateChanged`, `SegmentsChanged`, `Completed`; all are `serde`-serializable and are what `boltget get --json` prints. A progress snapshot takes the segment-table lock briefly (to copy the segments) rather than reading only atomics. Cancelled and failed downloads keep their flushed `.boltget` file for the resume feature. Completed files get the Mark of the Web with `HostUrl` stripped of query string and credentials, because signed URLs carry secrets there.
 
 The CLI maps directly onto this API:
 
@@ -620,12 +642,14 @@ The CLI maps directly onto this API:
 boltget get <url> [-o <path>] [-c <max-connections>] [--limit 5M] [--sha256 <hex>]
                [--header 'Name: value'] [--cookie-file cookies.txt] [--proxy socks5://...]
 boltget list [--json]
-boltget pause|resume|remove <id>
+boltget pause|resume|remove <id>        # resume [--restart], remove [--delete-file]
 boltget refresh <id> <new-url>
 boltget bench <url> [--runs 5] [--connections 8,16,32] [--json]
 ```
 
 `--cookie-file` accepts the Netscape `cookies.txt` format, which browsers' export extensions and other tools produce.
+
+> **Implementation note (v0.1 phase 2):** the CLI runs in standalone mode only (client mode over the named pipe is v0.2, see [ARCHITECTURE.md](ARCHITECTURE.md#the-cli-boltgetexe)). `get` and `resume` run the download in the foreground of that invocation. A second invocation that needs the database while another one owns it exits with code 7 and says why; `pause <id>` cannot reach the running process yet and tells the user to press Ctrl-C there, while `list` reads the owner's last checkpoint without the lock. `--state <dir>` (or `BOLTGET_DATA_DIR`) selects the database directory and `get --no-state` downloads without recording anything (no sidecar resume file yet).
 
 ## Testing strategy
 
@@ -635,6 +659,10 @@ boltget bench <url> [--runs 5] [--connections 8,16,32] [--json]
 
   > **Implementation note (v0.1 phase 1):** the server is its own crate, `crates/testserver` (`boltget-testserver`), so the CLI's end-to-end tests can use it too. It covers everything above except HTTP/2, plus 416/429/503 with `Retry-After`, stalls, one-slow-connection, `Content-Disposition`/`Content-Encoding` variants, chunked and unknown-total responses and an `Authorization`-checking endpoint. Resets and failures are triggered deterministically (first N requests, or requests K..K+N) rather than at random, so failures reproduce. Every download test compares SHA-256 with the generated content.
 - **Crash tests:** a harness that starts a download in a child process, kills it (`TerminateProcess`) at random times, resumes, repeats, and compares the final SHA-256. Run thousands of iterations nightly.
+
+  > **Implementation note (v0.1 phase 2):** `crates/cli/tests/crash_resume.rs` drives the real `boltget` binary against the test server: `get`, then `resume` up to five times per download, each killed (`TerminateProcess` / `SIGKILL`) at a random moment (mostly mid-transfer, some during start-up and around the end), then a final `resume` that must finish with a byte-identical file under the requested name and nothing left over. Sizes (300 KiB to 6 MiB), connection counts (1–8), throttling and flush intervals vary per download. After every kill the harness reads the database and checks that every byte it calls done is in the partial file. `BOLTGET_CRASH_CYCLES` sets the number of kills (16 in a normal `cargo test`), `BOLTGET_CRASH_JOBS` the parallelism (4), and `BOLTGET_CRASH_SEED` reproduces a run. A killed process keeps what it wrote in the OS page cache, so this harness cannot show power-loss behaviour; that is covered by the ordering above and by the `crash_and_resume_from_checkpoint` property test, which throws away every byte that was not durable at each simulated crash. Hidden CLI flags `--flush-interval-ms` and `--min-split-size` exist for these tests. Engine-level pause/resume/recovery cases live in `crates/engine/tests/resume.rs`.
+  >
+  > Results so far (Windows 11, NTFS): 1,000 kills over 349 downloads, all byte-identical; 680 kills found checkpointed progress, 309 came before the first checkpoint of their run and 11 before the download was even recorded. Real-world smoke test with a 100 MB CacheFly file: killed (`TerminateProcess`) at 64% checkpointed, and separately interrupted with a console Ctrl-C (exit code 130, paused at 97%); both `boltget resume` runs finished with the same SHA-256 as a clean download.
 - **Fuzzing (`cargo-fuzz`):** header parsers (Content-Disposition, Content-Range, Retry-After, cookies) and the native messaging decoder.
 - **File system matrix (Windows CI and manual):** NTFS, exFAT USB drive, FAT32 (4 GiB check), ReFS where available, an SMB share.
 
