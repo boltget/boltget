@@ -26,6 +26,7 @@
 //! ```
 #![warn(missing_docs)]
 
+mod adaptive;
 mod backoff;
 mod config;
 mod cookies;

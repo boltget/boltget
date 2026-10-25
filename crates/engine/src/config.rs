@@ -5,6 +5,10 @@ use std::time::Duration;
 
 /// Engine-wide settings.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent on/off tunables, each documented with its design target"
+)]
 #[non_exhaustive]
 pub struct EngineConfig {
     /// Connections a download starts with (design target 8, like IDM's default).
@@ -76,6 +80,25 @@ pub struct EngineConfig {
     /// ([`ProxyChoice::Default`](crate::ProxyChoice::Default)). Direct by default;
     /// the CLI fills it from the environment ([`ProxyRules::from_env`](crate::ProxyRules::from_env)).
     pub proxy: crate::proxy::ProxyRules,
+    /// Adapt the connection count of downloads that do not fix one
+    /// ([`AddRequest::connections`](crate::AddRequest::connections)): start at
+    /// `initial_connections` and add connections while they raise throughput.
+    pub adaptive: bool,
+    /// Throughput is measured over this window after each change (1 s).
+    pub adapt_window: Duration,
+    /// ... starting this long after the change, once new connections ramped up (500 ms).
+    pub adapt_settle: Duration,
+    /// An increase is kept only if throughput rose by more than this fraction (10%).
+    pub adapt_gain: f64,
+    /// After an increase that did not pay off, hold this long before probing again (10 s).
+    pub adapt_cooldown: Duration,
+    /// How long a host's learned connection ceiling (after `429`/`503`) is kept (24 h).
+    pub host_ceiling_ttl: Duration,
+    /// Near the end, a connection that would need more than `tail_eta` for its
+    /// remainder has it split down to halves of this size (256 KiB; 0 disables).
+    pub tail_split_size: u64,
+    /// See `tail_split_size` (1 s).
+    pub tail_eta: Duration,
 }
 
 impl Default for EngineConfig {
@@ -113,6 +136,14 @@ impl Default for EngineConfig {
             user_agent: concat!("BoltGet/", env!("CARGO_PKG_VERSION")).to_owned(),
             speed_limit: None,
             proxy: crate::proxy::ProxyRules::direct(),
+            adaptive: true,
+            adapt_window: Duration::from_secs(1),
+            adapt_settle: Duration::from_millis(500),
+            adapt_gain: 0.10,
+            adapt_cooldown: Duration::from_secs(10),
+            host_ceiling_ttl: Duration::from_secs(24 * 3600),
+            tail_split_size: 256 * 1024,
+            tail_eta: Duration::from_secs(1),
         }
     }
 }

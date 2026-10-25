@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use ::http::{HeaderName, HeaderValue};
 use serde::Serialize;
@@ -142,6 +143,9 @@ pub(crate) struct Limits {
     global: Arc<Semaphore>,
     per_host: Arc<Mutex<HashMap<Origin, Arc<Semaphore>>>>,
     max_per_host: usize,
+    /// Connection ceilings learned from hosts that pushed back (`429`/`503`),
+    /// with their expiry. Keyed by origin (`scheme://host:port`).
+    ceilings: Arc<Mutex<HashMap<String, (u32, SystemTime)>>>,
 }
 
 impl Limits {
@@ -150,7 +154,47 @@ impl Limits {
             global: Arc::new(Semaphore::new(max_total as usize)),
             per_host: Arc::default(),
             max_per_host: max_per_host as usize,
+            ceilings: Arc::default(),
         }
+    }
+
+    /// The learned connection ceiling for `origin`, if one is in force.
+    pub(crate) fn ceiling(&self, origin: &Origin) -> Option<u32> {
+        let map = self
+            .ceilings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.get(&origin.to_string())
+            .filter(|(_, until)| *until > SystemTime::now())
+            .map(|(n, _)| *n)
+    }
+
+    /// Records that `origin` allows at most `n` connections until `until`.
+    /// Returns the whole (unexpired) table, to be saved.
+    pub(crate) fn set_ceiling(
+        &self,
+        origin: &Origin,
+        n: u32,
+        until: SystemTime,
+    ) -> HashMap<String, (u32, SystemTime)> {
+        let mut map = self
+            .ceilings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let now = SystemTime::now();
+        map.retain(|_, (_, u)| *u > now);
+        map.insert(origin.to_string(), (n.max(1), until));
+        map.clone()
+    }
+
+    /// Loads saved ceilings (expired ones are dropped).
+    pub(crate) fn load_ceilings(&self, saved: HashMap<String, (u32, SystemTime)>) {
+        let now = SystemTime::now();
+        let mut map = self
+            .ceilings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.extend(saved.into_iter().filter(|(_, (_, u))| *u > now));
     }
 
     fn host(&self, origin: &Origin) -> Arc<Semaphore> {
@@ -338,7 +382,9 @@ impl Engine {
         if opened.settings.speed_limit.is_some() {
             config.speed_limit = opened.settings.speed_limit;
         }
-        Self::build(config, Some(opened.store), opened.next_id)
+        let engine = Self::build(config, Some(opened.store), opened.next_id)?;
+        engine.inner.env.limits.load_ceilings(opened.ceilings);
+        Ok(engine)
     }
 
     /// Lists the downloads in `data_dir` without taking ownership (read-only),

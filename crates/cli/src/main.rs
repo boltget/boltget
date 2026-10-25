@@ -148,9 +148,14 @@ enum Command {
 /// Options shared by the commands that run a download.
 #[derive(Debug, Args)]
 struct RunArgs {
-    /// Number of connections (1-32).
+    /// Use exactly N connections (1-32). Without it the count adapts: it starts
+    /// small and adds connections only while they make the download faster.
     #[arg(short, long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..=32))]
     connections: Option<u32>,
+
+    /// Upper bound for the adaptive connection count (1-32, default 16).
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..=32), conflicts_with = "connections")]
+    max_connections: Option<u32>,
 
     /// Print line-delimited JSON events on stdout instead of a progress display.
     #[arg(long)]
@@ -452,6 +457,10 @@ fn engine_config(run: &RunArgs) -> EngineConfig {
     if let Some(n) = run.connections {
         cfg.initial_connections = n;
         cfg.max_connections = cfg.max_connections.max(n);
+    }
+    if let Some(n) = run.max_connections {
+        cfg.max_connections = n;
+        cfg.initial_connections = cfg.initial_connections.min(n);
     }
     if let Some(ms) = run.flush_interval_ms {
         cfg.flush_interval = Duration::from_millis(ms);

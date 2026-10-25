@@ -16,6 +16,7 @@
 //! | `change_after=K` | From request K on (0-based), serve different content and `ETag` |
 //! | `ifrange=ignore` | Do not evaluate `If-Range` (serve 206 even if it mismatches) |
 //! | `throttle=BPS` | Limit each response to BPS bytes per second |
+//! | `line_bps=BPS` | All responses with the same `key` share one line of BPS bytes per second (a saturated last mile) |
 //! | `slow_index=K&slow_bps=BPS` | Request K (0-based) is limited to BPS instead (one bad connection) |
 //! | `stall_after=B&stall_count=N` | The first N requests stop sending after B body bytes |
 //! | `reset_after=B&reset_count=N` | The first N requests abort the connection after B body bytes |
@@ -135,6 +136,8 @@ struct State {
     connections: AtomicUsize,
     body_bytes: AtomicU64,
     tokens: Mutex<HashMap<String, usize>>,
+    /// Shared "lines" for `line_bps`: when the line is free again, per key.
+    lines: Mutex<HashMap<String, Arc<Mutex<tokio::time::Instant>>>>,
     next_token: AtomicUsize,
 }
 
@@ -168,6 +171,7 @@ impl TestServer {
             connections: AtomicUsize::default(),
             body_bytes: AtomicU64::default(),
             tokens: Mutex::default(),
+            lines: Mutex::default(),
             next_token: AtomicUsize::default(),
         });
         let stop = CancellationToken::new();
@@ -606,7 +610,19 @@ fn data(
         b = b.header(header::CONTENT_LENGTH, len);
     }
 
+    let line = num(q, "line_bps").filter(|b| *b > 0).map(|bps| {
+        let k = q.get("key").cloned().unwrap_or_else(|| query.to_owned());
+        let slot = state
+            .lines
+            .lock()
+            .expect("line lock")
+            .entry(k)
+            .or_insert_with(|| Arc::new(Mutex::new(tokio::time::Instant::now())))
+            .clone();
+        (slot, bps)
+    });
     let plan = Plan {
+        line,
         seed,
         start,
         len,
@@ -627,8 +643,10 @@ fn data(
         .expect("valid response")
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Plan {
+    /// A line shared by all responses with the same key: (free-at, bytes per second).
+    line: Option<(Arc<Mutex<tokio::time::Instant>>, u64)>,
     seed: u64,
     start: u64,
     len: u64,
@@ -671,6 +689,22 @@ async fn produce(p: Plan, tx: mpsc::Sender<Result<Bytes, std::io::Error>>, state
             let due = Duration::from_secs_f64((sent + n) as f64 / bps as f64);
             tokio::select! {
                 () = tokio::time::sleep_until(started + due) => {}
+                () = tx.closed() => return,
+            }
+        }
+        if let Some((slot, bps)) = &p.line {
+            // Book this chunk's time on the shared line (FIFO), then wait for it.
+            let done_at = {
+                let mut free = slot.lock().expect("line lock");
+                // Up to 50 ms of credit, so a sender that wakes late (coarse
+                // timers on Windows) does not leave the line idle.
+                let now = tokio::time::Instant::now();
+                let begin = (*free).max(now.checked_sub(Duration::from_millis(50)).unwrap_or(now));
+                *free = begin + Duration::from_secs_f64(n as f64 / *bps as f64);
+                *free
+            };
+            tokio::select! {
+                () = tokio::time::sleep_until(done_at) => {}
                 () = tx.closed() => return,
             }
         }

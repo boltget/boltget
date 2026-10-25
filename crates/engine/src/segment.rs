@@ -76,6 +76,11 @@ pub struct SplitConfig {
     pub align: u64,
     /// Smallest segment worth a new connection (design target 1 MiB).
     pub min_split_size: u64,
+    /// Near the end, a segment whose owner needs more than `tail_eta_secs` to
+    /// finish may be split down to halves of this size (256 KiB; 0 disables).
+    pub tail_split_size: u64,
+    /// See `tail_split_size` (design target 1 s).
+    pub tail_eta_secs: f64,
 }
 
 impl Default for SplitConfig {
@@ -83,6 +88,8 @@ impl Default for SplitConfig {
         Self {
             align: 64 * 1024,
             min_split_size: 1024 * 1024,
+            tail_split_size: 256 * 1024,
+            tail_eta_secs: 1.0,
         }
     }
 }
@@ -419,7 +426,7 @@ impl SegmentTable {
         for (_, idx) in candidates {
             let e = self.entry(idx).expect("candidate exists");
             let effective = e.seg.remaining().saturating_sub(e.ahead);
-            if effective < 2 * self.cfg.min_split_size {
+            if effective < self.split_floor(e) {
                 continue;
             }
             let mid = align_down(e.seg.cursor() + e.ahead + effective / 2, self.cfg.align);
@@ -428,6 +435,38 @@ impl SegmentTable {
             }
         }
         None
+    }
+
+    /// The smallest effective remainder at which `e` may be split: twice
+    /// `min_split_size`, or, for an owner that would need more than
+    /// `tail_eta_secs` for its remainder (a slow connection at the end of a
+    /// download), twice `tail_split_size`.
+    fn split_floor(&self, e: &Entry) -> u64 {
+        let normal = 2 * self.cfg.min_split_size;
+        let tail = 2 * self.cfg.tail_split_size;
+        if tail == 0 || tail >= normal || e.rate <= 0.0 {
+            return normal;
+        }
+        let effective = e.seg.remaining().saturating_sub(e.ahead);
+        if effective as f64 / e.rate > self.cfg.tail_eta_secs {
+            tail
+        } else {
+            normal
+        }
+    }
+
+    /// Whether a new worker would find work: an unassigned segment, or an
+    /// active one the split rule would split.
+    pub fn can_split(&self) -> bool {
+        self.entries.iter().any(|e| {
+            if e.seg.is_received() {
+                return false;
+            }
+            if e.seg.worker.is_none() {
+                return true;
+            }
+            self.splittable && e.seg.remaining().saturating_sub(e.ahead) >= self.split_floor(e)
+        })
     }
 
     /// Splits segment `idx` at `mid`: the segment keeps `[start, mid)` and a new
@@ -693,6 +732,8 @@ mod tests {
         let cfg = SplitConfig {
             align: 1,
             min_split_size: 10,
+            tail_split_size: 0,
+            tail_eta_secs: 1.0,
         };
         let mut t = SegmentTable::new_split(100, 1, cfg);
         t.next_work(0);
@@ -762,10 +803,36 @@ mod tests {
     }
 
     #[test]
+    fn slow_tail_is_split_below_the_normal_floor() {
+        let cfg = SplitConfig {
+            align: 1,
+            min_split_size: 1000,
+            tail_split_size: 100,
+            tail_eta_secs: 1.0,
+        };
+        let mut t = SegmentTable::new_split(1500, 1, cfg);
+        t.next_work(0);
+        // 1500 bytes left: below 2 x 1000, so no split while the rate is unknown...
+        assert!(!t.can_split());
+        assert_eq!(t.next_work(1), None);
+        // ... nor when the owner finishes within a second ...
+        t.update_stats(0, 2000.0, 0);
+        assert!(!t.can_split());
+        // ... but a slow owner (1.5 s left) gets its tail split.
+        t.update_stats(0, 1000.0, 0);
+        assert!(t.can_split());
+        assert!(matches!(t.next_work(1), Some(Work::Segment { .. })));
+        assert_eq!(t.segments().len(), 2);
+        t.check_invariants().unwrap();
+    }
+
+    #[test]
     fn endgame_targets_slow_segment_once() {
         let cfg = SplitConfig {
             align: 1,
             min_split_size: 1000,
+            tail_split_size: 0,
+            tail_eta_secs: 1.0,
         };
         let mut t = SegmentTable::new_split(3000, 3, cfg);
         for w in 0..3 {
@@ -791,6 +858,8 @@ mod tests {
         let cfg = SplitConfig {
             align: 1,
             min_split_size: 10,
+            tail_split_size: 0,
+            tail_eta_secs: 1.0,
         };
         let cp = |idx, start, end, done| SegmentCheckpoint {
             idx,
@@ -987,7 +1056,7 @@ mod tests {
                 min_split in 1u64..2_000,
                 ops in proptest::collection::vec(op(), 0..300),
             ) {
-                let cfg = SplitConfig { align, min_split_size: min_split };
+                let cfg = SplitConfig { align, min_split_size: min_split, ..SplitConfig::default() };
                 let mut t = SegmentTable::new_split(total, k, cfg);
                 let mut m = Model {
                     data: vec![0; total as usize],
@@ -1046,7 +1115,7 @@ mod tests {
                     0..300,
                 ),
             ) {
-                let cfg = SplitConfig { align: 16, min_split_size: min_split };
+                let cfg = SplitConfig { align: 16, min_split_size: min_split, ..SplitConfig::default() };
                 let mut t = SegmentTable::new_split(total, k, cfg);
                 let mut m = Model {
                     data: vec![0xAA; total as usize],
@@ -1097,7 +1166,7 @@ mod tests {
                 ahead in 0u64..100_000,
                 min_split in 1u64..50_000,
             ) {
-                let cfg = SplitConfig { align: 64, min_split_size: min_split };
+                let cfg = SplitConfig { align: 64, min_split_size: min_split, ..SplitConfig::default() };
                 let mut t = SegmentTable::new_split(total, 1, cfg);
                 t.next_work(0);
                 let claim = total * u64::from(claimed_frac) / 255;

@@ -642,3 +642,47 @@ pub(crate) fn set_request_ctx(conn: &Connection, id: DownloadId, ctx: &str) -> R
     )?;
     Ok(())
 }
+
+/// Setting key of the learned per-host connection ceilings:
+/// `{"https://host:443": [ceiling, until_unix_ms], ...}`.
+pub(crate) const SETTING_HOST_CEILINGS: &str = "engine.host_ceilings";
+
+/// Learned per-host connection ceilings with their expiry.
+pub(crate) type Ceilings = std::collections::HashMap<String, (u32, SystemTime)>;
+
+pub(crate) fn load_host_ceilings(conn: &Connection) -> Result<Ceilings> {
+    let mut out = Ceilings::new();
+    if let Some(serde_json::Value::Object(map)) = get_setting(conn, SETTING_HOST_CEILINGS)? {
+        for (origin, v) in map {
+            if let Some([n, until]) = v.as_array().map(Vec::as_slice)
+                && let (Some(n), Some(until)) = (n.as_u64(), until.as_u64())
+            {
+                out.insert(
+                    origin,
+                    (
+                        u32::try_from(n).unwrap_or(u32::MAX),
+                        UNIX_EPOCH + std::time::Duration::from_millis(until),
+                    ),
+                );
+            }
+        }
+    }
+    Ok(out)
+}
+
+pub(crate) fn save_host_ceilings(conn: &Connection, c: &Ceilings) -> Result<()> {
+    let map: serde_json::Map<String, serde_json::Value> = c
+        .iter()
+        .map(|(o, (n, until))| {
+            let ms = until
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as u64);
+            (o.clone(), serde_json::json!([n, ms]))
+        })
+        .collect();
+    put_setting(
+        conn,
+        SETTING_HOST_CEILINGS,
+        Some(&serde_json::Value::Object(map)),
+    )
+}

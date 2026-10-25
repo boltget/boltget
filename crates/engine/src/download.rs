@@ -24,6 +24,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use crate::adaptive::{AdaptConfig, Controller, Observation};
 use crate::config::EngineConfig;
 use crate::engine::{AddRequest, ConflictPolicy, Destination, Limits};
 use crate::error::{Error, ErrorKind, Result};
@@ -188,8 +189,12 @@ struct WorkerStat {
     buffered: AtomicU64,
     /// Current segment, `u32::MAX` if none.
     seg: AtomicU32,
-    /// Set by the slow-connection detector: reconnect from the cursor.
+    /// Set by the slow-connection detector: reconnect from the cursor (or,
+    /// with `retire` set, stop).
     kick: Notify,
+    /// The adaptive controller wants one connection fewer: this worker stops,
+    /// keeping what it received, and its segment goes back to the table.
+    retire: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -480,13 +485,22 @@ fn split_config(cfg: &EngineConfig) -> SplitConfig {
     SplitConfig {
         align: cfg.segment_align,
         min_split_size: cfg.min_split_size,
+        tail_split_size: cfg.tail_split_size,
+        tail_eta_secs: cfg.tail_eta.as_secs_f64(),
     }
 }
 
-fn wanted_connections(cfg: &EngineConfig, req: &AddRequest) -> u32 {
-    req.connections
-        .unwrap_or(cfg.initial_connections)
-        .clamp(1, cfg.max_connections)
+/// The connection count a download starts with: the one it asks for, or the
+/// default capped by what the host is known to allow.
+fn wanted_connections(env: &Env, req: &AddRequest, origin: &Origin) -> u32 {
+    let cfg = &env.cfg;
+    match req.connections {
+        Some(n) => n.clamp(1, cfg.max_connections),
+        None => cfg
+            .initial_connections
+            .min(env.limits.ceiling(origin).unwrap_or(u32::MAX))
+            .clamp(1, cfg.max_connections),
+    }
 }
 
 /// Everything [`execute`] needs, from a fresh probe or from a checkpoint.
@@ -599,7 +613,7 @@ async fn setup_fresh(
 
     // ---- Segment table ----
     let split_cfg = split_config(&cfg);
-    let wanted = wanted_connections(&cfg, req);
+    let wanted = wanted_connections(env, req, &worker_origin);
     let available = env.limits.available(&worker_origin) as u64 + 1;
     let k_for = |n: u64| -> u32 {
         let by_size = (n / cfg.min_split_size).max(1);
@@ -901,7 +915,7 @@ fn prepare_resume(
         0
     } else if table.is_splittable() {
         let by_size = (remaining / cfg.min_split_size).max(incomplete).max(1);
-        u64::from(wanted_connections(&cfg, req)).min(by_size) as u32
+        u64::from(wanted_connections(env, req, &worker_origin)).min(by_size) as u32
     } else {
         1
     };
@@ -1127,6 +1141,30 @@ async fn execute(
         workers.spawn(async move { (id, worker(c, id, start, permit).await) });
     };
     let mut extra_on_confirm = 0u32;
+    // Connections the download should run with: fixed, or steered by the
+    // adaptive controller (`docs/ENGINE.md`, "Adaptive connection count").
+    let initial_k = match &start {
+        StartPlan::Probe { k, .. } | StartPlan::Resume { k } => (*k).max(1),
+    };
+    let mut target = initial_k;
+    let mut ctl = (req.connections.is_none() && cfg.adaptive).then(|| {
+        let ceiling = env
+            .limits
+            .ceiling(&core.worker_origin)
+            .unwrap_or(u32::MAX)
+            .min(cfg.max_connections);
+        Controller::new(
+            AdaptConfig {
+                window: cfg.adapt_window,
+                settle: cfg.adapt_settle,
+                gain: cfg.adapt_gain,
+                cooldown: cfg.adapt_cooldown,
+                max: cfg.max_connections,
+            },
+            initial_k,
+            ceiling,
+        )
+    });
     match start {
         StartPlan::Probe {
             response,
@@ -1267,7 +1305,7 @@ async fn execute(
                 tracing::debug!(id = %shared.id, worker = id, ?exit, "worker exited");
                 let _ = core.table(|t| t.release(id));
                 match exit {
-                    Exit::Idle | Exit::Cancelled => {}
+                    Exit::Idle | Exit::Retired | Exit::Cancelled => {}
                     Exit::Fatal(e) => {
                         if fatal.is_none() {
                             fatal = Some(e);
@@ -1279,6 +1317,16 @@ async fn execute(
                         // Fewer connections is the point; if nobody is left, carry on
                         // with one (it waits for the hold set by the throttled worker).
                         last_error = Some(e);
+                        let running = workers.len() as u32;
+                        target = match ctl.as_mut() {
+                            Some(c) => {
+                                let n = c.throttled(started.elapsed(), running + 1);
+                                remember_ceiling(env, &core, c.ceiling());
+                                n
+                            }
+                            None => running.max(1).min(target),
+                        };
+                        tracing::debug!(id = %shared.id, target, "server pushed back; fewer connections");
                         if workers.is_empty() {
                             spawn(&mut workers, Start::Fresh { delay: Duration::ZERO }, None);
                         }
@@ -1287,6 +1335,30 @@ async fn execute(
             }
             _ = tick.tick() => {
                 monitor.tick(&core);
+                if fatal.is_none() && !shared.cancel.is_cancelled() && core.table(|t| t.is_splittable())? {
+                    let running = workers.len() as u32;
+                    let can_grow = core.table(|t| t.can_split())?;
+                    if let Some(c) = ctl.as_mut()
+                        && let Some(n) = c.tick(Observation {
+                            now: started.elapsed(),
+                            bytes: shared.downloaded.load(Ordering::Relaxed),
+                            active: running,
+                            can_grow,
+                        })
+                    {
+                        tracing::debug!(id = %shared.id, from = target, to = n, "adaptive connection count");
+                        target = n;
+                    }
+                    if running > target {
+                        monitor.retire_slowest(&core, (running - target) as usize);
+                    } else if running < target && can_grow {
+                        // More connections wanted, or a connection finished while a
+                        // slow one still holds a splittable tail.
+                        for i in 0..(target - running) {
+                            spawn(&mut workers, Start::Fresh { delay: cfg.worker_stagger * i }, None);
+                        }
+                    }
+                }
                 let n = core.table(|t| t.segments().len())?;
                 if n != seg_count {
                     seg_count = n;
@@ -1442,6 +1514,18 @@ async fn execute(
     })
 }
 
+/// Records a host's learned connection ceiling for later downloads (in
+/// memory and, with a database, for `host_ceiling_ttl`).
+fn remember_ceiling(env: &Env, core: &Core, ceiling: u32) {
+    let until = std::time::SystemTime::now() + env.cfg.host_ceiling_ttl;
+    let all = env.limits.set_ceiling(&core.worker_origin, ceiling, until);
+    if let Some(store) = &core.shared.store {
+        store.send("host ceilings", move |c| {
+            records::save_host_ceilings(c, &all)
+        });
+    }
+}
+
 /// The split point for the verification request: the middle, aligned.
 fn verification_offset(total: u64, align: u64) -> u64 {
     crate::segment::align_down(total / 2, align).max(1)
@@ -1470,6 +1554,30 @@ struct Monitor {
 }
 
 impl Monitor {
+    /// Asks the `n` slowest transferring workers to stop (adaptive decrease),
+    /// counting those already asked.
+    fn retire_slowest(&self, core: &Core, n: usize) {
+        let stats: Vec<(WorkerId, Arc<WorkerStat>)> = match core.stats.lock() {
+            Ok(s) => s.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            Err(_) => return,
+        };
+        let asked = stats
+            .iter()
+            .filter(|(_, s)| s.retire.load(Ordering::Relaxed))
+            .count();
+        let mut candidates: Vec<(f64, WorkerId, Arc<WorkerStat>)> = stats
+            .into_iter()
+            .filter(|(_, s)| !s.retire.load(Ordering::Relaxed))
+            .map(|(id, s)| (self.per_worker.get(&id).map_or(0.0, |e| e.1), id, s))
+            .collect();
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (rate, id, s) in candidates.into_iter().take(n.saturating_sub(asked)) {
+            tracing::debug!(worker = id, rate, "retiring connection");
+            s.retire.store(true, Ordering::Relaxed);
+            s.kick.notify_one();
+        }
+    }
+
     fn tick(&mut self, core: &Core) {
         let now = Instant::now();
         let dt = self
@@ -1568,6 +1676,8 @@ struct Live {
 enum Exit {
     /// No work left.
     Idle,
+    /// Retired by the adaptive controller (segment released).
+    Retired,
     /// Stopped by cancellation.
     Cancelled,
     /// Retries exhausted on its segment (released for others).
@@ -1670,6 +1780,9 @@ async fn worker(
         let (seg, live) = if let Some(p) = pending.take() {
             p
         } else {
+            if stat.retire.load(Ordering::Relaxed) {
+                return Exit::Retired;
+            }
             let work = core.table(|t| {
                 t.next_work(id).or_else(|| {
                     core.cfg
@@ -1862,6 +1975,8 @@ enum StreamEnd {
     Done,
     /// The server ended the body cleanly before the segment end.
     Short,
+    /// The worker was retired; what it received is handed over.
+    Retired,
 }
 
 /// Downloads segment `seg` until it is complete, retrying per `docs/ENGINE.md`.
@@ -1876,6 +1991,9 @@ async fn run_segment(
     let fatal = |e: Error| Exit::Fatal(e);
     let mut attempts = 0u32;
     loop {
+        if stat.retire.load(Ordering::Relaxed) {
+            return Err(Exit::Retired);
+        }
         let (cursor, end) = core
             .table(|t| t.get(seg).map(|s| (s.cursor(), s.end)))
             .map_err(fatal)?
@@ -1915,6 +2033,7 @@ async fn run_segment(
         }
         let err = match attempt {
             Ok(StreamEnd::Done) => return Ok(()),
+            Ok(StreamEnd::Retired) => return Err(Exit::Retired),
             Ok(StreamEnd::Short) if progressed && core.resumable() => continue,
             Ok(StreamEnd::Short) => {
                 Error::Protocol("response ended before the expected end".into())
@@ -2089,7 +2208,13 @@ async fn stream(
         }
         let next = tokio::select! {
             () = core.stop.cancelled() => return Err(Error::Cancelled),
-            () = stat.kick.notified() => return Err(Error::Timeout("slow connection")),
+            () = stat.kick.notified() => {
+                if stat.retire.load(Ordering::Relaxed) {
+                    flush!();
+                    return Ok(StreamEnd::Retired);
+                }
+                return Err(Error::Timeout("slow connection"));
+            }
             c = resp.chunk(stall) => c,
         };
         match next {
