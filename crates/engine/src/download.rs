@@ -42,6 +42,9 @@ use crate::store::Store;
 use crate::store::records::{self, Checkpoint, Resolved, Saved};
 use crate::writer::{self, FlushPolicy, WriteChunk};
 
+/// The `Timeout` reason of a connection the slow-connection check dropped.
+const SLOW_CONNECTION: &str = "slow connection";
+
 /// Suffix of in-progress files.
 pub(crate) const PARTIAL_SUFFIX: &str = ".boltget";
 
@@ -1653,7 +1656,20 @@ impl Monitor {
                 // typical when a server throttles extra connections) gets a
                 // short window too.
                 let starved = entry.1 < median / 20.0;
-                let limit = if starved {
+                // The last connections, slow, with more than `tail_eta` to go: a
+                // new connection costs one round trip, so do not wait at all.
+                let seg = stat.seg.load(Ordering::Relaxed);
+                let remaining = core
+                    .table(|t| t.get(seg).map_or(0, crate::segment::Segment::remaining))
+                    .unwrap_or(0);
+                // (A rate of 0 may be a connection still connecting: that one
+                // is left to the starved rule below.)
+                let hopeless = fast == 0
+                    && entry.1 > 0.0
+                    && remaining as f64 / entry.1 > core.cfg.tail_eta.as_secs_f64();
+                let limit = if hopeless {
+                    Duration::ZERO
+                } else if starved {
                     window.min(core.cfg.tail_slow_window * 3)
                 } else {
                     window
@@ -1667,6 +1683,8 @@ impl Monitor {
                     );
                     stat.kick.notify_one();
                     entry.2 = None;
+                    // Judge the new connection on its own throughput.
+                    entry.1 = 0.0;
                 }
             } else {
                 entry.2 = None;
@@ -2105,10 +2123,15 @@ async fn run_segment(
                 if attempts >= core.cfg.max_attempts {
                     return Err(Exit::GaveUp(err));
                 }
-                let Some(delay) = probe::retry_delay(&err, &core.connector, attempts - 1) else {
-                    return Err(Exit::Fatal(err));
-                };
-                backoff_sleep(core, delay).await?;
+                // Our own decision to drop a slow connection is not a server error:
+                // reconnect at once (the attempt still counts).
+                if !matches!(err, Error::Timeout(SLOW_CONNECTION)) {
+                    let Some(delay) = probe::retry_delay(&err, &core.connector, attempts - 1)
+                    else {
+                        return Err(Exit::Fatal(err));
+                    };
+                    backoff_sleep(core, delay).await?;
+                }
             }
             _ => return Err(Exit::Fatal(err)),
         }
@@ -2238,7 +2261,7 @@ async fn stream(
                     flush!();
                     return Ok(StreamEnd::Retired);
                 }
-                return Err(Error::Timeout("slow connection"));
+                return Err(Error::Timeout(SLOW_CONNECTION));
             }
             c = resp.chunk(stall) => c,
         };
