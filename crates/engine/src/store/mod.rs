@@ -74,6 +74,8 @@ pub(crate) struct Opened {
     pub(crate) store: Store,
     /// The first id to hand out.
     pub(crate) next_id: u64,
+    /// The stored settings.
+    pub(crate) settings: crate::config::Settings,
 }
 
 fn open_connection(path: &Path, read_only: bool) -> Result<Connection> {
@@ -133,6 +135,7 @@ impl Store {
         migrations::migrate(&mut conn, &db_path, migrations::MIGRATIONS)?;
         let recovered = records::recover_interrupted(&conn)?;
         let next_id = records::next_id(&conn)?;
+        let settings = records::load_settings(&conn)?;
         if recovered > 0 {
             tracing::info!(
                 recovered,
@@ -161,6 +164,7 @@ impl Store {
                 }),
             },
             next_id,
+            settings,
         })
     }
 
@@ -168,15 +172,26 @@ impl Store {
     /// so it works while another process owns the database. A missing database
     /// is an empty list.
     pub(crate) fn peek(dir: &Path) -> Result<Vec<DownloadSummary>> {
+        Ok(Self::peek_with(dir, records::list)?.unwrap_or_default())
+    }
+
+    /// The stored settings, read without taking ownership (defaults if there is
+    /// no database).
+    pub(crate) fn peek_settings(dir: &Path) -> Result<crate::config::Settings> {
+        Ok(Self::peek_with(dir, records::load_settings)?.unwrap_or_default())
+    }
+
+    /// Runs `f` on a read-only connection; `None` if there is no database yet.
+    fn peek_with<T>(dir: &Path, f: impl FnOnce(&Connection) -> Result<T>) -> Result<Option<T>> {
         let db_path = dir.join(DB_FILE);
         if !db_path.exists() {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         let conn = open_connection(&db_path, true)?;
         let version = migrations::current(&conn)?;
         let latest = migrations::latest(migrations::MIGRATIONS);
         if version == 0 {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         if version != latest {
             return Err(Error::Database(format!(
@@ -184,7 +199,7 @@ impl Store {
                 db_path.display()
             )));
         }
-        records::list(&conn)
+        f(&conn).map(Some)
     }
 
     /// The data directory.
@@ -262,6 +277,7 @@ mod tests {
             requested_dest: "/tmp".into(),
             conflict: "rename",
             max_connections: None,
+            speed_limit: None,
         }
     }
 

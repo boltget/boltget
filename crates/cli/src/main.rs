@@ -1,11 +1,12 @@
 //! `boltget`: the BoltGet command-line downloader.
 //!
 //! ```text
-//! boltget get <url> [-o <path>] [-c <connections>] [--json] [--header 'Name: value']
+//! boltget get <url> [-o <path>] [-c <connections>] [--limit <rate>] [--json] [--header 'Name: value']
 //! boltget list [--json]
 //! boltget pause <id>
-//! boltget resume <id> [--restart] [--json]
+//! boltget resume <id> [--restart] [--limit <rate>] [--json]
 //! boltget remove <id> [--delete-file]
+//! boltget config list|get|set|unset [limit] [<value>]
 //! ```
 //!
 //! Downloads are kept in a database (`--state`, default `%LOCALAPPDATA%\BoltGet`)
@@ -17,6 +18,7 @@
 mod display;
 mod json;
 mod list;
+mod settings;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -118,6 +120,9 @@ enum Command {
     /// Remove a download from the list.
     #[command(after_long_help = EXIT_CODES)]
     Remove(RemoveArgs),
+    /// Show or change settings (the global speed limit).
+    #[command(after_long_help = settings::HELP)]
+    Config(settings::ConfigArgs),
 }
 
 /// Options shared by the commands that run a download.
@@ -140,6 +145,12 @@ struct RunArgs {
     /// No progress display; only the final line (or errors).
     #[arg(short, long, conflicts_with = "json")]
     quiet: bool,
+
+    /// Limit this download to RATE bytes per second: 500K, 5M, 1.5M, 1048576
+    /// (K = 1024). `0` or `off` removes a limit set earlier. Saved with the
+    /// download. The global limit (`boltget config set limit`) applies on top.
+    #[arg(long, value_name = "RATE", value_parser = parse_limit)]
+    limit: Option<Rate>,
 
     /// Flush (and checkpoint) interval in milliseconds. For tests.
     #[arg(long, hide = true, value_name = "MS")]
@@ -208,6 +219,14 @@ struct RemoveArgs {
     delete_file: bool,
 }
 
+/// A `--limit` value: bytes per second, `None` for "no limit".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Rate(pub(crate) Option<u64>);
+
+pub(crate) fn parse_limit(s: &str) -> Result<Rate, String> {
+    boltget_engine::parse_rate(s).map(Rate)
+}
+
 /// Maps an engine error to the documented exit code.
 fn exit_code_for(e: &Error) -> u8 {
     match e.kind() {
@@ -273,6 +292,9 @@ fn build_request(args: &GetArgs) -> Result<AddRequest> {
         Some(p) => Destination::File(p.clone()),
     };
     let mut req = AddRequest::new(ctx, destination);
+    if let Some(Rate(r)) = args.run.limit {
+        req = req.speed_limit(r);
+    }
     if let Some(n) = args.run.connections {
         req = req.connections(n);
     }
@@ -445,8 +467,14 @@ async fn get(args: GetArgs, state: Option<&Path>, verbose: u8) -> u8 {
             return code;
         }
     };
-    let cfg = engine_config(&args.run);
+    let mut cfg = engine_config(&args.run);
     let engine = if args.no_state {
+        // Nothing is recorded, but the stored global limit still applies.
+        if let Ok(dir) = data_dir(state)
+            && let Ok(s) = Engine::peek_settings(&dir)
+        {
+            cfg.speed_limit = s.speed_limit;
+        }
         match Engine::new(cfg) {
             Ok(e) => e,
             Err(e) => return report(&e, args.run.json, None, &[]),
@@ -482,6 +510,9 @@ async fn resume(args: ResumeArgs, state: Option<&Path>, verbose: u8) -> u8 {
     let id = DownloadId(args.id);
     let mut opts = ResumeOptions::default().restart(args.restart);
     opts.connections = args.run.connections;
+    if let Some(Rate(r)) = args.run.limit {
+        opts = opts.speed_limit(r);
+    }
     for (name, value) in headers {
         opts = opts.header(name, value);
     }
@@ -574,6 +605,7 @@ async fn main() -> ExitCode {
         Command::Pause(args) => pause(&args, state).await,
         Command::Resume(args) => resume(args, state, cli.verbose).await,
         Command::Remove(args) => remove(&args, state).await,
+        Command::Config(args) => settings::run(&args, state).await,
     };
     ExitCode::from(code)
 }

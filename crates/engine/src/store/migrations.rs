@@ -19,10 +19,16 @@ pub(crate) struct Migration {
 }
 
 /// All migrations, in order. Never edit a released migration; add a new one.
-pub(crate) const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/0001_initial.sql"),
-}];
+pub(crate) const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/0001_initial.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/0002_speed_limit.sql"),
+    },
+];
 
 /// The schema version this build writes.
 pub(crate) fn latest(migrations: &[Migration]) -> u32 {

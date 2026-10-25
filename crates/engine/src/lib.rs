@@ -37,20 +37,23 @@ mod headers;
 mod http;
 mod platform;
 mod probe;
+mod ratelimit;
 mod request;
 pub mod segment;
 mod store;
 mod writer;
 
-pub use config::EngineConfig;
+pub use config::{EngineConfig, Settings};
 pub use engine::{
-    AddRequest, ConflictPolicy, Destination, DownloadHandle, Engine, Removed, ResumeOptions,
+    AddRequest, ConflictPolicy, Destination, DownloadHandle, Engine, LimitScope, Removed,
+    ResumeOptions,
 };
 pub use error::{Error, ErrorKind, Result};
 pub use events::{Completed, DownloadId, DownloadInfo, EngineEvent, ErrorInfo, Progress, State};
 pub use headers::Validators;
 pub use platform::{Preallocation, is_sparse};
 pub use probe::{ProbeResult, RangeSupport};
+pub use ratelimit::parse_rate;
 pub use request::{RequestContext, redact_url};
 pub use store::{DB_FILE, DownloadSummary, LOCK_FILE, SavedError, default_data_dir};
 

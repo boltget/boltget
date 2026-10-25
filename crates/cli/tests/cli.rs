@@ -473,3 +473,64 @@ async fn sigint_pauses_and_resume_continues() {
     let data = std::fs::read(done["path"].as_str().unwrap()).unwrap();
     assert_eq!(Sha256::digest(&data), Sha256::digest(content(13, size)));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn speed_limit_flag_and_global_setting() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+
+    let out = boltget(state.path(), vec![s("config"), s("get"), s("limit")]).await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "unlimited");
+    let out = boltget(
+        state.path(),
+        vec![s("config"), s("set"), s("limit"), s("8M")],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let out = boltget(state.path(), vec![s("config"), s("list")]).await;
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("8388608 bytes per second"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let bad = boltget(
+        state.path(),
+        vec![s("config"), s("set"), s("limit"), s("fast")],
+    )
+    .await;
+    assert_eq!(bad.status.code(), Some(2));
+    let bad = boltget(
+        state.path(),
+        vec![s("get"), srv.url("/data"), s("--limit"), s("fast")],
+    )
+    .await;
+    assert_eq!(bad.status.code(), Some(2));
+
+    // 2 MiB at 1 MiB/s (the per-download limit is lower than the global 8M).
+    let size = 2 * 1024 * 1024;
+    let t0 = std::time::Instant::now();
+    let out = boltget(
+        state.path(),
+        vec![
+            s("get"),
+            srv.url(&format!("/data?size={size}&seed=4")),
+            s("-o"),
+            dir.path().join("limited.bin").display().to_string(),
+            s("--limit"),
+            s("1M"),
+            s("-q"),
+        ],
+    )
+    .await;
+    let secs = t0.elapsed().as_secs_f64();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert!(secs > 1.5 && secs < 4.5, "took {secs:.2} s");
+    let got = std::fs::read(dir.path().join("limited.bin")).unwrap();
+    assert_eq!(Sha256::digest(&got), Sha256::digest(content(4, size)));
+
+    let out = boltget(state.path(), vec![s("config"), s("unset"), s("limit")]).await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("unlimited"));
+}

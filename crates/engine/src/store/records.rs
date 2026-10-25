@@ -50,6 +50,7 @@ pub(crate) struct NewRecord {
     pub(crate) requested_dest: String,
     pub(crate) conflict: &'static str,
     pub(crate) max_connections: Option<u32>,
+    pub(crate) speed_limit: Option<u64>,
 }
 
 /// What the probe resolved: destination, size, validators and the initial split.
@@ -100,6 +101,7 @@ pub(crate) struct Saved {
     pub(crate) resumable: bool,
     pub(crate) encoded: bool,
     pub(crate) max_connections: Option<u32>,
+    pub(crate) speed_limit: Option<u64>,
     pub(crate) segments: Vec<SegmentCheckpoint>,
 }
 
@@ -160,8 +162,8 @@ pub(crate) fn insert(conn: &Connection, r: &NewRecord) -> Result<()> {
     let now = now_ms();
     conn.execute(
         "INSERT INTO download (id, state, url, request_ctx, requested_kind, requested_dest,
-                               conflict, max_connections, created_at, updated_at)
-         VALUES (?1, 'queued', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                               conflict, max_connections, speed_limit_bps, created_at, updated_at)
+         VALUES (?1, 'queued', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
         params![
             int(r.id.0)?,
             r.url,
@@ -170,6 +172,7 @@ pub(crate) fn insert(conn: &Connection, r: &NewRecord) -> Result<()> {
             r.requested_dest,
             r.conflict,
             r.max_connections,
+            r.speed_limit.map(int).transpose()?,
             now
         ],
     )?;
@@ -379,6 +382,7 @@ pub(crate) fn load(conn: &Connection, id: DownloadId) -> Result<Option<Saved>> {
                 resumable: r.get("resumable")?,
                 encoded: r.get("encoded")?,
                 max_connections: r.get("max_connections")?,
+                speed_limit: r.get::<_, Option<i64>>("speed_limit_bps")?.map(uint),
                 segments: Vec::new(),
             })
         })
@@ -449,4 +453,52 @@ pub(crate) fn get_summary(conn: &Connection, id: DownloadId) -> Result<Option<Do
             summary,
         )
         .optional()?)
+}
+
+/// Changes a download's own speed limit (`None`: no per-download limit).
+pub(crate) fn set_speed_limit(conn: &Connection, id: DownloadId, bps: Option<u64>) -> Result<()> {
+    conn.execute(
+        "UPDATE download SET speed_limit_bps = ?2, updated_at = ?3 WHERE id = ?1",
+        params![int(id.0)?, bps.map(int).transpose()?, now_ms()],
+    )?;
+    Ok(())
+}
+
+/// Setting key of the global bandwidth limit (bytes per second, JSON number).
+pub(crate) const SETTING_SPEED_LIMIT: &str = "engine.speed_limit_bps";
+
+fn get_setting(conn: &Connection, key: &str) -> Result<Option<serde_json::Value>> {
+    let raw: Option<String> = conn
+        .query_row("SELECT value FROM setting WHERE key = ?1", [key], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    // A value this version cannot parse is treated as unset, not as an error.
+    Ok(raw.and_then(|v| serde_json::from_str(&v).ok()))
+}
+
+/// Stores a setting; `None` deletes the row (the default applies).
+pub(crate) fn put_setting(
+    conn: &Connection,
+    key: &str,
+    value: Option<&serde_json::Value>,
+) -> Result<()> {
+    match value {
+        Some(v) => conn.execute(
+            "INSERT INTO setting (key, value) VALUES (?1, ?2)
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            params![key, v.to_string()],
+        )?,
+        None => conn.execute("DELETE FROM setting WHERE key = ?1", [key])?,
+    };
+    Ok(())
+}
+
+/// The typed settings, with defaults for missing keys.
+pub(crate) fn load_settings(conn: &Connection) -> Result<crate::config::Settings> {
+    Ok(crate::config::Settings {
+        speed_limit: get_setting(conn, SETTING_SPEED_LIMIT)?
+            .and_then(|v| v.as_u64())
+            .filter(|v| *v > 0),
+    })
 }

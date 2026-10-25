@@ -11,13 +11,14 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::EngineConfig;
+use crate::config::{EngineConfig, Settings};
 use crate::download::{self, Env, Job, Shared};
 use crate::error::{Error, Result};
 use crate::events::{Completed, DownloadId, DownloadInfo, EngineEvent, Progress, State};
 use crate::filename::{self, NameSources};
 use crate::http::{self, Connector, Origin};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport};
+use crate::ratelimit::RateLimiter;
 use crate::request::{RequestContext, redact_url};
 use crate::store::{DownloadSummary, Store, records};
 
@@ -55,6 +56,9 @@ pub struct AddRequest {
     pub connections: Option<u32>,
     /// Behaviour when the target exists.
     pub conflict: ConflictPolicy,
+    /// This download's bandwidth limit in bytes per second (`None`: only the
+    /// global limit applies).
+    pub speed_limit: Option<u64>,
 }
 
 impl AddRequest {
@@ -65,6 +69,7 @@ impl AddRequest {
             destination,
             connections: None,
             conflict: ConflictPolicy::Rename,
+            speed_limit: None,
         }
     }
 
@@ -81,6 +86,23 @@ impl AddRequest {
         self.conflict = policy;
         self
     }
+
+    /// Limits this download to `bytes_per_sec` (`None` or 0: no own limit).
+    #[must_use]
+    pub fn speed_limit(mut self, bytes_per_sec: Option<u64>) -> Self {
+        self.speed_limit = bytes_per_sec.filter(|r| *r > 0);
+        self
+    }
+}
+
+/// What [`Engine::set_limit`] applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitScope {
+    /// All downloads together. Stored in the settings when the engine has a
+    /// database, so it is the default for later runs.
+    Global,
+    /// One download (running or not); stored with it.
+    Download(DownloadId),
 }
 
 /// Holds one per-host and one global connection slot.
@@ -156,9 +178,19 @@ pub struct ResumeOptions {
     /// Discard the saved progress and download again from the beginning (same
     /// destination). Needed when the file changed on the server.
     pub restart: bool,
+    /// Replace the download's own speed limit (`Some(None)`: remove it). `None`
+    /// keeps the stored one.
+    pub speed_limit: Option<Option<u64>>,
 }
 
 impl ResumeOptions {
+    /// Replaces the download's own speed limit (`None` or 0: remove it).
+    #[must_use]
+    pub fn speed_limit(mut self, bytes_per_sec: Option<u64>) -> Self {
+        self.speed_limit = Some(bytes_per_sec.filter(|r| *r > 0));
+        self
+    }
+
     /// Sets the connection count.
     #[must_use]
     pub fn connections(mut self, n: u32) -> Self {
@@ -252,6 +284,10 @@ impl Engine {
     /// Fails with [`Error::DatabaseLocked`] if another process owns the database.
     pub fn open(config: EngineConfig, data_dir: impl AsRef<Path>) -> Result<Self> {
         let opened = Store::open(data_dir.as_ref())?;
+        let mut config = config;
+        if opened.settings.speed_limit.is_some() {
+            config.speed_limit = opened.settings.speed_limit;
+        }
         Self::build(config, Some(opened.store), opened.next_id)
     }
 
@@ -260,6 +296,12 @@ impl Engine {
     /// that process's last checkpoint.
     pub fn peek(data_dir: impl AsRef<Path>) -> Result<Vec<DownloadSummary>> {
         Store::peek(data_dir.as_ref())
+    }
+
+    /// The settings stored in `data_dir`, read without taking ownership
+    /// (defaults if there is no database yet).
+    pub fn peek_settings(data_dir: impl AsRef<Path>) -> Result<Settings> {
+        Store::peek_settings(data_dir.as_ref())
     }
 
     fn build(config: EngineConfig, store: Option<Store>, next_id: u64) -> Result<Self> {
@@ -274,6 +316,7 @@ impl Engine {
                     tls,
                     limits,
                     reserved: Arc::new(Mutex::new(HashSet::new())),
+                    global_limit: Arc::new(RateLimiter::new(cfg.speed_limit)),
                 },
                 cfg,
                 events,
@@ -387,10 +430,11 @@ impl Engine {
                 requested_dest: dest.to_string_lossy().into_owned(),
                 conflict: conflict_name(req.conflict),
                 max_connections: req.connections,
+                speed_limit: req.speed_limit,
             };
             store.send("new download", move |c| records::insert(c, &rec));
         }
-        let shared = self.new_shared(id);
+        let shared = self.new_shared(id, req.speed_limit);
         self.downloads().insert(id, shared.clone());
         let _ = self.inner.events.send(EngineEvent::Added {
             id,
@@ -399,12 +443,13 @@ impl Engine {
         self.spawn(shared, Job::new(req))
     }
 
-    fn new_shared(&self, id: DownloadId) -> Arc<Shared> {
+    fn new_shared(&self, id: DownloadId, speed_limit: Option<u64>) -> Arc<Shared> {
         Arc::new(Shared::new(
             id,
             self.inner.root.child_token(),
             self.inner.events.clone(),
             self.inner.store.clone(),
+            speed_limit,
         ))
     }
 
@@ -460,6 +505,16 @@ impl Engine {
         };
         let mut req = AddRequest::new(ctx, destination).conflict(conflict_from(&saved.conflict));
         req.connections = opts.connections.or(saved.max_connections);
+        let speed_limit = match opts.speed_limit {
+            Some(new) => {
+                store
+                    .call(move |c| records::set_speed_limit(c, id, new))
+                    .await?;
+                new
+            }
+            None => saved.speed_limit,
+        };
+        req.speed_limit = speed_limit;
         let job = if opts.restart {
             store.call(move |c| records::reset_progress(c, id)).await?;
             Job {
@@ -482,7 +537,7 @@ impl Engine {
                     reason: "is already running".into(),
                 });
             }
-            let shared = self.new_shared(id);
+            let shared = self.new_shared(id, speed_limit);
             map.insert(id, shared.clone());
             shared
         };
@@ -568,6 +623,63 @@ impl Engine {
         match &self.inner.store {
             Some(store) => store.call(|c| records::list(c)).await,
             None => Ok(Vec::new()),
+        }
+    }
+
+    /// Changes a bandwidth limit (`None` or 0: unlimited). It takes effect within
+    /// one refill step for running downloads, without reconnecting. With a
+    /// database, the global limit is stored in the settings (the default for
+    /// later runs) and a download's limit is stored with the download.
+    pub async fn set_limit(&self, scope: LimitScope, bytes_per_sec: Option<u64>) -> Result<()> {
+        let bps = bytes_per_sec.filter(|r| *r > 0);
+        match scope {
+            LimitScope::Global => {
+                self.inner.env.global_limit.set_rate(bps);
+                if let Some(store) = &self.inner.store {
+                    let value = bps.map(serde_json::Value::from);
+                    store
+                        .call(move |c| {
+                            records::put_setting(c, records::SETTING_SPEED_LIMIT, value.as_ref())
+                        })
+                        .await?;
+                }
+            }
+            LimitScope::Download(id) => {
+                let running = self.running(id);
+                if let Some(store) = &self.inner.store {
+                    store
+                        .call(move |c| {
+                            if records::get_summary(c, id)?.is_none() {
+                                return Err(Error::UnknownDownload(id));
+                            }
+                            records::set_speed_limit(c, id, bps)
+                        })
+                        .await?;
+                } else if running.is_none() {
+                    return Err(Error::UnknownDownload(id));
+                }
+                if let Some(s) = running {
+                    s.limiter.set_rate(bps);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The current limit for `scope` in bytes per second (`None`: unlimited, or
+    /// a download that is not running).
+    pub fn limit(&self, scope: LimitScope) -> Option<u64> {
+        match scope {
+            LimitScope::Global => self.inner.env.global_limit.rate(),
+            LimitScope::Download(id) => self.running(id).and_then(|s| s.limiter.rate()),
+        }
+    }
+
+    /// The stored settings (defaults without a database).
+    pub async fn settings(&self) -> Result<Settings> {
+        match &self.inner.store {
+            Some(store) => store.call(|c| records::load_settings(c)).await,
+            None => Ok(Settings::default()),
         }
     }
 

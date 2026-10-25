@@ -33,6 +33,7 @@ use crate::headers::{self, ContentRange, Validators};
 use crate::http::{Conn, Connector, Origin, Response};
 use crate::platform::{self, Preallocation};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport, sleep_or_cancel};
+use crate::ratelimit::{Limiters, RateLimiter};
 use crate::request::{RequestContext, redact_url};
 use crate::segment::{SegmentCheckpoint, SegmentTable, SplitConfig, Work, WorkerId};
 use crate::store::Store;
@@ -61,6 +62,8 @@ pub(crate) struct Shared {
     table: Mutex<Option<SegmentTable>>,
     info: OnceLock<DownloadInfo>,
     events: broadcast::Sender<EngineEvent>,
+    /// This download's own bandwidth limit.
+    pub(crate) limiter: Arc<RateLimiter>,
 }
 
 impl Shared {
@@ -69,6 +72,7 @@ impl Shared {
         cancel: CancellationToken,
         events: broadcast::Sender<EngineEvent>,
         store: Option<Store>,
+        speed_limit: Option<u64>,
     ) -> Self {
         Self {
             id,
@@ -84,6 +88,7 @@ impl Shared {
             table: Mutex::new(None),
             info: OnceLock::new(),
             events,
+            limiter: Arc::new(RateLimiter::new(speed_limit)),
         }
     }
 
@@ -169,6 +174,8 @@ pub(crate) struct Env {
     pub(crate) tls: Arc<ClientConfig>,
     pub(crate) limits: Limits,
     pub(crate) reserved: Arc<Mutex<HashSet<PathBuf>>>,
+    /// The global bandwidth limit, shared by all downloads.
+    pub(crate) global_limit: Arc<RateLimiter>,
 }
 
 /// Per-worker counters read by the supervisor.
@@ -196,6 +203,8 @@ struct Core {
     shared: Arc<Shared>,
     connector: Connector,
     limits: Limits,
+    /// Token buckets for socket reads (download, then global).
+    rate: Limiters,
     cfg: Arc<EngineConfig>,
     ctx: RequestContext,
     original: Origin,
@@ -1011,6 +1020,10 @@ async fn execute(
         shared: shared.clone(),
         connector,
         limits: env.limits.clone(),
+        rate: Limiters {
+            download: shared.limiter.clone(),
+            global: env.global_limit.clone(),
+        },
         cfg: cfg.clone(),
         ctx: req.ctx.clone(),
         original,
@@ -1982,6 +1995,13 @@ async fn stream(
             }
             Ok(Some(data)) => {
                 stat.net.fetch_add(data.len() as u64, Ordering::Relaxed);
+                // Bandwidth limit: pay for this read before the next one. Time
+                // spent here is outside `chunk`'s stall timer, so throttling is
+                // never mistaken for a stall.
+                tokio::select! {
+                    () = core.stop.cancelled() => return Err(Error::Cancelled),
+                    () = core.rate.acquire(data.len() as u64) => {}
+                }
                 let take = (end - pos).min(data.len() as u64) as usize;
                 if buf.is_empty() {
                     buf_since = Instant::now();

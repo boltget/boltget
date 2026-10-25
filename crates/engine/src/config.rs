@@ -68,6 +68,10 @@ pub struct EngineConfig {
     pub mark_of_the_web: bool,
     /// `User-Agent` used when the request context does not provide one.
     pub user_agent: String,
+    /// Global bandwidth limit in bytes per second, shared by all downloads
+    /// (`None`: unlimited). [`Engine::open`](crate::Engine::open) replaces it
+    /// with the stored [`Settings::speed_limit`] if one is set.
+    pub speed_limit: Option<u64>,
 }
 
 impl Default for EngineConfig {
@@ -103,6 +107,7 @@ impl Default for EngineConfig {
             disk_margin: 16 * 1024 * 1024,
             mark_of_the_web: true,
             user_agent: concat!("BoltGet/", env!("CARGO_PKG_VERSION")).to_owned(),
+            speed_limit: None,
         }
     }
 }
@@ -119,6 +124,17 @@ impl EngineConfig {
         self.max_attempts = self.max_attempts.max(1);
         self.segment_align = self.segment_align.max(1);
         self.min_split_size = self.min_split_size.max(1);
+        self.speed_limit = self.speed_limit.filter(|r| *r > 0);
         self
     }
+}
+
+/// Persistent user settings, stored in the database's `setting` table one row
+/// per key (`docs/ARCHITECTURE.md`, "Schema"). Keys this version does not know
+/// (written by a newer one) are left alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[non_exhaustive]
+pub struct Settings {
+    /// Global bandwidth limit in bytes per second (key `engine.speed_limit_bps`).
+    pub speed_limit: Option<u64>,
 }
