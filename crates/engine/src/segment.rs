@@ -9,8 +9,9 @@
 //! exactly one worker. See `docs/ENGINE.md`, "Dynamic segmentation".
 //!
 //! The table is pure logic with no I/O, so it is property-tested directly.
-//! It is also the unit that checkpointing (phase 2) persists: see
-//! [`SegmentTable::checkpoint`].
+//! It is also the unit that checkpointing persists: [`SegmentTable::checkpoint`]
+//! takes it apart (from durable offsets only) and
+//! [`SegmentTable::from_checkpoint`] puts it back together on resume.
 
 use serde::Serialize;
 
@@ -52,7 +53,7 @@ impl Segment {
     }
 }
 
-/// What a checkpoint stores for one segment (phase 2 persists this).
+/// What a checkpoint stores for one segment.
 ///
 /// `done` is taken from [`Segment::durable`], never from `received`, which is what
 /// upholds the checkpoint invariant: persisted progress never exceeds durable bytes.
@@ -187,7 +188,79 @@ impl SegmentTable {
         t
     }
 
+    /// Rebuilds a table from a persisted checkpoint (resume). Every segment
+    /// restarts at its durable cursor (`received = durable = done`) with no
+    /// worker. A fully done segment is merged into the one after it, which keeps
+    /// each segment's progress contiguous from its start and stops the table from
+    /// growing over many resume cycles; ids are renumbered from 0.
+    ///
+    /// `total` is `None` for a resource of unknown size, whose checkpoint must be
+    /// a single open segment from 0. Fails if the checkpoint is not a valid
+    /// partition of `[0, total)`.
+    pub fn from_checkpoint(
+        total: Option<u64>,
+        splittable: bool,
+        checkpoint: &[SegmentCheckpoint],
+        cfg: SplitConfig,
+    ) -> Result<Self, String> {
+        let mut cps = checkpoint.to_vec();
+        cps.sort_by_key(|c| c.start);
+        let mut table = Self {
+            total,
+            splittable: splittable && total.is_some(),
+            entries: Vec::new(),
+            next_idx: 0,
+            cfg,
+        };
+        let Some(total) = total else {
+            return match cps.as_slice() {
+                [c] if c.start == 0 && c.end == u64::MAX => {
+                    table.push_with(0, u64::MAX, c.done);
+                    Ok(table)
+                }
+                _ => Err("an unknown-size checkpoint must be one open segment".into()),
+            };
+        };
+        let mut expect = 0u64;
+        for c in &cps {
+            if c.start != expect || c.end <= c.start || c.done > c.end - c.start {
+                return Err(format!(
+                    "invalid checkpoint segment [{}, {}) done {} (expected start {expect})",
+                    c.start, c.end, c.done
+                ));
+            }
+            expect = c.end;
+        }
+        if expect != total {
+            return Err(format!(
+                "checkpoint covers [0, {expect}) instead of [0, {total})"
+            ));
+        }
+        let mut pending: Option<(u64, u64, u64)> = None;
+        for c in &cps {
+            pending = Some(match pending {
+                // The previous range is complete: extend it over this one.
+                Some((start, end, done)) if done == end - start => (start, c.end, done + c.done),
+                Some((start, end, done)) => {
+                    table.push_with(start, end, done);
+                    (c.start, c.end, c.done)
+                }
+                None => (c.start, c.end, c.done),
+            });
+        }
+        if let Some((start, end, done)) = pending {
+            table.push_with(start, end, done);
+        }
+        table.check_invariants()?;
+        Ok(table)
+    }
+
     fn push(&mut self, start: u64, end: u64) -> u32 {
+        self.push_with(start, end, 0)
+    }
+
+    /// Adds a segment whose first `done` bytes are already received and durable.
+    fn push_with(&mut self, start: u64, end: u64, done: u64) -> u32 {
         let idx = self.next_idx;
         self.next_idx += 1;
         self.entries.push(Entry {
@@ -195,8 +268,8 @@ impl SegmentTable {
                 idx,
                 start,
                 end,
-                received: 0,
-                durable: 0,
+                received: done,
+                durable: done,
                 worker: None,
             },
             ahead: 0,
@@ -713,6 +786,72 @@ mod tests {
         t.check_invariants().unwrap();
     }
 
+    #[test]
+    fn checkpoint_round_trip_merges_done_segments() {
+        let cfg = SplitConfig {
+            align: 1,
+            min_split_size: 10,
+        };
+        let cp = |idx, start, end, done| SegmentCheckpoint {
+            idx,
+            start,
+            end,
+            done,
+        };
+        let cps = [
+            cp(4, 0, 100, 100),
+            cp(7, 100, 200, 30),
+            cp(2, 200, 300, 100),
+            cp(9, 300, 400, 100),
+            cp(1, 400, 500, 0),
+        ];
+        let t = SegmentTable::from_checkpoint(Some(500), true, &cps, cfg).unwrap();
+        let segs = t.segments();
+        let shape: Vec<(u64, u64, u64)> =
+            segs.iter().map(|s| (s.start, s.end, s.received)).collect();
+        assert_eq!(shape, vec![(0, 200, 130), (200, 500, 200)]);
+        assert!(
+            segs.iter()
+                .all(|s| s.durable == s.received && s.worker.is_none())
+        );
+        assert_eq!(t.durable_total(), 330);
+        assert!(t.is_splittable());
+        // Everything done: one complete segment.
+        let all = [cp(0, 0, 10, 10), cp(1, 10, 20, 10)];
+        let t = SegmentTable::from_checkpoint(Some(20), true, &all, cfg).unwrap();
+        assert!(t.is_durable());
+        assert_eq!(t.segments().len(), 1);
+    }
+
+    #[test]
+    fn invalid_checkpoints_are_rejected() {
+        let cfg = SplitConfig::default();
+        let cp = |start, end, done| SegmentCheckpoint {
+            idx: 0,
+            start,
+            end,
+            done,
+        };
+        let bad: [&[SegmentCheckpoint]; 5] = [
+            &[],
+            &[cp(0, 10, 0)],
+            &[cp(0, 50, 0), cp(60, 100, 0)],
+            &[cp(0, 60, 0), cp(50, 100, 0)],
+            &[cp(0, 100, 101)],
+        ];
+        for b in bad {
+            assert!(
+                SegmentTable::from_checkpoint(Some(100), true, b, cfg).is_err(),
+                "{b:?}"
+            );
+        }
+        let open = [cp(0, u64::MAX, 77)];
+        let t = SegmentTable::from_checkpoint(None, true, &open, cfg).unwrap();
+        assert!(!t.is_splittable());
+        assert_eq!(t.get(0).unwrap().cursor(), 77);
+        assert!(SegmentTable::from_checkpoint(None, false, &[cp(0, 100, 0)], cfg).is_err());
+    }
+
     mod props {
         use super::*;
         use proptest::prelude::*;
@@ -803,6 +942,37 @@ mod tests {
             }
         }
 
+        /// Simulates a crash: keep only what the checkpoint calls durable,
+        /// rebuild the table from it.
+        fn crash(
+            t: &mut SegmentTable,
+            m: &mut Model,
+            cfg: SplitConfig,
+        ) -> Result<(), TestCaseError> {
+            let cps = t.checkpoint();
+            let total = t.total().unwrap_or(0) as usize;
+            let mut durable = vec![false; total];
+            for c in &cps {
+                for o in c.start..c.start + c.done {
+                    durable[o as usize] = true;
+                }
+            }
+            for (o, d) in durable.iter().enumerate() {
+                if *d {
+                    prop_assert_eq!(m.data[o], byte_at(o as u64), "durable byte {} is wrong", o);
+                } else {
+                    m.data[o] = 0xAA;
+                }
+            }
+            m.claimed.clear();
+            let before = t.durable_total();
+            *t = SegmentTable::from_checkpoint(t.total(), t.is_splittable(), &cps, cfg)
+                .map_err(TestCaseError::fail)?;
+            prop_assert_eq!(t.durable_total(), before);
+            prop_assert_eq!(t.received_total(), before);
+            Ok(())
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig {
                 cases: std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(512),
@@ -859,6 +1029,57 @@ mod tests {
                 for (o, &c) in m.writes.iter().enumerate() {
                     prop_assert_eq!(c, 1, "byte {} written {} times", o, c);
                     prop_assert_eq!(m.data[o], byte_at(o as u64));
+                }
+            }
+
+            /// Crashes at random points: the table is rebuilt from its last
+            /// checkpoint and every byte that was not durable is lost (garbage),
+            /// as after a power failure. Durable bytes must survive intact, and
+            /// the download must still end byte-exact.
+            #[test]
+            fn crash_and_resume_from_checkpoint(
+                total in 1u64..60_000,
+                k in 1u32..8,
+                min_split in 1u64..2_000,
+                ops in proptest::collection::vec(
+                    prop_oneof![9 => op().prop_map(Some), 1 => Just(None)],
+                    0..300,
+                ),
+            ) {
+                let cfg = SplitConfig { align: 16, min_split_size: min_split };
+                let mut t = SegmentTable::new_split(total, k, cfg);
+                let mut m = Model {
+                    data: vec![0xAA; total as usize],
+                    writes: vec![0; total as usize],
+                    claimed: Vec::new(),
+                };
+                let mut crashes = 0u32;
+                for op in ops.iter().map(Option::as_ref).chain(std::iter::once(None)) {
+                    if let Some(op) = op {
+                        apply(&mut t, &mut m, op);
+                    } else {
+                        crash(&mut t, &mut m, cfg)?;
+                        crashes += 1;
+                    }
+                    t.check_invariants().map_err(TestCaseError::fail)?;
+                }
+                let mut guard = 0;
+                while !t.is_complete() {
+                    guard += 1;
+                    prop_assert!(guard < 100_000, "no progress towards completion");
+                    for w in 10..14u32 {
+                        if t.owned_by(w).is_none() {
+                            t.next_work(w);
+                        }
+                        apply(&mut t, &mut m, &Op::Receive { w, len: 4_096 });
+                    }
+                    t.check_invariants().map_err(TestCaseError::fail)?;
+                }
+                apply(&mut t, &mut m, &Op::Flush);
+                prop_assert!(t.is_durable());
+                prop_assert!(crashes >= 1);
+                for o in 0..total as usize {
+                    prop_assert_eq!(m.data[o], byte_at(o as u64), "byte {} wrong after resume", o);
                 }
             }
 
