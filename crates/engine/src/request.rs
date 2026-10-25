@@ -3,6 +3,10 @@
 use http::{HeaderMap, HeaderName, HeaderValue, header};
 use url::Url;
 
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use crate::cookies::{Cookie, CookieJar};
 use crate::error::{Error, Result};
 use crate::proxy::{Proxy, ProxyChoice};
 
@@ -32,6 +36,10 @@ struct SavedContext {
     /// `"direct"`, or the proxy URL without credentials (they are secrets).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     proxy: Option<String>,
+    /// The `cookies.txt` the cookies came from, read again on resume (the
+    /// cookies themselves are secrets and are not saved).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cookie_file: Option<PathBuf>,
 }
 
 /// Everything needed to (re)issue requests for a download.
@@ -41,6 +49,9 @@ pub struct RequestContext {
     headers: HeaderMap,
     suggested_name: Option<String>,
     proxy: ProxyChoice,
+    /// Shared by all workers of the download (`Set-Cookie` updates it).
+    cookies: Option<Arc<Mutex<CookieJar>>>,
+    cookie_file: Option<PathBuf>,
 }
 
 impl RequestContext {
@@ -64,6 +75,8 @@ impl RequestContext {
             headers: HeaderMap::new(),
             suggested_name: None,
             proxy: ProxyChoice::Default,
+            cookies: None,
+            cookie_file: None,
         })
     }
 
@@ -108,6 +121,58 @@ impl RequestContext {
         &self.proxy
     }
 
+    /// Uses these cookies (replacing any). They are not saved: a resumed
+    /// download needs them again, unless they came from a file.
+    #[must_use]
+    pub fn with_cookies(mut self, jar: CookieJar) -> Self {
+        self.cookies = Some(Arc::new(Mutex::new(jar)));
+        self.cookie_file = None;
+        self
+    }
+
+    /// Loads cookies from a Netscape `cookies.txt` file. The path is saved with
+    /// the download and the file is read again when it resumes.
+    pub fn with_cookie_file(mut self, path: impl Into<PathBuf>) -> Result<Self> {
+        let path = path.into();
+        let path = std::path::absolute(&path).unwrap_or(path);
+        let jar = CookieJar::load(&path)?;
+        self.cookies = Some(Arc::new(Mutex::new(jar)));
+        self.cookie_file = Some(path);
+        Ok(self)
+    }
+
+    /// Adds a cookie to the jar (creating it if needed).
+    pub fn add_cookie(&mut self, cookie: Cookie) {
+        let jar = self
+            .cookies
+            .get_or_insert_with(|| Arc::new(Mutex::new(CookieJar::new())));
+        jar.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(cookie);
+    }
+
+    /// Adds a cookie for exactly this URL's host (path `/`, no subdomains), like
+    /// `curl --cookie name=value`. Not saved with the download.
+    pub fn cookie(&mut self, name: &str, value: &str) {
+        if let Some(host) = self.url.host_str() {
+            let host = host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_owned();
+            self.add_cookie(Cookie::for_host(&host, name, value));
+        }
+    }
+
+    /// The cookie jar, if the download has cookies.
+    pub(crate) fn cookies(&self) -> Option<&Mutex<CookieJar>> {
+        self.cookies.as_deref()
+    }
+
+    /// The `cookies.txt` the cookies were loaded from.
+    pub fn cookie_file(&self) -> Option<&Path> {
+        self.cookie_file.as_deref()
+    }
+
     /// The original URL.
     pub fn url(&self) -> &Url {
         &self.url
@@ -134,6 +199,7 @@ impl RequestContext {
                 .filter_map(|(n, v)| Some((n.as_str().to_owned(), v.to_str().ok()?.to_owned())))
                 .collect(),
             suggested_name: self.suggested_name.clone(),
+            cookie_file: self.cookie_file.clone(),
             proxy: match &self.proxy {
                 ProxyChoice::Default => None,
                 ProxyChoice::Direct => Some("direct".into()),
@@ -153,6 +219,14 @@ impl RequestContext {
             }
         }
         ctx.suggested_name = saved.suggested_name;
+        if let Some(path) = saved.cookie_file {
+            // The file may be gone or changed; a download without its cookies
+            // still runs (and asks for a new link if the server wants them).
+            match ctx.clone().with_cookie_file(&path) {
+                Ok(c) => ctx = c,
+                Err(e) => tracing::warn!(error = %e, "could not read the saved cookie file"),
+            }
+        }
         ctx.proxy = match saved.proxy.as_deref() {
             None => ProxyChoice::Default,
             Some("direct") => ProxyChoice::Direct,
@@ -160,6 +234,17 @@ impl RequestContext {
         };
         Ok(ctx)
     }
+}
+
+/// An `Authorization: Basic` value for `user` and `password` (marked sensitive).
+pub fn basic_auth(user: &str, password: &str) -> HeaderValue {
+    let mut v = HeaderValue::from_str(&format!(
+        "Basic {}",
+        crate::proxy::base64(format!("{user}:{password}").as_bytes())
+    ))
+    .unwrap_or_else(|_| HeaderValue::from_static("Basic"));
+    v.set_sensitive(true);
+    v
 }
 
 /// A URL with the query string, fragment and credentials removed, for logs and

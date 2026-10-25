@@ -31,7 +31,7 @@ use crate::config::EngineConfig;
 use crate::error::{Error, Result};
 use crate::headers::range_header;
 use crate::proxy::{self, Proxy, ProxyChoice, ProxyKind};
-use crate::request::redact_url;
+use crate::request::{RequestContext, redact_url};
 
 /// Builds the shared rustls configuration: `ring` provider, OS trust store via
 /// `rustls-platform-verifier`, ALPN `h2` + `http/1.1`, session resumption on.
@@ -424,7 +424,7 @@ impl Connector {
         conn: Option<Conn>,
         url: &Url,
         original: &Origin,
-        ctx_headers: &HeaderMap,
+        ctx: &RequestContext,
         range: Option<(u64, Option<u64>)>,
         if_range: Option<&str>,
     ) -> Result<Response> {
@@ -433,7 +433,16 @@ impl Connector {
         let mut redirects = Vec::new();
         loop {
             let origin = Origin::of(&url)?;
-            let mut headers = self.request_headers(ctx_headers, &origin, original);
+            let mut headers = self.request_headers(ctx.headers(), &origin, original);
+            // Only the cookies that match this hop's URL (RFC 6265).
+            if let Some(jar) = ctx.cookies()
+                && let Some(v) = jar
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .header_for(&url, std::time::SystemTime::now())
+            {
+                headers.insert(header::COOKIE, v);
+            }
             if let Some((start, end)) = range {
                 headers.insert(header::RANGE, range_header(start, end));
             }
@@ -468,6 +477,16 @@ impl Connector {
                 Ok(Err(e)) => return Err(e),
             };
             let status = resp.status();
+            if let Some(jar) = ctx.cookies() {
+                let mut jar = jar
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                for v in resp.headers().get_all(header::SET_COOKIE) {
+                    if let Ok(v) = v.to_str() {
+                        jar.set_cookie(&url, v, std::time::SystemTime::now());
+                    }
+                }
+            }
             if is_redirect(status) {
                 let Some(location) = resp
                     .headers()

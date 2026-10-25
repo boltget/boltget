@@ -211,6 +211,12 @@ pub struct ResumeOptions {
     /// Use this proxy setting for this run instead of the saved one (which never
     /// includes proxy credentials).
     pub proxy: Option<ProxyChoice>,
+    /// Load cookies from this `cookies.txt` instead of the saved one (and save
+    /// its path for later resumes).
+    pub cookie_file: Option<PathBuf>,
+    /// Extra cookies `(name, value)` for the download URL's host, as
+    /// [`RequestContext::cookie`]. Not saved.
+    pub cookies: Vec<(String, String)>,
 }
 
 impl ResumeOptions {
@@ -554,6 +560,16 @@ impl Engine {
         if let Some(p) = opts.proxy {
             ctx.set_proxy(p);
         }
+        if let Some(file) = opts.cookie_file {
+            ctx = ctx.with_cookie_file(file)?;
+            let saved_ctx = ctx.to_saved();
+            store
+                .call(move |c| records::set_request_ctx(c, id, &saved_ctx))
+                .await?;
+        }
+        for (name, value) in &opts.cookies {
+            ctx.cookie(name, value);
+        }
         let dest = PathBuf::from(&saved.requested_dest);
         let destination = if saved.requested_kind == "file" {
             Destination::File(dest)
@@ -658,6 +674,16 @@ impl Engine {
             // No proxy choice with the new link: keep the download's.
             let old = RequestContext::from_saved(&saved.url, &saved.request_ctx)?;
             ctx.set_proxy(old.proxy().clone());
+        }
+        if ctx.cookie_file().is_none()
+            && let Ok(old) = RequestContext::from_saved(&saved.url, &saved.request_ctx)
+            && let Some(file) = old.cookie_file()
+        {
+            // No cookies with the new link: keep the download's cookie file.
+            match ctx.clone().with_cookie_file(file) {
+                Ok(c) => ctx = c,
+                Err(e) => tracing::warn!(error = %e, "could not read the saved cookie file"),
+            }
         }
         let connector = Connector::new(
             self.inner.env.tls.clone(),

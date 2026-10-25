@@ -195,7 +195,7 @@ pub(crate) async fn validate(
     for &(start, end) in &picks {
         let mut resp = tokio::select! {
             () = cancel.cancelled() => return Err(Error::Cancelled),
-            r = connector.get(None, &final_url, &origin, ctx.headers(), Some((start, Some(end))), None) => r?,
+            r = connector.get(None, &final_url, &origin, ctx, Some((start, Some(end))), None) => r?,
         };
         if resp.status.as_u16() >= 400 {
             return Err(probe::status_error(

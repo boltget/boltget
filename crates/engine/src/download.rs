@@ -1760,14 +1760,7 @@ async fn open_range(
     let t0 = Instant::now();
     let resp = core
         .connector
-        .get(
-            conn,
-            url,
-            &core.original,
-            core.ctx.headers(),
-            range,
-            if_range,
-        )
+        .get(conn, url, &core.original, &core.ctx, range, if_range)
         .await?;
     let rtt = t0.elapsed().as_micros() as u64;
     let prev = core.rtt_micros.load(Ordering::Relaxed);

@@ -28,6 +28,7 @@
 
 mod backoff;
 mod config;
+mod cookies;
 mod download;
 mod engine;
 mod error;
@@ -47,6 +48,7 @@ mod store;
 mod writer;
 
 pub use config::{EngineConfig, Settings};
+pub use cookies::{Cookie, CookieJar};
 pub use engine::{
     AddRequest, ConflictPolicy, Destination, DownloadHandle, Engine, LimitScope, Removed,
     ResumeOptions,
@@ -60,7 +62,7 @@ pub use probe::{ProbeResult, RangeSupport};
 pub use proxy::{NoProxy, Proxy, ProxyChoice, ProxyKind, ProxyRules};
 pub use ratelimit::parse_rate;
 pub use refresh::{RefreshEvidence, RefreshOutcome};
-pub use request::{RequestContext, redact_url};
+pub use request::{RequestContext, basic_auth, redact_url};
 pub use store::{
     ChecksumStatus, DB_FILE, DownloadSummary, LOCK_FILE, SavedError, default_data_dir,
 };

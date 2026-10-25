@@ -207,14 +207,7 @@ async fn probe_once(
     origin: &Origin,
 ) -> Result<Probed> {
     let response = connector
-        .get(
-            None,
-            ctx.url(),
-            origin,
-            ctx.headers(),
-            Some((0, None)),
-            None,
-        )
+        .get(None, ctx.url(), origin, ctx, Some((0, None)), None)
         .await?;
     let kind = interpret(response.status, &response.headers, &response.url)?;
     let validators = Validators::from_headers(&response.headers);
@@ -257,7 +250,7 @@ pub(crate) async fn verify_ranges(
             None,
             url,
             original,
-            ctx.headers(),
+            ctx,
             Some((m, None)),
             validators.if_range(),
         )

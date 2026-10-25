@@ -41,6 +41,8 @@
 //! - `/signed?valid=M&...`: redirects to a fresh `/s/<token>?...` URL that serves
 //!   `/data` for M requests, then answers 403 (an expiring signed URL).
 //! - `/auth?...`: like `/data`, but 401 unless `Authorization` is present.
+//! - `/cookie?need=<name=value>&...`: like `/data`, but 403 unless that cookie is sent.
+//! - `/setcookie?set=<Set-Cookie value>&to=<url>`: a redirect that sets a cookie.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -111,6 +113,10 @@ pub struct RequestRecord {
     pub if_range: Option<String>,
     /// Whether `Authorization` was present.
     pub authorization: bool,
+    /// `Authorization` header, if any.
+    pub authorization_value: Option<String>,
+    /// `Cookie` header, if any.
+    pub cookie: Option<String>,
     /// The status the server answered with.
     pub status: u16,
     /// HTTP method.
@@ -290,6 +296,8 @@ fn handle(state: &Arc<State>, addr: SocketAddr, req: &Request<Incoming>) -> Resp
         range: get(header::RANGE),
         if_range: get(header::IF_RANGE),
         authorization: req.headers().contains_key(header::AUTHORIZATION),
+        authorization_value: get(header::AUTHORIZATION),
+        cookie: get(header::COOKIE),
         status: 0,
         method: req.method().to_string(),
         at: state.started.elapsed(),
@@ -342,6 +350,35 @@ fn handle(state: &Arc<State>, addr: SocketAddr, req: &Request<Incoming>) -> Resp
             }
         };
         if ok {
+            data(state, &q, &query, req)
+        } else {
+            status(StatusCode::FORBIDDEN)
+        }
+    } else if path == "/setcookie" {
+        let to = q.get("to").cloned().unwrap_or_default();
+        let set = q.get("set").cloned().unwrap_or_default();
+        Response::builder()
+            .status(StatusCode::FOUND)
+            .header(
+                header::LOCATION,
+                percent_decode_str(&to).decode_utf8_lossy().into_owned(),
+            )
+            .header(
+                header::SET_COOKIE,
+                percent_decode_str(&set).decode_utf8_lossy().into_owned(),
+            )
+            .body(empty())
+            .expect("valid response")
+    } else if path == "/cookie" {
+        let need = q
+            .get("need")
+            .map(|n| percent_decode_str(n).decode_utf8_lossy().into_owned())
+            .unwrap_or_default();
+        let has = record
+            .cookie
+            .as_deref()
+            .is_some_and(|c| c.split("; ").any(|kv| kv == need));
+        if has {
             data(state, &q, &query, req)
         } else {
             status(StatusCode::FORBIDDEN)

@@ -783,3 +783,59 @@ async fn proxy_flag_environment_and_no_proxy() {
     assert_eq!(out.status.code(), Some(2));
     assert!(!stderr(&out).contains("leak"), "{}", stderr(&out));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cookie_file_cookie_and_user_flags() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let jar = dir.path().join("cookies.txt");
+    std::fs::write(
+        &jar,
+        "# Netscape HTTP Cookie File\n127.0.0.1\tFALSE\t/\tFALSE\t0\tsid\tfromfile\n",
+    )
+    .unwrap();
+    let get = |url: String, extra: Vec<String>, name: &str| {
+        let mut args = vec![
+            s("get"),
+            url,
+            s("-o"),
+            dir.path().join(name).display().to_string(),
+            s("-q"),
+        ];
+        args.extend(extra);
+        boltget(state.path(), args)
+    };
+    let out = get(
+        srv.url("/cookie?need=sid%3Dfromfile&size=100000"),
+        vec![s("--cookie-file"), jar.display().to_string()],
+        "a",
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let out = get(
+        srv.url("/cookie?need=k%3Dv&size=100000&key=2"),
+        vec![s("-b"), s("x=1; k=v")],
+        "b",
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let out = get(srv.url("/auth?size=100000"), vec![s("-u"), s("me:pw")], "c").await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("unencrypted"), "{}", stderr(&out));
+    let sent = srv
+        .requests()
+        .into_iter()
+        .find_map(|r| r.authorization_value);
+    assert_eq!(sent.as_deref(), Some("Basic bWU6cHc="));
+    // A missing cookie file is a disk error (5); a bad --cookie a usage error.
+    let out = get(
+        srv.url("/data"),
+        vec![s("--cookie-file"), s("nope.txt")],
+        "d",
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(5), "stderr: {}", stderr(&out));
+    let out = get(srv.url("/data"), vec![s("-b"), s("novalue")], "e").await;
+    assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
+}

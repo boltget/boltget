@@ -190,6 +190,22 @@ struct RunArgs {
     #[arg(long)]
     no_proxy: bool,
 
+    /// Send cookies from a Netscape cookies.txt file (as browser export
+    /// extensions, curl and wget write it), matched per URL like a browser does.
+    /// Its path is saved and the file is read again on `resume`.
+    #[arg(long, value_name = "FILE")]
+    cookie_file: Option<PathBuf>,
+
+    /// Send a cookie to the URL's host: `name=value` (several separated by
+    /// `;`). May be repeated. Not saved: pass it again to `resume`.
+    #[arg(short = 'b', long = "cookie", value_name = "NAME=VALUE")]
+    cookies: Vec<String>,
+
+    /// HTTP Basic credentials `user:password`, sent to the URL's own host only.
+    /// Not saved: pass it again to `resume`.
+    #[arg(short = 'u', long, value_name = "USER:PASSWORD")]
+    user: Option<String>,
+
     /// Flush (and checkpoint) interval in milliseconds. For tests.
     #[arg(long, hide = true, value_name = "MS")]
     flush_interval_ms: Option<u64>,
@@ -347,6 +363,7 @@ fn build_request(args: &GetArgs) -> Result<AddRequest> {
             bail!("header {name} is not allowed (the engine controls it)");
         }
     }
+    let ctx = apply_auth(ctx, &args.run)?;
     let destination = match &args.output {
         None => Destination::Directory(std::env::current_dir()?),
         Some(p) if p.is_dir() => Destination::Directory(p.clone()),
@@ -370,6 +387,45 @@ fn build_request(args: &GetArgs) -> Result<AddRequest> {
         req = req.conflict(ConflictPolicy::Overwrite);
     }
     Ok(req)
+}
+
+/// `--cookie` values as `(name, value)` pairs.
+fn cookie_pairs(run: &RunArgs) -> Result<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    for arg in &run.cookies {
+        for kv in arg.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+            let (n, v) = kv
+                .split_once('=')
+                .with_context(|| format!("--cookie {kv:?} is not name=value"))?;
+            out.push((n.trim().to_owned(), v.trim().to_owned()));
+        }
+    }
+    Ok(out)
+}
+
+/// The `Authorization` header from `--user`, warning about plain HTTP. The
+/// value is never echoed.
+fn user_auth(run: &RunArgs, url: Option<&str>) -> Result<Option<HeaderValue>> {
+    let Some(u) = &run.user else { return Ok(None) };
+    let (user, pass) = u.split_once(':').context("--user must be user:password")?;
+    if url.is_some_and(|u| u.starts_with("http:")) {
+        eprintln!("boltget: warning: --user sends the password unencrypted over plain http");
+    }
+    Ok(Some(boltget_engine::basic_auth(user, pass)))
+}
+
+/// Applies `--cookie-file`, `--cookie` and `--user` to a new request context.
+fn apply_auth(mut ctx: RequestContext, run: &RunArgs) -> Result<RequestContext> {
+    if let Some(f) = &run.cookie_file {
+        ctx = ctx.with_cookie_file(f)?;
+    }
+    for (n, v) in cookie_pairs(run)? {
+        ctx.cookie(&n, &v);
+    }
+    if let Some(v) = user_auth(run, Some(ctx.url().as_str()))? {
+        ctx.header(boltget_engine::header::AUTHORIZATION, v);
+    }
+    Ok(ctx)
 }
 
 /// The proxy choice from `--proxy` / `--no-proxy` (`None`: the environment, or
@@ -553,11 +609,7 @@ async fn get(args: GetArgs, state: Option<&Path>, verbose: u8) -> u8 {
         Err(e) => {
             // A URL the engine rejects is a refused request (4); anything else
             // about the command line is a usage error (2).
-            let code = if e.downcast_ref::<Error>().is_some() {
-                4
-            } else {
-                2
-            };
+            let code = e.downcast_ref::<Error>().map_or(2, exit_code_for);
             if args.run.json {
                 json::failed_usage(&e, code);
             } else {
@@ -621,6 +673,23 @@ async fn resume(args: ResumeArgs, state: Option<&Path>, verbose: u8) -> u8 {
     let mut opts = ResumeOptions::default().restart(args.restart);
     opts.connections = args.run.connections;
     opts.proxy = proxy;
+    opts.cookie_file.clone_from(&args.run.cookie_file);
+    match (cookie_pairs(&args.run), user_auth(&args.run, None)) {
+        (Ok(pairs), Ok(auth)) => {
+            opts.cookies = pairs;
+            if let Some(v) = auth {
+                opts = opts.header(boltget_engine::header::AUTHORIZATION, v);
+            }
+        }
+        (Err(e), _) | (_, Err(e)) => {
+            if args.run.json {
+                json::failed_usage(&e, 2);
+            } else {
+                eprintln!("boltget: {e:#}");
+            }
+            return 2;
+        }
+    }
     if let Some(Rate(r)) = args.run.limit {
         opts = opts.speed_limit(r);
     }
@@ -672,6 +741,13 @@ async fn refresh(args: RefreshArgs, state: Option<&Path>, verbose: u8) -> u8 {
     if let Some(p) = &proxy {
         ctx.set_proxy(p.clone());
     }
+    let mut ctx = match apply_auth(ctx, &args.run) {
+        Ok(c) => c,
+        Err(e) => match e.downcast_ref::<Error>() {
+            Some(err) => return report(err, json, Some(DownloadId(args.id)), &[]),
+            None => return usage(&e),
+        },
+    };
     for (name, value) in &headers {
         if !ctx.header(name.clone(), value.clone()) {
             return usage(&anyhow::anyhow!(

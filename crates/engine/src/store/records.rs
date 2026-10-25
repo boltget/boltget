@@ -633,3 +633,12 @@ pub(crate) fn sources(conn: &Connection, id: DownloadId) -> Result<Vec<(String, 
     let rows = stmt.query_map([int(id.0)?], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
+
+/// Replaces the saved request context (non-secret headers, cookie file, proxy).
+pub(crate) fn set_request_ctx(conn: &Connection, id: DownloadId, ctx: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE download SET request_ctx = ?2, updated_at = ?3 WHERE id = ?1",
+        params![int(id.0)?, ctx, now_ms()],
+    )?;
+    Ok(())
+}
