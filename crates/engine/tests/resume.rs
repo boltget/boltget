@@ -172,6 +172,7 @@ async fn pause_and_resume_continue_from_the_checkpoint() {
     let done = wait(h).await.unwrap();
     assert_content(&done, 21, size);
     assert_eq!(done.info.probe.ranges, RangeSupport::Yes);
+    assert_eq!(done.resumed_from, checkpointed);
 
     // Only the missing part was fetched again, every request validated with
     // If-Range, and nothing restarted from byte 0.

@@ -215,6 +215,9 @@ pub struct Completed {
     pub path: PathBuf,
     /// File size.
     pub bytes: u64,
+    /// Bytes already on disk (from a checkpoint) when this run started; the run
+    /// itself fetched `bytes - resumed_from`.
+    pub resumed_from: u64,
     /// Wall-clock time from start to rename.
     #[serde(serialize_with = "ser_millis")]
     pub elapsed: Duration,

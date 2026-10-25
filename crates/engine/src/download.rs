@@ -771,6 +771,7 @@ fn prepare_resume(
             id: shared.id,
             path,
             bytes: size,
+            resumed_from: size,
             elapsed: started.elapsed(),
             max_connections: 0,
             segments: saved.segments.len(),
@@ -990,6 +991,8 @@ async fn execute(
         encoded,
         start,
     } = setup;
+
+    let resumed_from = shared.downloaded.load(Ordering::Relaxed);
 
     // ---- Writer ----
     let path_arc = Arc::new(partial.clone());
@@ -1310,6 +1313,7 @@ async fn execute(
         id: shared.id,
         path: final_path,
         bytes,
+        resumed_from,
         elapsed: started.elapsed(),
         max_connections: shared.max_connections.load(Ordering::Relaxed),
         segments,
