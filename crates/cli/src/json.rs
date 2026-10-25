@@ -1,19 +1,21 @@
 //! Line-delimited JSON output (`--json`).
 
 use std::io::Write;
-use std::path::PathBuf;
 use std::time::Duration;
 
-use boltget_engine::{Completed, DownloadHandle, EngineEvent, Error, ErrorInfo};
+use boltget_engine::{
+    Completed, DownloadHandle, DownloadId, EngineEvent, Error, ErrorInfo, Progress,
+};
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use crate::Speed;
+use crate::{Speed, Stopped};
 
 #[derive(Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 enum Line<'a> {
     Progress {
+        id: DownloadId,
         downloaded: u64,
         total: Option<u64>,
         speed: u64,
@@ -22,22 +24,29 @@ enum Line<'a> {
         segments: usize,
     },
     Completed {
+        id: DownloadId,
         path: &'a std::path::Path,
         bytes: u64,
+        resumed_from: u64,
         elapsed_ms: u64,
         speed: u64,
         max_connections: u32,
         segments: usize,
     },
+    Paused {
+        id: DownloadId,
+        downloaded: u64,
+        total: Option<u64>,
+        exit_code: u8,
+    },
     Failed {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<DownloadId>,
         error: ErrorInfo,
         exit_code: u8,
     },
     #[serde(rename = "failed")]
-    UsageFailed {
-        error: UsageError,
-        exit_code: u8,
-    },
+    UsageFailed { error: UsageError, exit_code: u8 },
 }
 
 #[derive(Serialize)]
@@ -47,7 +56,7 @@ struct UsageError {
     message: String,
 }
 
-fn emit<T: Serialize>(v: &T) {
+pub(crate) fn emit<T: Serialize>(v: &T) {
     let mut out = std::io::stdout().lock();
     if serde_json::to_writer(&mut out, v).is_ok() {
         let _ = out.write_all(b"\n");
@@ -59,7 +68,7 @@ fn emit<T: Serialize>(v: &T) {
 pub(crate) async fn run(
     handle: DownloadHandle,
     mut events: broadcast::Receiver<EngineEvent>,
-) -> Result<Completed, (Error, Option<PathBuf>)> {
+) -> Result<Completed, Box<Stopped>> {
     let mut speed = Speed::default();
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     tick.tick().await;
@@ -87,14 +96,18 @@ pub(crate) async fn run(
         }
     }
     let partial = handle.info().map(|i| i.partial_path.clone());
-    let res = handle.wait().await.map_err(|e| (e, partial));
+    let id = handle.id();
+    let res = crate::finish(handle, partial).await;
     if let Ok(done) = &res {
         let secs = done.elapsed.as_secs_f64().max(1e-3);
+        let fetched = done.bytes.saturating_sub(done.resumed_from);
         emit(&Line::Completed {
+            id,
             path: &done.path,
             bytes: done.bytes,
+            resumed_from: done.resumed_from,
             elapsed_ms: done.elapsed.as_millis() as u64,
-            speed: (done.bytes as f64 / secs) as u64,
+            speed: (fetched as f64 / secs) as u64,
             max_connections: done.max_connections,
             segments: done.segments,
         });
@@ -106,6 +119,7 @@ fn progress(handle: &DownloadHandle, speed: &mut Speed) {
     let p = handle.progress();
     let bps = speed.sample(p.downloaded);
     emit(&Line::Progress {
+        id: p.id,
         downloaded: p.downloaded,
         total: p.total,
         speed: bps as u64,
@@ -118,9 +132,20 @@ fn progress(handle: &DownloadHandle, speed: &mut Speed) {
     });
 }
 
+/// Prints the `paused` line after Ctrl-C.
+pub(crate) fn paused(p: &Progress, exit_code: u8) {
+    emit(&Line::Paused {
+        id: p.id,
+        downloaded: p.durable,
+        total: p.total,
+        exit_code,
+    });
+}
+
 /// Prints the `failed` line for an engine error.
-pub(crate) fn failed(e: &Error, exit_code: u8) {
+pub(crate) fn failed(e: &Error, id: Option<DownloadId>, exit_code: u8) {
     emit(&Line::Failed {
+        id,
         error: e.into(),
         exit_code,
     });

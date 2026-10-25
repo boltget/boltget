@@ -1,20 +1,22 @@
 //! The interactive progress display.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::Duration;
 
-use boltget_engine::{Completed, DownloadHandle, Error, Progress, segment::Segment};
+use boltget_engine::{Completed, DownloadHandle, DownloadId, Progress, segment::Segment};
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 
-use crate::Speed;
+use crate::{Speed, Stopped};
 
 const MAP_WIDTH: usize = 48;
 
-/// Runs the download with a live display on stderr. Returns the partial path on error.
+/// Runs the download with a live display on stderr. `id` is shown for recorded
+/// downloads (it is what `boltget resume` takes).
 pub(crate) async fn run(
     handle: DownloadHandle,
     show: bool,
-) -> Result<Completed, (Error, Option<PathBuf>)> {
+    id: Option<DownloadId>,
+) -> Result<Completed, Box<Stopped>> {
     let pb = if show {
         ProgressBar::new_spinner()
     } else {
@@ -40,8 +42,18 @@ pub(crate) async fn run(
                 None => pb.set_style(stream_style()),
             }
             if let Some(info) = handle.info() {
+                let tag = id.map(|i| format!("[{i}] ")).unwrap_or_default();
+                let resumed = match p.total {
+                    Some(t) if p.downloaded > 0 => {
+                        format!(" (resuming at {})", percent(p.downloaded, t))
+                    }
+                    None if p.downloaded > 0 => {
+                        format!(" (resuming at {})", HumanBytes(p.downloaded))
+                    }
+                    _ => String::new(),
+                };
                 pb.println(format!(
-                    "  {} -> {}",
+                    "  {tag}{} -> {}{resumed}",
                     info.probe.filename,
                     info.path
                         .parent()
@@ -57,7 +69,37 @@ pub(crate) async fn run(
     }
     let partial = handle.info().map(|i| i.partial_path.clone());
     pb.finish_and_clear();
-    handle.wait().await.map_err(|e| (e, partial))
+    crate::finish(handle, partial).await
+}
+
+/// `42%` (truncated, so 100% only when complete).
+pub(crate) fn percent(done: u64, total: u64) -> String {
+    if total == 0 {
+        return "100%".into();
+    }
+    format!("{}%", (u128::from(done) * 100 / u128::from(total)) as u64)
+}
+
+/// The message after Ctrl-C paused the download.
+pub(crate) fn paused(p: &Progress, partial: Option<&Path>, persistent: bool) {
+    let done = match p.total {
+        Some(t) => format!(
+            "{} ({} of {})",
+            percent(p.durable, t),
+            HumanBytes(p.durable),
+            HumanBytes(t)
+        ),
+        None => HumanBytes(p.durable).to_string(),
+    };
+    if persistent {
+        eprintln!("boltget: paused download {} at {done}", p.id);
+        eprintln!("boltget: continue with: boltget resume {}", p.id);
+    } else {
+        eprintln!("boltget: interrupted at {done}");
+        if let Some(path) = partial.filter(|p| p.exists()) {
+            eprintln!("boltget: partial file kept at {}", path.display());
+        }
+    }
 }
 
 fn update(pb: &ProgressBar, p: &Progress, bps: f64) {
@@ -129,17 +171,30 @@ fn stream_style() -> ProgressStyle {
 /// The final line after a successful download.
 pub(crate) fn summary(done: &Completed) {
     let secs = done.elapsed.as_secs_f64().max(1e-3);
-    println!(
-        "Saved {} ({}) in {:.1}s, {}/s average, {} connection{}, {} segment{}",
-        done.path.display(),
-        HumanBytes(done.bytes),
-        secs,
-        HumanBytes((done.bytes as f64 / secs) as u64),
+    let fetched = done.bytes.saturating_sub(done.resumed_from);
+    let speed = HumanBytes((fetched as f64 / secs) as u64);
+    let conns = format!(
+        "{} connection{}, {} segment{}",
         done.max_connections,
         if done.max_connections == 1 { "" } else { "s" },
         done.segments,
         if done.segments == 1 { "" } else { "s" },
     );
+    if done.resumed_from == 0 {
+        println!(
+            "Saved {} ({}) in {secs:.1}s, {speed}/s average, {conns}",
+            done.path.display(),
+            HumanBytes(done.bytes),
+        );
+    } else {
+        println!(
+            "Saved {} ({}): resumed at {}, fetched {} in {secs:.1}s, {speed}/s average, {conns}",
+            done.path.display(),
+            HumanBytes(done.bytes),
+            percent(done.resumed_from, done.bytes),
+            HumanBytes(fetched),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -155,6 +210,15 @@ mod tests {
             durable: 0,
             worker: None,
         }
+    }
+
+    #[test]
+    fn percent_truncates() {
+        assert_eq!(percent(0, 10), "0%");
+        assert_eq!(percent(999, 1000), "99%");
+        assert_eq!(percent(1000, 1000), "100%");
+        assert_eq!(percent(0, 0), "100%");
+        assert_eq!(percent(u64::MAX / 2, u64::MAX), "49%");
     }
 
     #[test]
