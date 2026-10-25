@@ -1347,6 +1347,10 @@ async fn execute(
                             bytes: shared.downloaded.load(Ordering::Relaxed),
                             active: running,
                             can_grow,
+                            cap: match (core.rate.download.rate(), core.rate.global.rate()) {
+                                (Some(a), Some(b)) => Some(a.min(b)),
+                                (a, b) => a.or(b),
+                            },
                         })
                     {
                         tracing::debug!(id = %shared.id, from = target, to = n, "adaptive connection count");

@@ -40,6 +40,9 @@ pub(crate) struct Observation {
     pub(crate) active: u32,
     /// Whether a new worker would find work (a segment worth splitting).
     pub(crate) can_grow: bool,
+    /// The bandwidth limit in force (bytes per second), if any: at the limit,
+    /// more connections cannot help.
+    pub(crate) cap: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -156,7 +159,7 @@ impl Controller {
                     }
                     self.baseline = Some(rate);
                     self.last = Last::Steady;
-                    self.grow(o);
+                    self.grow(o, rate);
                 } else {
                     // Revert and hold.
                     self.target = from;
@@ -168,14 +171,17 @@ impl Controller {
             }
             Last::Steady => {
                 self.baseline = Some(rate);
-                self.grow(o);
+                self.grow(o, rate);
             }
         }
         (self.target != before).then_some(self.target)
     }
 
-    fn grow(&mut self, o: Observation) {
+    fn grow(&mut self, o: Observation, rate: f64) {
         if !o.can_grow || self.target >= self.ceiling {
+            return;
+        }
+        if o.cap.is_some_and(|c| rate >= 0.75 * c as f64) {
             return;
         }
         // Doubling, but by at most 4 at a time: some servers punish bursts of
@@ -252,6 +258,7 @@ mod tests {
                 bytes: bytes as u64,
                 active: k,
                 can_grow: true,
+                cap: None,
             });
             seen.push(c.target());
         }
@@ -300,6 +307,25 @@ mod tests {
     }
 
     #[test]
+    fn does_not_grow_past_a_bandwidth_limit() {
+        // 2 MB/s per connection, but the user limited the download to 5 MB/s.
+        let mut c = Controller::new(cfg(), 4, 16);
+        let mut bytes = 0u64;
+        for i in 1..=200u64 {
+            let k = u64::from(c.target());
+            bytes += (k * 2_000_000).min(5_000_000) / 4;
+            c.tick(Observation {
+                now: Duration::from_millis(i * 250),
+                bytes,
+                active: c.target(),
+                can_grow: true,
+                cap: Some(5_000_000),
+            });
+        }
+        assert_eq!(c.target(), 4);
+    }
+
+    #[test]
     fn throttling_halves_and_caps() {
         let mut c = Controller::new(cfg(), 8, 16);
         assert_eq!(c.throttled(Duration::from_secs(3), 8), 4);
@@ -321,6 +347,7 @@ mod tests {
                 bytes: i * 1_000_000,
                 active: 2,
                 can_grow: false,
+                cap: None,
             });
             assert_eq!(r, None);
         }
@@ -336,6 +363,7 @@ mod tests {
                 bytes: i * 1_000_000,
                 active,
                 can_grow: c.target() <= 2,
+                cap: None,
             }) {
                 changed.push(n);
             }
