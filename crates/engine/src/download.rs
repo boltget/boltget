@@ -1899,8 +1899,9 @@ async fn flush(
 }
 
 /// Reads `resp` into segment `seg` from `cursor`, coalescing into chunks of
-/// `coalesce_size`, claiming each chunk in the table just before handing it to
-/// the writer (so a split can never cause a double write).
+/// `coalesce_size` (or whatever arrived within `coalesce_delay`), claiming each
+/// chunk in the table just before handing it to the writer (so a split can never
+/// cause a double write).
 #[allow(clippy::too_many_arguments)]
 async fn stream(
     core: &Core,
@@ -1915,9 +1916,12 @@ async fn stream(
     let tx = core.writer_tx()?;
     let coalesce = core.cfg.coalesce_size;
     let stall = core.cfg.stall_timeout;
+    let delay = core.cfg.coalesce_delay;
     let mut buf = BytesMut::with_capacity(coalesce);
     let mut buf_start = cursor;
     let mut pos = cursor;
+    // When the oldest byte in `buf` arrived.
+    let mut buf_since = Instant::now();
 
     macro_rules! flush {
         () => {{
@@ -1975,10 +1979,14 @@ async fn stream(
             Ok(Some(data)) => {
                 stat.net.fetch_add(data.len() as u64, Ordering::Relaxed);
                 let take = (end - pos).min(data.len() as u64) as usize;
+                if buf.is_empty() {
+                    buf_since = Instant::now();
+                }
                 buf.extend_from_slice(&data[..take]);
                 stat.buffered.store(buf.len() as u64, Ordering::Relaxed);
                 pos += take as u64;
-                if (buf.len() >= coalesce || pos >= end) && !flush!() {
+                let full = buf.len() >= coalesce || pos >= end || buf_since.elapsed() >= delay;
+                if full && !flush!() {
                     return Ok(StreamEnd::Done);
                 }
             }

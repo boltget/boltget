@@ -879,3 +879,31 @@ async fn slow_connection_is_reconnected() {
         t.elapsed()
     );
 }
+
+#[tokio::test]
+async fn slow_connection_reaches_disk_without_filling_a_chunk() {
+    // 64 KiB/s would take 16 s to fill a 1 MiB coalescing chunk; the time bound
+    // on coalescing must get bytes to the writer (and so to a checkpoint) sooner.
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = cfg();
+    c.coalesce_size = 1024 * 1024;
+    c.initial_connections = 1;
+    let engine = Engine::new(c).unwrap();
+    let ctx = RequestContext::new(&srv.url("/data?size=4194304&throttle=65536")).unwrap();
+    let h = engine.add(AddRequest::new(
+        ctx,
+        Destination::Directory(dir.path().into()),
+    ));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while h.progress().durable == 0 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "no durable bytes from a slow connection"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(h.progress().durable < MIB, "flushed before a full chunk");
+    h.cancel();
+    let _ = h.wait().await;
+}

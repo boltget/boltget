@@ -25,6 +25,9 @@ pub struct EngineConfig {
     pub reaction_slack: Duration,
     /// Network reads are coalesced per worker into chunks of this size (1 MiB).
     pub coalesce_size: usize,
+    /// ... or for at most this long (250 ms), so slow connections still reach the
+    /// disk (and the checkpoint) promptly instead of holding up to a chunk in memory.
+    pub coalesce_delay: Duration,
     /// Capacity of the writer channel, in chunks (16).
     pub writer_queue: usize,
     /// Flush (fsync) at least this often while data is arriving (2 s).
@@ -79,6 +82,7 @@ impl Default for EngineConfig {
             worker_stagger: Duration::from_millis(50),
             reaction_slack: Duration::from_millis(100),
             coalesce_size: 1024 * 1024,
+            coalesce_delay: Duration::from_millis(250),
             writer_queue: 16,
             flush_interval: Duration::from_secs(2),
             flush_bytes: 64 * 1024 * 1024,
