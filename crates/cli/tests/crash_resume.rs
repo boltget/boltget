@@ -328,7 +328,13 @@ async fn killed_downloads_resume_byte_identical() {
                 let got = loop {
                     let cur = planned.load(Ordering::SeqCst);
                     if cur >= cycles {
-                        return;
+                        // Another job may still give back kills its download did
+                        // not need; only stop once every kill has happened.
+                        if stats.kills.load(Ordering::SeqCst) >= cycles {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                        continue;
                     }
                     let n = want.min(cycles - cur);
                     if planned
