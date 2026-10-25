@@ -26,8 +26,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use boltget_engine::{
-    AddRequest, ConflictPolicy, Destination, DownloadHandle, DownloadId, Engine, EngineConfig,
-    EngineEvent, Error, ErrorKind, HeaderName, HeaderValue, RequestContext, ResumeOptions, State,
+    AddRequest, Checksum, ConflictPolicy, Destination, DownloadHandle, DownloadId, Engine,
+    EngineConfig, EngineEvent, Error, ErrorKind, HeaderName, HeaderValue, RequestContext,
+    ResumeOptions, State,
 };
 use clap::{Args, Parser, Subcommand};
 use tokio::sync::broadcast;
@@ -47,6 +48,8 @@ Exit codes:
        be opened
   8    no download with that id, or the command does not apply to it in its
        current state (for example resuming a completed download)
+  9    the downloaded file does not match its checksum (--checksum or a digest
+       the server sent); it is kept as <name>.boltget, not renamed
   130  interrupted (Ctrl-C): the download is paused; continue it with
        `boltget resume <id>`";
 
@@ -58,13 +61,14 @@ With --json, stdout carries one JSON object per line. Every object has an
                      path, partial_path, preallocation, initial_connections}}
   resumed           {id, downloaded, total}  continuing from a checkpoint
   state_changed     {id, state, error}  state: probing, downloading, retrying,
-                     paused, completed, failed, cancelled
+                     verifying, paused, completed, failed, cancelled, corrupt
   segments_changed  {id}
   progress          {id, downloaded, total, speed, eta_secs, connections,
                      segments} (every 500 ms)
   completed         {id, path, bytes, resumed_from, elapsed_ms, speed,
-                     max_connections, segments}  speed counts this run's bytes
-                     (bytes - resumed_from)
+                     max_connections, segments, verified}  speed counts this
+                     run's bytes (bytes - resumed_from); verified is the
+                     checksum checked (\"sha256:<hex>\") or null
   paused            {id, downloaded, total, exit_code}  after Ctrl-C
   failed            {id, error: {kind, key, message}, exit_code}
 The last line is always completed, paused or failed. Sizes are bytes, speeds
@@ -152,6 +156,12 @@ struct RunArgs {
     #[arg(long, value_name = "RATE", value_parser = parse_limit)]
     limit: Option<Rate>,
 
+    /// The checksum the file must have: `sha256:<hex>` (also md5, sha1, sha512),
+    /// or bare hex (the algorithm follows from its length). Checked after the
+    /// download; on a mismatch the file keeps its .boltget name (exit code 9).
+    #[arg(long, value_name = "ALGO:HEX", value_parser = Checksum::parse)]
+    checksum: Option<Checksum>,
+
     /// Flush (and checkpoint) interval in milliseconds. For tests.
     #[arg(long, hide = true, value_name = "MS")]
     flush_interval_ms: Option<u64>,
@@ -177,6 +187,11 @@ struct GetArgs {
     /// Do not record the download (it cannot be resumed).
     #[arg(long)]
     no_state: bool,
+
+    /// Do not verify against a digest the server advertises (Repr-Digest,
+    /// Digest, Content-MD5, ...). Without --checksum such a digest is checked.
+    #[arg(long)]
+    no_server_digest: bool,
 
     #[command(flatten)]
     run: RunArgs,
@@ -204,6 +219,11 @@ struct ResumeArgs {
     /// same file name (needed when the file changed on the server).
     #[arg(long)]
     restart: bool,
+
+    /// Do not verify a checksum this time (forgets the saved one). This keeps a
+    /// download that failed verification as it is.
+    #[arg(long, conflicts_with = "checksum")]
+    no_checksum: bool,
 
     #[command(flatten)]
     run: RunArgs,
@@ -236,6 +256,7 @@ fn exit_code_for(e: &Error) -> u8 {
         ErrorKind::ResourceChanged | ErrorKind::RangeUnsupported | ErrorKind::LinkExpired => 6,
         ErrorKind::Busy | ErrorKind::Database => 7,
         ErrorKind::NotFound | ErrorKind::InvalidState => 8,
+        ErrorKind::Integrity => 9,
         ErrorKind::Cancelled => 130,
         _ => 1,
     }
@@ -295,6 +316,10 @@ fn build_request(args: &GetArgs) -> Result<AddRequest> {
     if let Some(Rate(r)) = args.run.limit {
         req = req.speed_limit(r);
     }
+    if let Some(c) = &args.run.checksum {
+        req = req.checksum(c.clone());
+    }
+    req = req.server_digest(!args.no_server_digest);
     if let Some(n) = args.run.connections {
         req = req.connections(n);
     }
@@ -357,6 +382,10 @@ fn hints_for(e: &Error, id: Option<DownloadId>, command: &str) -> Vec<String> {
             ErrorKind::ResourceChanged | ErrorKind::RangeUnsupported => vec![format!(
                 "the saved progress cannot be used; start over with: boltget resume {id} --restart"
             )],
+            ErrorKind::Integrity => vec![
+                format!("download it again with: boltget resume {id} --restart"),
+                format!("or keep the file as it is with: boltget resume {id} --no-checksum"),
+            ],
             _ if matches!(e, Error::PartialMissing { .. }) => {
                 vec![format!("start over with: boltget resume {id} --restart")]
             }
@@ -512,6 +541,11 @@ async fn resume(args: ResumeArgs, state: Option<&Path>, verbose: u8) -> u8 {
     opts.connections = args.run.connections;
     if let Some(Rate(r)) = args.run.limit {
         opts = opts.speed_limit(r);
+    }
+    if args.no_checksum {
+        opts = opts.checksum(None);
+    } else if let Some(c) = &args.run.checksum {
+        opts = opts.checksum(Some(c.clone()));
     }
     for (name, value) in headers {
         opts = opts.header(name, value);
@@ -705,6 +739,14 @@ mod tests {
     #[test]
     fn exit_codes() {
         assert_eq!(exit_code_for(&Error::Cancelled), 130);
+        assert_eq!(
+            exit_code_for(&Error::ChecksumMismatch {
+                expected: Checksum::parse(&"0".repeat(64)).unwrap(),
+                actual: String::new(),
+                origin: boltget_engine::ChecksumSource::User,
+            }),
+            9
+        );
         assert_eq!(exit_code_for(&Error::Timeout("x")), 3);
         assert_eq!(exit_code_for(&Error::TooManyRedirects(10)), 4);
         assert_eq!(exit_code_for(&Error::ResourceChanged(String::new())), 6);

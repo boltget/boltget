@@ -534,3 +534,87 @@ async fn speed_limit_flag_and_global_setting() {
     assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("unlimited"));
 }
+
+fn sha256_hex(data: &[u8]) -> String {
+    use std::fmt::Write as _;
+    Sha256::digest(data).iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn checksum_match_mismatch_and_keep() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let size = 1024 * 1024 + 9;
+    let url = srv.url(&format!("/data?size={size}&seed=21"));
+    let good = sha256_hex(&content(21, size));
+
+    let out = boltget(
+        state.path(),
+        vec![
+            s("get"),
+            url.clone(),
+            s("-o"),
+            dir.path().join("ok.bin").display().to_string(),
+            s("--checksum"),
+            format!("sha256:{good}"),
+            s("--json"),
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let last = lines(&out).pop().unwrap();
+    assert_eq!(last["event"], "completed");
+    assert_eq!(last["verified"], format!("sha256:{good}"));
+    let events = lines(&out);
+    assert!(
+        events
+            .iter()
+            .any(|e| e["event"] == "state_changed" && e["state"] == "verifying")
+    );
+
+    // A wrong checksum: exit 9, file kept under its partial name, hints shown.
+    let wrong = "0".repeat(64);
+    let target = dir.path().join("bad.bin");
+    let out = boltget(
+        state.path(),
+        vec![
+            s("get"),
+            url.clone(),
+            s("-o"),
+            target.display().to_string(),
+            s("--checksum"),
+            wrong,
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(9), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("checksum mismatch"), "{err}");
+    assert!(err.contains("--no-checksum"), "{err}");
+    assert!(!target.exists());
+    assert!(dir.path().join("bad.bin.boltget").exists());
+    let list = list_json(state.path()).await;
+    assert_eq!(list[1]["state"], "corrupt");
+    assert_eq!(list[1]["checksum"]["actual"], good.as_str());
+
+    // Keep it anyway.
+    let out = boltget(
+        state.path(),
+        vec![s("resume"), s("2"), s("--no-checksum"), s("-q")],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert_eq!(sha256_hex(&std::fs::read(&target).unwrap()), good);
+
+    // A malformed checksum is a usage error.
+    let out = boltget(
+        state.path(),
+        vec![s("get"), url, s("--checksum"), s("sha256:xyz")],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(2));
+}

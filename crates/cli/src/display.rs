@@ -195,6 +195,9 @@ pub(crate) fn summary(done: &Completed) {
             HumanBytes(fetched),
         );
     }
+    if let Some(c) = &done.verified {
+        println!("Checksum OK ({}:{})", c.algo, c.hex);
+    }
 }
 
 #[cfg(test)]

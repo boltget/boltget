@@ -17,6 +17,7 @@ use bytes::Bytes;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{Error, Result};
+use crate::integrity::HashFeed;
 use crate::platform;
 
 /// Bytes to write at an absolute offset, on behalf of a segment.
@@ -52,6 +53,7 @@ pub(crate) fn spawn(
     path: Arc<PathBuf>,
     capacity: usize,
     policy: FlushPolicy,
+    hash: Option<HashFeed>,
 ) -> Result<Writer> {
     let (tx, rx) = mpsc::channel(capacity);
     let (dtx, drx) = mpsc::unbounded_channel();
@@ -59,7 +61,7 @@ pub(crate) fn spawn(
     thread::Builder::new()
         .name("boltget-writer".into())
         .spawn(move || {
-            let res = run(file, &path, rx, &dtx, policy);
+            let res = run(file, &path, rx, &dtx, policy, hash);
             let _ = done_tx.send(res);
         })
         .map_err(|e| Error::Internal(format!("spawning writer thread: {e}")))?;
@@ -76,6 +78,7 @@ fn run(
     mut rx: mpsc::Receiver<WriteChunk>,
     durable: &mpsc::UnboundedSender<DurableReport>,
     policy: FlushPolicy,
+    mut hash: Option<HashFeed>,
 ) -> Result<File> {
     // Next expected offset per segment. Each segment is written by one worker,
     // strictly in order, so anything else is an engine bug.
@@ -107,6 +110,13 @@ fn run(
         platform::write_all_at(&file, &chunk.bytes, chunk.offset)
             .map_err(|e| Error::disk(path, e))?;
         let end = chunk.offset + len;
+        // The hasher sees every byte once it is in the file (`Bytes` clones are
+        // cheap). If it has gone away, verification reports why.
+        if let Some(h) = &hash
+            && h.send((chunk.offset, chunk.bytes)).is_err()
+        {
+            hash = None;
+        }
         next.insert(chunk.segment, end);
         dirty.insert(chunk.segment, end);
         since_flush += len;
@@ -134,7 +144,7 @@ mod tests {
             interval: Duration::from_secs(3600),
             bytes: u64::MAX,
         };
-        let mut w = spawn(f, Arc::new(p.clone()), 2, policy).unwrap();
+        let mut w = spawn(f, Arc::new(p.clone()), 2, policy, None).unwrap();
         for (seg, off, data) in [(1u32, 4u64, &b"wxyz"[..]), (0, 0, b"ab"), (0, 2, b"cd")] {
             w.tx.send(WriteChunk {
                 segment: seg,
@@ -161,7 +171,7 @@ mod tests {
             interval: Duration::ZERO,
             bytes: 0,
         };
-        let w = spawn(f, Arc::new(p), 4, policy).unwrap();
+        let w = spawn(f, Arc::new(p), 4, policy, None).unwrap();
         for off in [0u64, 4] {
             let _ =
                 w.tx.send(WriteChunk {

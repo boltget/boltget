@@ -28,6 +28,8 @@
 //! | `chunked=1` | No `Content-Length` on `200` (chunked) |
 //! | `star_total=1` | `Content-Range: bytes a-b/*` |
 //! | `key=K` | Request counter key (defaults to the whole query string) |
+//! | `digest=repr|content|legacy|md5|goog|amz` | Advertise the content's digest: `Repr-Digest` / `Content-Digest` (SHA-256), `Digest` (SHA-512), `Content-MD5`, `x-goog-hash` (MD5), `x-amz-checksum-sha256`. Body digests (`content`, `md5`) describe the bytes of this response |
+//! | `digest_bad=1` | ... but advertise a wrong digest |
 //!
 //! Other routes:
 //!
@@ -487,6 +489,8 @@ fn data(
     if q.get("encoding").map(String::as_str) == Some("gzip") {
         b = b.header(header::CONTENT_ENCODING, "gzip");
     }
+    let digest = q.get("digest").cloned();
+    let digest_bad = num(q, "digest_bad") == Some(1);
 
     let (status, start, len) = match range {
         Some(Err(())) => {
@@ -512,6 +516,12 @@ fn data(
             (StatusCode::OK, 0, size)
         }
     };
+    if let Some(kind) = &digest {
+        let (name, value) = digest_header(kind, seed, size, start, len, digest_bad);
+        if let Some(name) = name {
+            b = b.header(name, value);
+        }
+    }
     let chunked = status == StatusCode::OK && num(q, "chunked") == Some(1);
     if !chunked {
         b = b.header(header::CONTENT_LENGTH, len);
@@ -599,6 +609,72 @@ async fn produce(p: Plan, tx: mpsc::Sender<Result<Bytes, std::io::Error>>, state
                 "simulated short body",
             )))
             .await;
+    }
+}
+
+/// Standard base64 with padding.
+fn base64(bytes: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in bytes.chunks(3) {
+        let n = (u32::from(c[0]) << 16)
+            | (u32::from(*c.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*c.get(2).unwrap_or(&0));
+        for i in 0..4 {
+            if i <= c.len() {
+                out.push(A[((n >> (18 - 6 * i)) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The digest header for `digest=<kind>`: whole-representation digests cover
+/// `[0, size)`, body digests cover this response's `[start, start + len)`.
+fn digest_header(
+    kind: &str,
+    seed: u64,
+    size: u64,
+    start: u64,
+    len: u64,
+    bad: bool,
+) -> (Option<&'static str>, String) {
+    use md5::Digest as _;
+    let slice = |a: u64, n: u64| {
+        let mut v = vec![0u8; n as usize];
+        fill(seed, a, &mut v);
+        if bad && !v.is_empty() {
+            v[0] ^= 0xff;
+        }
+        v
+    };
+    let whole = || slice(0, size);
+    let body = || slice(start, len);
+    match kind {
+        "repr" => (
+            Some("repr-digest"),
+            format!("sha-256=:{}:", base64(&sha2::Sha256::digest(whole()))),
+        ),
+        "content" => (
+            Some("content-digest"),
+            format!("sha-256=:{}:", base64(&sha2::Sha256::digest(body()))),
+        ),
+        "legacy" => (
+            Some("digest"),
+            format!("SHA-512={}", base64(&sha2::Sha512::digest(whole()))),
+        ),
+        "md5" => (Some("content-md5"), base64(&md5::Md5::digest(body()))),
+        "goog" => (
+            Some("x-goog-hash"),
+            format!("crc32c=AAAAAA==,md5={}", base64(&md5::Md5::digest(whole()))),
+        ),
+        "amz" => (
+            Some("x-amz-checksum-sha256"),
+            base64(&sha2::Sha256::digest(whole())),
+        ),
+        _ => (None, String::new()),
     }
 }
 

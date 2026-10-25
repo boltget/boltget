@@ -17,6 +17,7 @@ use crate::error::{Error, Result};
 use crate::events::{Completed, DownloadId, DownloadInfo, EngineEvent, Progress, State};
 use crate::filename::{self, NameSources};
 use crate::http::{self, Connector, Origin};
+use crate::integrity::{Checksum, ChecksumSource};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport};
 use crate::ratelimit::RateLimiter;
 use crate::request::{RequestContext, redact_url};
@@ -59,6 +60,12 @@ pub struct AddRequest {
     /// This download's bandwidth limit in bytes per second (`None`: only the
     /// global limit applies).
     pub speed_limit: Option<u64>,
+    /// The checksum the file must have. Checked after the last byte is on disk;
+    /// a mismatch leaves the download `Corrupt` instead of renaming the file.
+    pub checksum: Option<Checksum>,
+    /// Without [`AddRequest::checksum`], verify against a digest the server
+    /// advertises (`Repr-Digest`, `Digest`, `Content-MD5`, ...). On by default.
+    pub server_digest: bool,
 }
 
 impl AddRequest {
@@ -70,6 +77,8 @@ impl AddRequest {
             connections: None,
             conflict: ConflictPolicy::Rename,
             speed_limit: None,
+            checksum: None,
+            server_digest: true,
         }
     }
 
@@ -91,6 +100,20 @@ impl AddRequest {
     #[must_use]
     pub fn speed_limit(mut self, bytes_per_sec: Option<u64>) -> Self {
         self.speed_limit = bytes_per_sec.filter(|r| *r > 0);
+        self
+    }
+
+    /// Sets the checksum the file must have.
+    #[must_use]
+    pub fn checksum(mut self, checksum: Checksum) -> Self {
+        self.checksum = Some(checksum);
+        self
+    }
+
+    /// Whether to verify against a digest the server advertises (default true).
+    #[must_use]
+    pub fn server_digest(mut self, verify: bool) -> Self {
+        self.server_digest = verify;
         self
     }
 }
@@ -181,6 +204,9 @@ pub struct ResumeOptions {
     /// Replace the download's own speed limit (`Some(None)`: remove it). `None`
     /// keeps the stored one.
     pub speed_limit: Option<Option<u64>>,
+    /// Replace the expected checksum (`Some(None)`: verify nothing, which is how
+    /// a `Corrupt` download is kept as it is). `None` keeps the stored one.
+    pub checksum: Option<Option<Checksum>>,
 }
 
 impl ResumeOptions {
@@ -188,6 +214,13 @@ impl ResumeOptions {
     #[must_use]
     pub fn speed_limit(mut self, bytes_per_sec: Option<u64>) -> Self {
         self.speed_limit = Some(bytes_per_sec.filter(|r| *r > 0));
+        self
+    }
+
+    /// Replaces the expected checksum (`None`: do not verify).
+    #[must_use]
+    pub fn checksum(mut self, checksum: Option<Checksum>) -> Self {
+        self.checksum = Some(checksum);
         self
     }
 
@@ -433,6 +466,12 @@ impl Engine {
                 speed_limit: req.speed_limit,
             };
             store.send("new download", move |c| records::insert(c, &rec));
+            if let Some(c) = &req.checksum {
+                let pair = (c.clone(), ChecksumSource::User);
+                store.send("checksum", move |conn| {
+                    records::set_checksum(conn, id, Some(&pair))
+                });
+            }
         }
         let shared = self.new_shared(id, req.speed_limit);
         self.downloads().insert(id, shared.clone());
@@ -515,6 +554,26 @@ impl Engine {
             None => saved.speed_limit,
         };
         req.speed_limit = speed_limit;
+        let mut saved = saved;
+        if let Some(new) = opts.checksum {
+            let pair = new.map(|c| (c, ChecksumSource::User));
+            let stored = pair.clone();
+            store
+                .call(move |c| records::set_checksum(c, id, stored.as_ref()))
+                .await?;
+            if pair.is_none() {
+                // "Verify nothing" also covers a digest the server advertises.
+                req.server_digest = false;
+            }
+            saved.checksum = pair;
+        }
+        // If the download has to start over, the probe finds a server digest
+        // again; a checksum the user gave travels with the request.
+        req.checksum = saved
+            .checksum
+            .as_ref()
+            .filter(|(_, s)| *s == ChecksumSource::User)
+            .map(|(c, _)| c.clone());
         let job = if opts.restart {
             store.call(move |c| records::reset_progress(c, id)).await?;
             Job {
@@ -575,7 +634,11 @@ impl Engine {
                         reason: "is already completed".into(),
                     }),
                     // Queued, or left "running" by a process that is gone.
-                    State::Queued | State::Probing | State::Downloading | State::Retrying => {
+                    State::Queued
+                    | State::Probing
+                    | State::Downloading
+                    | State::Retrying
+                    | State::Verifying => {
                         records::set_state(c, id, State::Paused, None)?;
                         Ok(State::Paused)
                     }

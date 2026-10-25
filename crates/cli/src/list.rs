@@ -12,9 +12,12 @@ pub(crate) const JSON_HELP: &str = "\
 With --json, stdout is one JSON array with an object per download:
   {id, state, url, file_name, path, partial_path, total, downloaded,
    resumable, error: {kind, key, message} | null,
+   checksum: {expected: {algo, hex}, source, actual} | null,
    created_at, updated_at, completed_at}
-state is one of queued, probing, downloading, retrying, paused, completed,
-failed, cancelled. downloaded counts bytes saved at the last checkpoint.
+state is one of queued, probing, downloading, retrying, verifying, paused,
+completed, failed, cancelled, corrupt. checksum.source is \"user\" or
+{\"server\": \"<header>\"}; actual is set once the file was hashed.
+downloaded counts bytes saved at the last checkpoint.
 Times are Unix milliseconds; URLs have their query redacted.
 
 While another boltget process owns the database, the list is read without

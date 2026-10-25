@@ -25,7 +25,7 @@ use tokio::sync::oneshot;
 
 use crate::error::{Error, Result};
 
-pub use records::{DownloadSummary, SavedError};
+pub use records::{ChecksumStatus, DownloadSummary, SavedError};
 
 /// Name of the database file in the data directory.
 pub const DB_FILE: &str = "boltget.db";

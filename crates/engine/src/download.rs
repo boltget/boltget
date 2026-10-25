@@ -31,6 +31,7 @@ use crate::events::{Completed, DownloadId, DownloadInfo, EngineEvent, ErrorInfo,
 use crate::filename::{self, NameSources};
 use crate::headers::{self, ContentRange, Validators};
 use crate::http::{Conn, Connector, Origin, Response};
+use crate::integrity::{self, Checksum, ChecksumSource};
 use crate::platform::{self, Preallocation};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport, sleep_or_cancel};
 use crate::ratelimit::{Limiters, RateLimiter};
@@ -338,6 +339,10 @@ pub(crate) async fn run(shared: Arc<Shared>, env: Env, job: Job) -> Result<Compl
         }
         Err(Error::Cancelled) if shared.pause_requested() => shared.set_state(State::Paused, None),
         Err(Error::Cancelled) => shared.set_state(State::Cancelled, None),
+        Err(e) if e.kind() == ErrorKind::Integrity => {
+            tracing::warn!(id = %shared.id, error = %e, "download is corrupt");
+            shared.set_state(State::Corrupt, Some(e));
+        }
         Err(e) => {
             tracing::warn!(id = %shared.id, error = %e, "download failed");
             shared.set_state(State::Failed, Some(e));
@@ -494,6 +499,8 @@ struct Setup {
     total: Option<u64>,
     resumable: bool,
     encoded: bool,
+    /// The checksum to verify the finished file against.
+    expected: Option<(Checksum, ChecksumSource)>,
     start: StartPlan,
 }
 
@@ -615,6 +622,25 @@ async fn setup_fresh(
         _ => None,
     };
     let encoded = matches!(kind, ProbeKind::Encoded { .. });
+    let expected = match &req.checksum {
+        Some(c) => Some((c.clone(), ChecksumSource::User)),
+        None if req.server_digest => {
+            // The probe asked for `bytes=0-`: a 200 or a 206 with a known total
+            // carries the whole file, so body digests describe the file too.
+            let whole = matches!(
+                kind,
+                ProbeKind::Ranged { .. } | ProbeKind::Full { .. } | ProbeKind::Empty
+            );
+            integrity::server_digests(&probed.response.headers, whole)
+                .into_iter()
+                .next()
+                .map(|(c, h)| (c, ChecksumSource::Server(h)))
+        }
+        None => None,
+    };
+    if let Some((c, ChecksumSource::Server(h))) = &expected {
+        tracing::debug!(id = %shared.id, algo = %c.algo, header = %h, "server advertises a digest");
+    }
 
     // Record the destination before the file exists, so that a crash right after
     // creating it still leaves a record pointing at it.
@@ -637,6 +663,14 @@ async fn setup_fresh(
             .await
         {
             tracing::warn!(id = %id, error = %e, "could not save the download destination");
+        }
+        if let Some(pair) = expected
+            .clone()
+            .filter(|(_, s)| matches!(s, ChecksumSource::Server(_)))
+        {
+            store.send("checksum", move |c| {
+                records::set_checksum(c, id, Some(&pair))
+            });
         }
     }
 
@@ -694,6 +728,7 @@ async fn setup_fresh(
         total,
         resumable,
         encoded,
+        expected,
         start: StartPlan::Probe {
             response: Box::new(probed.response),
             permit: permit0,
@@ -785,6 +820,7 @@ fn prepare_resume(
             max_connections: 0,
             segments: saved.segments.len(),
             endgame_takeovers: 0,
+            verified: None,
             info,
         })));
     }
@@ -842,6 +878,7 @@ fn prepare_resume(
         Some(_) if platform::is_sparse(&partial) => Preallocation::Sparse,
         Some(_) => Preallocation::SetLen,
     };
+    let expected = saved.checksum.clone();
     let reservation = reserve(env, &path)?;
     let original = Origin::of(req.ctx.url())?;
     let final_url = saved
@@ -917,6 +954,7 @@ fn prepare_resume(
         total: saved.total_size,
         resumable: true,
         encoded: false,
+        expected,
         start: StartPlan::Resume { k },
     })))
 }
@@ -998,12 +1036,36 @@ async fn execute(
         total,
         resumable,
         encoded,
+        expected,
         start,
     } = setup;
 
     let resumed_from = shared.downloaded.load(Ordering::Relaxed);
 
-    // ---- Writer ----
+    // ---- Hasher (only with an expected checksum) and writer ----
+    let (hash_feed, hash_done) = match &expected {
+        Some((c, _)) => {
+            // What a resumed download already has on disk is read back once the
+            // in-order hash reaches it.
+            let on_disk: Vec<(u64, u64)> = shared
+                .table
+                .lock()
+                .map_err(|_| Error::Internal("table lock poisoned".into()))?
+                .as_ref()
+                .map(|t| {
+                    t.segments()
+                        .iter()
+                        .filter(|s| s.durable > 0)
+                        .map(|s| (s.start, s.start + s.durable))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let clone = file.try_clone().map_err(|e| Error::disk(&partial, e))?;
+            let (tx, rx) = integrity::spawn_hasher(c.algo, clone, partial.clone(), &on_disk)?;
+            (Some(tx), Some(rx))
+        }
+        None => (None, None),
+    };
     let path_arc = Arc::new(partial.clone());
     let mut w = writer::spawn(
         file,
@@ -1013,6 +1075,7 @@ async fn execute(
             interval: cfg.flush_interval,
             bytes: cfg.flush_bytes,
         },
+        hash_feed,
     )?;
     let (sup_tx, mut sup_rx) = mpsc::unbounded_channel();
     let if_range = validators.if_range().map(str::to_owned);
@@ -1295,6 +1358,41 @@ async fn execute(
     }
     drop(file);
 
+    // ---- Checksum (hashed in file order while the bytes arrived) ----
+    let verified = match (expected, hash_done) {
+        (Some((want, origin)), Some(done)) => {
+            shared.set_state(State::Verifying, None);
+            let hashed = done
+                .await
+                .map_err(|_| Error::Internal("hasher thread vanished".into()))??;
+            if hashed.bytes != bytes {
+                return Err(Error::Internal(format!(
+                    "hashed {} bytes of {bytes}",
+                    hashed.bytes
+                )));
+            }
+            if let Some(store) = &shared.store {
+                let (id, hex) = (shared.id, hashed.hex.clone());
+                store.send("checksum result", move |c| {
+                    records::set_checksum_actual(c, id, &hex)
+                });
+            }
+            if hashed.hex != want.hex {
+                // Keep the partial file and an "all bytes durable" checkpoint:
+                // the user decides between downloading again and keeping it.
+                save_checkpoint_now(&core, None).await;
+                return Err(Error::ChecksumMismatch {
+                    expected: want,
+                    actual: hashed.hex,
+                    origin,
+                });
+            }
+            tracing::debug!(id = %shared.id, checksum = %want, "checksum verified");
+            Some(want)
+        }
+        _ => None,
+    };
+
     let dir = parent_dir(&path);
     let final_path = if req.conflict == ConflictPolicy::Rename && path.exists() {
         filename::non_colliding(&dir, &file_name_of(&path), Path::exists)
@@ -1331,6 +1429,7 @@ async fn execute(
         max_connections: shared.max_connections.load(Ordering::Relaxed),
         segments,
         endgame_takeovers: shared.endgame_takeovers.load(Ordering::Relaxed),
+        verified,
         info,
     })
 }

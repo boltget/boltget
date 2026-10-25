@@ -35,6 +35,7 @@ mod events;
 mod filename;
 mod headers;
 mod http;
+mod integrity;
 mod platform;
 mod probe;
 mod ratelimit;
@@ -51,11 +52,14 @@ pub use engine::{
 pub use error::{Error, ErrorKind, Result};
 pub use events::{Completed, DownloadId, DownloadInfo, EngineEvent, ErrorInfo, Progress, State};
 pub use headers::Validators;
+pub use integrity::{Checksum, ChecksumSource, HashAlgo};
 pub use platform::{Preallocation, is_sparse};
 pub use probe::{ProbeResult, RangeSupport};
 pub use ratelimit::parse_rate;
 pub use request::{RequestContext, redact_url};
-pub use store::{DB_FILE, DownloadSummary, LOCK_FILE, SavedError, default_data_dir};
+pub use store::{
+    ChecksumStatus, DB_FILE, DownloadSummary, LOCK_FILE, SavedError, default_data_dir,
+};
 
 /// Re-exported so callers can build headers for [`RequestContext::header`].
 pub use ::http::{HeaderName, HeaderValue, header};

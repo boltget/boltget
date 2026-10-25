@@ -32,6 +32,7 @@ enum Line<'a> {
         speed: u64,
         max_connections: u32,
         segments: usize,
+        verified: Option<String>,
     },
     Paused {
         id: DownloadId,
@@ -110,6 +111,7 @@ pub(crate) async fn run(
             speed: (fetched as f64 / secs) as u64,
             max_connections: done.max_connections,
             segments: done.segments,
+            verified: done.verified.as_ref().map(ToString::to_string),
         });
     }
     res

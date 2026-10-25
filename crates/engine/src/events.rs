@@ -36,6 +36,8 @@ pub enum State {
     Downloading,
     /// Every connection is failing; waiting to retry.
     Retrying,
+    /// All bytes are on disk; the checksum is being checked.
+    Verifying,
     /// Stopped with progress checkpointed; can be resumed.
     Paused,
     /// Finished; the file has its final name.
@@ -44,6 +46,9 @@ pub enum State {
     Failed,
     /// Stopped by the caller.
     Cancelled,
+    /// Every byte arrived but the file does not match its checksum. The partial
+    /// file is kept; resuming with `restart` downloads it again.
+    Corrupt,
 }
 
 impl State {
@@ -52,13 +57,16 @@ impl State {
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            State::Completed | State::Failed | State::Cancelled | State::Paused
+            State::Completed | State::Failed | State::Cancelled | State::Paused | State::Corrupt
         )
     }
 
     /// Whether a download in this state is being worked on by a running task.
     pub fn is_active(self) -> bool {
-        matches!(self, State::Probing | State::Downloading | State::Retrying)
+        matches!(
+            self,
+            State::Probing | State::Downloading | State::Retrying | State::Verifying
+        )
     }
 
     /// The `snake_case` name used in JSON and in the database.
@@ -68,10 +76,12 @@ impl State {
             State::Probing => "probing",
             State::Downloading => "downloading",
             State::Retrying => "retrying",
+            State::Verifying => "verifying",
             State::Paused => "paused",
             State::Completed => "completed",
             State::Failed => "failed",
             State::Cancelled => "cancelled",
+            State::Corrupt => "corrupt",
         }
     }
 
@@ -82,10 +92,12 @@ impl State {
             "probing" => State::Probing,
             "downloading" => State::Downloading,
             "retrying" => State::Retrying,
+            "verifying" => State::Verifying,
             "paused" => State::Paused,
             "completed" => State::Completed,
             "failed" => State::Failed,
             "cancelled" => State::Cancelled,
+            "corrupt" => State::Corrupt,
             _ => return None,
         })
     }
@@ -227,6 +239,8 @@ pub struct Completed {
     pub segments: usize,
     /// Times an endgame duplicate took over the tail of a slow segment.
     pub endgame_takeovers: u32,
+    /// The checksum the file was verified against, if any.
+    pub verified: Option<crate::integrity::Checksum>,
     /// Probe details.
     pub info: DownloadInfo,
 }

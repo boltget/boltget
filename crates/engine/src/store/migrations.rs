@@ -28,6 +28,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("migrations/0002_speed_limit.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/0003_checksum.sql"),
+    },
 ];
 
 /// The schema version this build writes.

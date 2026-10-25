@@ -12,6 +12,7 @@ use serde::Serialize;
 use crate::error::{Error, ErrorKind, Result};
 use crate::events::{DownloadId, ErrorInfo, State};
 use crate::headers::Validators;
+use crate::integrity::{Checksum, ChecksumSource, HashAlgo};
 use crate::request::redact_url;
 use crate::segment::SegmentCheckpoint;
 
@@ -102,6 +103,7 @@ pub(crate) struct Saved {
     pub(crate) encoded: bool,
     pub(crate) max_connections: Option<u32>,
     pub(crate) speed_limit: Option<u64>,
+    pub(crate) checksum: Option<(Checksum, ChecksumSource)>,
     pub(crate) segments: Vec<SegmentCheckpoint>,
 }
 
@@ -124,6 +126,17 @@ pub struct SavedError {
     pub key: String,
     /// English diagnostic text.
     pub message: String,
+}
+
+/// A download's checksum, as stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChecksumStatus {
+    /// What the file must hash to.
+    pub expected: Checksum,
+    /// Where that came from.
+    pub source: ChecksumSource,
+    /// What the file hashed to, once verified (lowercase hex).
+    pub actual: Option<String>,
 }
 
 /// A row of [`Engine::list`](crate::Engine::list).
@@ -150,6 +163,8 @@ pub struct DownloadSummary {
     pub resumable: bool,
     /// The error, for failed downloads.
     pub error: Option<SavedError>,
+    /// The expected checksum and, once checked, the actual digest.
+    pub checksum: Option<ChecksumStatus>,
     /// Creation time, Unix milliseconds.
     pub created_at: u64,
     /// Last update, Unix milliseconds.
@@ -249,15 +264,15 @@ pub(crate) fn save_checkpoint(conn: &mut Connection, id: DownloadId, c: &Checkpo
     Ok(())
 }
 
-/// Records a state change. Entering any state other than `failed`/`retrying`
-/// clears the stored error; those two record it when given.
+/// Records a state change. Entering any state other than `failed`, `retrying`
+/// or `corrupt` clears the stored error; those record it when given.
 pub(crate) fn set_state(
     conn: &Connection,
     id: DownloadId,
     state: State,
     error: Option<&ErrorInfo>,
 ) -> Result<()> {
-    let keep_error = matches!(state, State::Failed | State::Retrying);
+    let keep_error = matches!(state, State::Failed | State::Retrying | State::Corrupt);
     let (kind, key, detail) = match error.filter(|_| keep_error) {
         Some(e) => (
             Some(e.kind.as_str()),
@@ -302,7 +317,7 @@ pub(crate) fn mark_completed(
 pub(crate) fn recover_interrupted(conn: &Connection) -> Result<usize> {
     Ok(conn.execute(
         "UPDATE download SET state = 'paused', updated_at = ?1
-         WHERE state IN ('probing', 'downloading', 'retrying')",
+         WHERE state IN ('probing', 'downloading', 'retrying', 'verifying')",
         [now_ms()],
     )?)
 }
@@ -383,6 +398,7 @@ pub(crate) fn load(conn: &Connection, id: DownloadId) -> Result<Option<Saved>> {
                 encoded: r.get("encoded")?,
                 max_connections: r.get("max_connections")?,
                 speed_limit: r.get::<_, Option<i64>>("speed_limit_bps")?.map(uint),
+                checksum: checksum_of(r)?,
                 segments: Vec::new(),
             })
         })
@@ -433,6 +449,11 @@ fn summary(r: &Row<'_>) -> rusqlite::Result<DownloadSummary> {
         downloaded: uint(r.get("downloaded")?),
         resumable: r.get("resumable")?,
         error,
+        checksum: checksum_of(r)?.map(|(expected, source)| ChecksumStatus {
+            expected,
+            source,
+            actual: r.get("checksum_actual").ok().flatten(),
+        }),
         created_at: uint(r.get("created_at")?),
         updated_at: uint(r.get("updated_at")?),
         completed_at: r.get::<_, Option<i64>>("completed_at")?.map(uint),
@@ -501,4 +522,49 @@ pub(crate) fn load_settings(conn: &Connection) -> Result<crate::config::Settings
             .and_then(|v| v.as_u64())
             .filter(|v| *v > 0),
     })
+}
+
+fn checksum_of(r: &Row<'_>) -> rusqlite::Result<Option<(Checksum, ChecksumSource)>> {
+    let algo: Option<String> = r.get("checksum_algo")?;
+    let hex: Option<String> = r.get("checksum_expected")?;
+    let source: Option<String> = r.get("checksum_source")?;
+    Ok(match (algo.as_deref().and_then(HashAlgo::parse), hex) {
+        (Some(a), Some(h)) => Checksum::new(a, &h).ok().map(|c| {
+            (
+                c,
+                ChecksumSource::from_db(source.as_deref().unwrap_or("user")),
+            )
+        }),
+        _ => None,
+    })
+}
+
+/// Sets (or with `None` clears) the expected checksum; clears the last result.
+pub(crate) fn set_checksum(
+    conn: &Connection,
+    id: DownloadId,
+    checksum: Option<&(Checksum, ChecksumSource)>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE download SET checksum_algo = ?2, checksum_expected = ?3, checksum_source = ?4,
+                checksum_actual = NULL, updated_at = ?5
+         WHERE id = ?1",
+        params![
+            int(id.0)?,
+            checksum.map(|(c, _)| c.algo.as_str()),
+            checksum.map(|(c, _)| c.hex.clone()),
+            checksum.map(|(_, s)| s.as_db()),
+            now_ms()
+        ],
+    )?;
+    Ok(())
+}
+
+/// Records the digest the file actually has (after verification).
+pub(crate) fn set_checksum_actual(conn: &Connection, id: DownloadId, hex: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE download SET checksum_actual = ?2, updated_at = ?3 WHERE id = ?1",
+        params![int(id.0)?, hex, now_ms()],
+    )?;
+    Ok(())
 }

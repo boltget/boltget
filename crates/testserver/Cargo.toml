@@ -18,7 +18,9 @@ http-body-util.workspace = true
 httpdate.workspace = true
 hyper = { workspace = true, features = ["server"] }
 hyper-util.workspace = true
+md-5.workspace = true
 percent-encoding.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 

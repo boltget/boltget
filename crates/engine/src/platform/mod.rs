@@ -100,6 +100,32 @@ pub(crate) fn write_all_at(file: &File, buf: &[u8], offset: u64) -> io::Result<(
     }
 }
 
+/// Reads exactly `buf.len()` bytes at `offset` without using a shared file cursor.
+pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        let (mut buf, mut offset) = (buf, offset);
+        while !buf.is_empty() {
+            match file.seek_read(buf, offset) {
+                Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof)),
+                Ok(n) => {
+                    buf = &mut buf[n..];
+                    offset += n as u64;
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        file.read_exact_at(buf, offset)
+    }
+}
+
 /// The name of the file system holding `file` ("NTFS", "FAT32", "exFAT", ...), if known.
 pub(crate) fn filesystem_name(file: &File) -> Option<String> {
     #[cfg(windows)]

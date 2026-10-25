@@ -32,7 +32,7 @@ pub enum ErrorKind {
     Disk,
     /// Will not succeed by retrying: 404, bad URL, TLS certificate invalid, ...
     Permanent,
-    /// Checksum mismatch (reserved; checksum verification lands later).
+    /// Checksum mismatch: the download is `Corrupt`.
     Integrity,
     /// The operation was cancelled by the caller.
     Cancelled,
@@ -221,6 +221,17 @@ pub enum Error {
         detail: String,
     },
 
+    /// The downloaded file does not match the expected checksum.
+    #[error("checksum mismatch: expected {expected} ({origin}), got {actual}")]
+    ChecksumMismatch {
+        /// What the file should hash to.
+        expected: crate::integrity::Checksum,
+        /// What it hashed to (lowercase hex, same algorithm).
+        actual: String,
+        /// Where the expected checksum came from.
+        origin: crate::integrity::ChecksumSource,
+    },
+
     /// A bug or invariant violation.
     #[error("internal error: {0}")]
     Internal(String),
@@ -252,6 +263,7 @@ impl Error {
             Error::Database(_) => ErrorKind::Database,
             Error::UnknownDownload(_) => ErrorKind::NotFound,
             Error::InvalidState { .. } => ErrorKind::InvalidState,
+            Error::ChecksumMismatch { .. } => ErrorKind::Integrity,
         }
     }
 
@@ -292,6 +304,7 @@ impl Error {
             Error::UnknownDownload(_) => "error.unknown_download",
             Error::InvalidState { .. } => "error.invalid_state",
             Error::PartialMissing { .. } => "error.partial_missing",
+            Error::ChecksumMismatch { .. } => "error.checksum_mismatch",
         }
     }
 

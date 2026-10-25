@@ -19,12 +19,15 @@ http-body-util.workspace = true
 httpdate.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
+md-5.workspace = true
 percent-encoding.workspace = true
 rusqlite.workspace = true
 rustls.workspace = true
 rustls-platform-verifier.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha1.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
@@ -38,7 +41,6 @@ windows-sys.workspace = true
 [dev-dependencies]
 boltget-testserver.workspace = true
 proptest.workspace = true
-sha2.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
