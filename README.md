@@ -58,7 +58,7 @@ The full matrix, with a comparison to IDM, Free Download Manager, Motrix and ari
 
 ## Status
 
-**Pre-alpha, under active design.** There is no code yet. This repository currently holds the design documents that define what we are building. The first milestone (v0.1) is the Rust engine plus CLI, with a published benchmark against IDM. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Pre-alpha.** Work on the first milestone (v0.1: the Rust engine plus CLI, with a published benchmark against IDM) is under way. The engine already does dynamic segmentation, sparse preallocation and crash-safe resume, and `boltget get`, `list`, `pause`, `resume` and `remove` work from the command line. There is no installer or desktop app yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Install (planned)
 
