@@ -63,6 +63,9 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+mod proxy;
+pub use proxy::{ProxyMode, ProxyRecord, TestProxy};
+
 /// The byte at `offset` of the resource with `seed`.
 pub fn byte_at(seed: u64, offset: u64) -> u8 {
     let word = splitmix(seed ^ (offset / 8).wrapping_mul(0x9E37_79B9_7F4A_7C15));

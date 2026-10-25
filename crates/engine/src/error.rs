@@ -227,6 +227,10 @@ pub enum Error {
     #[error("the link no longer leads to the file: {0}")]
     LinkExpired(String),
 
+    /// The proxy refused our credentials (or wants some we do not have).
+    #[error("proxy authentication failed: {0}")]
+    ProxyAuth(String),
+
     /// A new link offered by [`Engine::refresh_link`](crate::Engine::refresh_link)
     /// does not lead to the same file.
     #[error("the new link was not accepted: {0}")]
@@ -253,6 +257,7 @@ impl Error {
     pub fn kind(&self) -> ErrorKind {
         match self {
             Error::InvalidUrl(_)
+            | Error::ProxyAuth(_)
             | Error::TooManyRedirects(_)
             | Error::InsecureRedirect(_)
             | Error::Tls(_) => ErrorKind::Permanent,
@@ -318,6 +323,7 @@ impl Error {
             Error::PartialMissing { .. } => "error.partial_missing",
             Error::ChecksumMismatch { .. } => "error.checksum_mismatch",
             Error::LinkExpired(_) => "error.link_expired",
+            Error::ProxyAuth(_) => "error.proxy_auth",
             Error::RefreshRejected(_) => "error.refresh_rejected",
         }
     }

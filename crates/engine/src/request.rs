@@ -4,6 +4,7 @@ use http::{HeaderMap, HeaderName, HeaderValue, header};
 use url::Url;
 
 use crate::error::{Error, Result};
+use crate::proxy::{Proxy, ProxyChoice};
 
 /// Request headers copied from the caller (browser or user). Everything else is
 /// dropped: hop-by-hop headers, `Range`, `If-*`, `Accept-Encoding`, `Host`,
@@ -28,6 +29,9 @@ struct SavedContext {
     headers: Vec<(String, String)>,
     #[serde(default)]
     suggested_name: Option<String>,
+    /// `"direct"`, or the proxy URL without credentials (they are secrets).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proxy: Option<String>,
 }
 
 /// Everything needed to (re)issue requests for a download.
@@ -36,6 +40,7 @@ pub struct RequestContext {
     url: Url,
     headers: HeaderMap,
     suggested_name: Option<String>,
+    proxy: ProxyChoice,
 }
 
 impl RequestContext {
@@ -58,6 +63,7 @@ impl RequestContext {
             url,
             headers: HeaderMap::new(),
             suggested_name: None,
+            proxy: ProxyChoice::Default,
         })
     }
 
@@ -83,6 +89,23 @@ impl RequestContext {
     pub fn with_suggested_name(mut self, name: impl Into<String>) -> Self {
         self.suggested_name = Some(name.into());
         self
+    }
+
+    /// Sets the proxy for this download (default: the engine's rules).
+    pub fn set_proxy(&mut self, proxy: ProxyChoice) {
+        self.proxy = proxy;
+    }
+
+    /// Builder-style [`RequestContext::set_proxy`].
+    #[must_use]
+    pub fn with_proxy(mut self, proxy: ProxyChoice) -> Self {
+        self.proxy = proxy;
+        self
+    }
+
+    /// The proxy choice.
+    pub fn proxy(&self) -> &ProxyChoice {
+        &self.proxy
     }
 
     /// The original URL.
@@ -111,6 +134,11 @@ impl RequestContext {
                 .filter_map(|(n, v)| Some((n.as_str().to_owned(), v.to_str().ok()?.to_owned())))
                 .collect(),
             suggested_name: self.suggested_name.clone(),
+            proxy: match &self.proxy {
+                ProxyChoice::Default => None,
+                ProxyChoice::Direct => Some("direct".into()),
+                ProxyChoice::Via(p) => Some(p.without_credentials()),
+            },
         };
         serde_json::to_string(&saved).unwrap_or_else(|_| "{}".into())
     }
@@ -125,6 +153,11 @@ impl RequestContext {
             }
         }
         ctx.suggested_name = saved.suggested_name;
+        ctx.proxy = match saved.proxy.as_deref() {
+            None => ProxyChoice::Default,
+            Some("direct") => ProxyChoice::Direct,
+            Some(p) => Proxy::parse(p).map_or(ProxyChoice::Default, ProxyChoice::Via),
+        };
         Ok(ctx)
     }
 }

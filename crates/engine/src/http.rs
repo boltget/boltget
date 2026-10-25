@@ -30,6 +30,7 @@ use url::Url;
 use crate::config::EngineConfig;
 use crate::error::{Error, Result};
 use crate::headers::range_header;
+use crate::proxy::{self, Proxy, ProxyChoice, ProxyKind};
 use crate::request::redact_url;
 
 /// Builds the shared rustls configuration: `ring` provider, OS trust store via
@@ -89,11 +90,20 @@ enum Sender {
     H2(http2::SendRequest<Empty<Bytes>>),
 }
 
+/// A connection to a forward HTTP proxy.
+#[derive(Clone)]
+struct Forward {
+    /// `Proxy-Authorization`, if the proxy has credentials.
+    auth: Option<HeaderValue>,
+}
+
 /// One HTTP connection owned by one worker.
 pub(crate) struct Conn {
     origin: Origin,
     sender: Sender,
     task: AbortHandle,
+    /// Requests go to an HTTP proxy in absolute form (plain `http` targets).
+    forward: Option<Forward>,
 }
 
 impl fmt::Debug for Conn {
@@ -238,8 +248,11 @@ async fn connect_tcp(addrs: &[SocketAddr]) -> Result<TcpStream> {
 #[derive(Clone)]
 pub(crate) struct Connector {
     tls: TlsConnector,
+    /// For TLS to an HTTPS proxy, which speaks HTTP/1.1 (`CONNECT`) only.
+    tls_proxy: TlsConnector,
     dns: Dns,
     cfg: Arc<EngineConfig>,
+    proxy: ProxyChoice,
 }
 
 impl fmt::Debug for Connector {
@@ -248,12 +261,42 @@ impl fmt::Debug for Connector {
     }
 }
 
+/// TLS handshake to `host` over `io`. Returns the stream and whether ALPN chose `h2`.
+async fn tls_handshake(
+    connector: &TlsConnector,
+    host: &str,
+    io: Box<dyn Io>,
+    limit: Duration,
+) -> Result<(Box<dyn Io>, bool)> {
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let name = ServerName::try_from(host.to_owned())
+        .map_err(|e| Error::InvalidUrl(format!("bad TLS server name: {e}")))?;
+    let tls = timeout(limit, connector.connect(name, io))
+        .await
+        .map_err(|_| Error::Timeout("TLS handshake"))?
+        .map_err(|e| {
+            // Certificate problems surface as InvalidData; they are permanent.
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                Error::Tls(e.to_string())
+            } else {
+                Error::network("TLS handshake", e)
+            }
+        })?;
+    let h2 = tls.get_ref().1.alpn_protocol() == Some(b"h2");
+    Ok((Box::new(tls), h2))
+}
+
 impl Connector {
-    pub(crate) fn new(tls: Arc<ClientConfig>, cfg: Arc<EngineConfig>) -> Self {
+    /// A connector for one download; `proxy` is the download's proxy setting.
+    pub(crate) fn new(tls: Arc<ClientConfig>, cfg: Arc<EngineConfig>, proxy: ProxyChoice) -> Self {
+        let mut proxy_tls = (*tls).clone();
+        proxy_tls.alpn_protocols = vec![b"http/1.1".to_vec()];
         Self {
             tls: TlsConnector::from(tls),
+            tls_proxy: TlsConnector::from(Arc::new(proxy_tls)),
             dns: Dns::default(),
             cfg,
+            proxy,
         }
     }
 
@@ -261,32 +304,86 @@ impl Connector {
         &self.cfg
     }
 
-    pub(crate) async fn connect(&self, origin: &Origin) -> Result<Conn> {
+    /// The proxy for requests to `origin`, if any.
+    fn proxy_for(&self, origin: &Origin) -> Option<&Proxy> {
+        match &self.proxy {
+            ProxyChoice::Direct => None,
+            ProxyChoice::Via(p) => Some(p),
+            ProxyChoice::Default => self.cfg.proxy.for_target(origin.https, &origin.host),
+        }
+    }
+
+    async fn tcp(&self, origin: &Origin) -> Result<TcpStream> {
         let addrs = self.dns.resolve(origin).await?;
         let tcp = timeout(self.cfg.connect_timeout, connect_tcp(&addrs))
             .await
             .map_err(|_| Error::Timeout("connect"))??;
         let _ = tcp.set_nodelay(true);
-        let (io, h2): (Box<dyn Io>, bool) = if origin.https {
-            let host = origin.host.trim_start_matches('[').trim_end_matches(']');
-            let name = ServerName::try_from(host.to_owned())
-                .map_err(|e| Error::InvalidUrl(format!("bad TLS server name: {e}")))?;
-            let tls = timeout(self.cfg.tls_timeout, self.tls.connect(name, tcp))
-                .await
-                .map_err(|_| Error::Timeout("TLS handshake"))?
-                .map_err(|e| {
-                    // Certificate problems surface as InvalidData; they are permanent.
-                    if e.kind() == std::io::ErrorKind::InvalidData {
-                        Error::Tls(e.to_string())
-                    } else {
-                        Error::network("TLS handshake", e)
-                    }
-                })?;
-            let h2 = tls.get_ref().1.alpn_protocol() == Some(b"h2");
-            (Box::new(tls), h2)
-        } else {
-            (Box::new(tcp), false)
+        Ok(tcp)
+    }
+
+    /// Connects to `origin`, through the proxy if there is one. Returns the
+    /// stream, whether it speaks HTTP/2, and the forward-proxy state.
+    async fn open_stream(&self, origin: &Origin) -> Result<(Box<dyn Io>, bool, Option<Forward>)> {
+        let Some(p) = self.proxy_for(origin).cloned() else {
+            let tcp: Box<dyn Io> = Box::new(self.tcp(origin).await?);
+            if origin.https {
+                let (io, h2) =
+                    tls_handshake(&self.tls, &origin.host, tcp, self.cfg.tls_timeout).await?;
+                return Ok((io, h2, None));
+            }
+            return Ok((tcp, false, None));
         };
+        let at = Origin {
+            https: false,
+            host: p.host().to_owned(),
+            port: p.port(),
+        };
+        let mut io: Box<dyn Io> = Box::new(self.tcp(&at).await?);
+        if p.kind() == ProxyKind::Https {
+            io = tls_handshake(&self.tls_proxy, p.host(), io, self.cfg.tls_timeout)
+                .await?
+                .0;
+        }
+        let limit = self.cfg.connect_timeout;
+        match p.kind() {
+            ProxyKind::Socks5 => {
+                timeout(
+                    limit,
+                    proxy::socks5_connect(&mut io, &p, &origin.host, origin.port),
+                )
+                .await
+                .map_err(|_| Error::Timeout("SOCKS5 handshake"))??;
+            }
+            ProxyKind::Http | ProxyKind::Https if origin.https => {
+                timeout(
+                    limit,
+                    proxy::http_connect(&mut io, &p, &origin.host, origin.port),
+                )
+                .await
+                .map_err(|_| Error::Timeout("proxy CONNECT"))??;
+            }
+            // Plain `http` through an HTTP proxy: absolute-form requests.
+            ProxyKind::Http | ProxyKind::Https => {
+                return Ok((
+                    io,
+                    false,
+                    Some(Forward {
+                        auth: p.basic_auth(),
+                    }),
+                ));
+            }
+        }
+        if origin.https {
+            let (io, h2) = tls_handshake(&self.tls, &origin.host, io, self.cfg.tls_timeout).await?;
+            Ok((io, h2, None))
+        } else {
+            Ok((io, false, None))
+        }
+    }
+
+    pub(crate) async fn connect(&self, origin: &Origin) -> Result<Conn> {
+        let (io, h2, forward) = self.open_stream(origin).await?;
         let io = TokioIo::new(io);
         let (sender, task) = if h2 {
             let (sender, conn) = http2::Builder::new(TokioExecutor::new())
@@ -313,6 +410,7 @@ impl Connector {
             origin: origin.clone(),
             sender,
             task,
+            forward,
         })
     }
 
@@ -350,7 +448,7 @@ impl Connector {
                 Some(c) => c,
                 None => self.connect(&origin).await?,
             };
-            let req = build_request(&url, &origin, headers.clone(), c.is_h2())?;
+            let req = build_request(&url, &origin, headers.clone(), &c)?;
             let sent = timeout(self.cfg.first_byte_timeout, c.send(req)).await;
             let resp = match sent {
                 Err(_) => return Err(Error::Timeout("waiting for response headers")),
@@ -360,7 +458,7 @@ impl Connector {
                     // on a fresh connection without counting it as a failure.
                     tracing::debug!(error = %e, "reused connection failed; reconnecting");
                     let mut fresh = self.connect(&origin).await?;
-                    let req = build_request(&url, &origin, headers, fresh.is_h2())?;
+                    let req = build_request(&url, &origin, headers, &fresh)?;
                     let r = timeout(self.cfg.first_byte_timeout, fresh.send(req))
                         .await
                         .map_err(|_| Error::Timeout("waiting for response headers"))??;
@@ -460,10 +558,24 @@ fn is_redirect(s: StatusCode) -> bool {
 fn build_request(
     url: &Url,
     origin: &Origin,
+    headers: HeaderMap,
+    conn: &Conn,
+) -> Result<Request<Empty<Bytes>>> {
+    build_request_with(url, origin, headers, conn.is_h2(), conn.forward.as_ref())
+}
+
+fn build_request_with(
+    url: &Url,
+    origin: &Origin,
     mut headers: HeaderMap,
     h2: bool,
+    forward: Option<&Forward>,
 ) -> Result<Request<Empty<Bytes>>> {
-    let uri: Uri = if h2 {
+    if let Some(auth) = forward.and_then(|f| f.auth.as_ref()) {
+        headers.insert(header::PROXY_AUTHORIZATION, auth.clone());
+    }
+    // HTTP/2 and requests to a forward proxy use the absolute form.
+    let uri: Uri = if h2 || forward.is_some() {
         url.as_str().parse()
     } else {
         let mut pq = url.path().to_owned();
@@ -570,10 +682,17 @@ mod tests {
     fn origin_form_and_host() {
         let url = Url::parse("http://example.com:8080/a/b?x=1").unwrap();
         let o = Origin::of(&url).unwrap();
-        let req = build_request(&url, &o, HeaderMap::new(), false).unwrap();
+        let req = build_request_with(&url, &o, HeaderMap::new(), false, None).unwrap();
         assert_eq!(req.uri(), "/a/b?x=1");
         assert_eq!(req.headers()[header::HOST], "example.com:8080");
-        let req = build_request(&url, &o, HeaderMap::new(), true).unwrap();
+        let fwd = Forward {
+            auth: Some(HeaderValue::from_static("Basic eA==")),
+        };
+        let req = build_request_with(&url, &o, HeaderMap::new(), false, Some(&fwd)).unwrap();
+        assert_eq!(req.uri().to_string(), "http://example.com:8080/a/b?x=1");
+        assert_eq!(req.headers()[header::HOST], "example.com:8080");
+        assert_eq!(req.headers()[header::PROXY_AUTHORIZATION], "Basic eA==");
+        let req = build_request_with(&url, &o, HeaderMap::new(), true, None).unwrap();
         assert_eq!(req.uri().to_string(), "http://example.com:8080/a/b?x=1");
         assert!(req.headers().get(header::HOST).is_none());
     }
@@ -581,7 +700,7 @@ mod tests {
     #[test]
     fn authorization_dropped_cross_origin() {
         let cfg = Arc::new(EngineConfig::default());
-        let c = Connector::new(tls_config().unwrap(), cfg);
+        let c = Connector::new(tls_config().unwrap(), cfg, ProxyChoice::Default);
         let mut ctx = HeaderMap::new();
         ctx.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer x"));
         let a = Origin::of(&Url::parse("https://a.example/").unwrap()).unwrap();

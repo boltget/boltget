@@ -28,8 +28,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use boltget_engine::{
     AddRequest, Checksum, ConflictPolicy, Destination, DownloadHandle, DownloadId, Engine,
-    EngineConfig, EngineEvent, Error, ErrorKind, HeaderName, HeaderValue, RequestContext,
-    ResumeOptions, State,
+    EngineConfig, EngineEvent, Error, ErrorKind, HeaderName, HeaderValue, Proxy, ProxyChoice,
+    ProxyRules, RequestContext, ResumeOptions, State,
 };
 use clap::{Args, Parser, Subcommand};
 use tokio::sync::broadcast;
@@ -177,6 +177,18 @@ struct RunArgs {
     /// download; on a mismatch the file keeps its .boltget name (exit code 9).
     #[arg(long, value_name = "ALGO:HEX", value_parser = Checksum::parse)]
     checksum: Option<Checksum>,
+
+    /// Proxy for this download: http://[user:pass@]host[:port], https://...,
+    /// or socks5://... (host names are resolved by the SOCKS proxy). Saved
+    /// without its password: pass it again to `resume`. Without this option the
+    /// environment applies: `http_proxy`, `https_proxy`, `all_proxy` and `no_proxy`
+    /// (upper case too), as in curl.
+    #[arg(long, value_name = "URL", conflicts_with = "no_proxy")]
+    proxy: Option<String>,
+
+    /// Connect directly, ignoring proxy environment variables and a saved proxy.
+    #[arg(long)]
+    no_proxy: bool,
 
     /// Flush (and checkpoint) interval in milliseconds. For tests.
     #[arg(long, hide = true, value_name = "MS")]
@@ -327,6 +339,9 @@ fn parse_headers(headers: &[String]) -> Result<Vec<(HeaderName, HeaderValue)>> {
 
 fn build_request(args: &GetArgs) -> Result<AddRequest> {
     let mut ctx = RequestContext::new(&args.url)?;
+    if let Some(p) = proxy_choice(&args.run)? {
+        ctx.set_proxy(p);
+    }
     for (name, value) in parse_headers(&args.run.headers)? {
         if !ctx.header(name.clone(), value) {
             bail!("header {name} is not allowed (the engine controls it)");
@@ -357,8 +372,27 @@ fn build_request(args: &GetArgs) -> Result<AddRequest> {
     Ok(req)
 }
 
+/// The proxy choice from `--proxy` / `--no-proxy` (`None`: the environment, or
+/// the saved one when resuming). The URL is never echoed: it may hold a password.
+fn proxy_choice(run: &RunArgs) -> Result<Option<ProxyChoice>> {
+    if run.no_proxy {
+        return Ok(Some(ProxyChoice::Direct));
+    }
+    run.proxy
+        .as_deref()
+        .map(|s| {
+            Proxy::parse(s)
+                .map(ProxyChoice::Via)
+                .map_err(|e| anyhow::anyhow!("--proxy: {e}"))
+        })
+        .transpose()
+}
+
 fn engine_config(run: &RunArgs) -> EngineConfig {
     let mut cfg = EngineConfig::default();
+    if !run.no_proxy {
+        cfg.proxy = ProxyRules::from_env();
+    }
     if let Some(n) = run.connections {
         cfg.initial_connections = n;
         cfg.max_connections = cfg.max_connections.max(n);
@@ -557,6 +591,17 @@ async fn get(args: GetArgs, state: Option<&Path>, verbose: u8) -> u8 {
 }
 
 async fn resume(args: ResumeArgs, state: Option<&Path>, verbose: u8) -> u8 {
+    let proxy = match proxy_choice(&args.run) {
+        Ok(p) => p,
+        Err(e) => {
+            if args.run.json {
+                json::failed_usage(&e, 2);
+            } else {
+                eprintln!("boltget: {e:#}");
+            }
+            return 2;
+        }
+    };
     let headers = match parse_headers(&args.run.headers) {
         Ok(h) => h,
         Err(e) => {
@@ -575,6 +620,7 @@ async fn resume(args: ResumeArgs, state: Option<&Path>, verbose: u8) -> u8 {
     let id = DownloadId(args.id);
     let mut opts = ResumeOptions::default().restart(args.restart);
     opts.connections = args.run.connections;
+    opts.proxy = proxy;
     if let Some(Rate(r)) = args.run.limit {
         opts = opts.speed_limit(r);
     }
@@ -619,6 +665,13 @@ async fn refresh(args: RefreshArgs, state: Option<&Path>, verbose: u8) -> u8 {
         Ok(c) => c,
         Err(e) => return report(&e, json, Some(DownloadId(args.id)), &[]),
     };
+    let proxy = match proxy_choice(&args.run) {
+        Ok(p) => p,
+        Err(e) => return usage(&e),
+    };
+    if let Some(p) = &proxy {
+        ctx.set_proxy(p.clone());
+    }
     for (name, value) in &headers {
         if !ctx.header(name.clone(), value.clone()) {
             return usage(&anyhow::anyhow!(
@@ -646,6 +699,7 @@ async fn refresh(args: RefreshArgs, state: Option<&Path>, verbose: u8) -> u8 {
     }
     let mut opts = ResumeOptions::default();
     opts.connections = args.run.connections;
+    opts.proxy = proxy;
     if let Some(Rate(r)) = args.run.limit {
         opts = opts.speed_limit(r);
     }

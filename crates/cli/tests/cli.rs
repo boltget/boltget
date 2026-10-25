@@ -681,3 +681,105 @@ async fn expired_link_is_refreshed() {
     let got = std::fs::read(&target).unwrap();
     assert_eq!(Sha256::digest(&got), Sha256::digest(content(31, size)));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proxy_flag_environment_and_no_proxy() {
+    use boltget_testserver::{ProxyMode, TestProxy};
+    let srv = TestServer::start().await;
+    let proxy = TestProxy::start(ProxyMode::Http, Some(("u", "topsecret"))).await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let url = srv.url("/data?size=200000&seed=41");
+    let run = |args: Vec<String>, env: Vec<(&'static str, String)>| {
+        let mut c = command(state.path(), &args);
+        for k in [
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "all_proxy",
+            "ALL_PROXY",
+            "no_proxy",
+            "NO_PROXY",
+        ] {
+            c.env_remove(k);
+        }
+        for (k, v) in env {
+            c.env(k, v);
+        }
+        tokio::task::spawn_blocking(move || c.output().expect("run boltget"))
+    };
+    let out = run(
+        vec![
+            s("get"),
+            url.clone(),
+            s("-o"),
+            dir.path().join("a").display().to_string(),
+            s("--proxy"),
+            proxy.url(),
+            s("-q"),
+        ],
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let n = proxy.records().len();
+    assert!(n >= 1);
+    // From the environment.
+    let out = run(
+        vec![
+            s("get"),
+            url.clone(),
+            s("-o"),
+            dir.path().join("b").display().to_string(),
+            s("-q"),
+        ],
+        vec![("http_proxy", proxy.url())],
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let m = proxy.records().len();
+    assert!(m > n);
+    // --no-proxy ignores it.
+    let out = run(
+        vec![
+            s("get"),
+            url.clone(),
+            s("-o"),
+            dir.path().join("c").display().to_string(),
+            s("--no-proxy"),
+            s("-q"),
+        ],
+        vec![("http_proxy", proxy.url())],
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert_eq!(proxy.records().len(), m);
+    // Bad credentials: 407 is exit code 4; the password is never printed.
+    let out = run(
+        vec![
+            s("get"),
+            url.clone(),
+            s("--proxy"),
+            proxy.url_with(Some(("u", "badsecret"))),
+            s("--no-state"),
+        ],
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.status.code(), Some(4), "stderr: {}", stderr(&out));
+    assert!(!stderr(&out).contains("badsecret"), "{}", stderr(&out));
+    // A malformed proxy URL is a usage error, also without echoing it.
+    let out = run(
+        vec![s("get"), url, s("--proxy"), s("gopher://u:leak@x")],
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(!stderr(&out).contains("leak"), "{}", stderr(&out));
+}

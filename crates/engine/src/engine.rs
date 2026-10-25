@@ -19,6 +19,7 @@ use crate::filename::{self, NameSources};
 use crate::http::{self, Connector, Origin};
 use crate::integrity::{Checksum, ChecksumSource};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport};
+use crate::proxy::ProxyChoice;
 use crate::ratelimit::RateLimiter;
 use crate::request::{RequestContext, redact_url};
 use crate::store::{DownloadSummary, Store, records};
@@ -207,9 +208,19 @@ pub struct ResumeOptions {
     /// Replace the expected checksum (`Some(None)`: verify nothing, which is how
     /// a `Corrupt` download is kept as it is). `None` keeps the stored one.
     pub checksum: Option<Option<Checksum>>,
+    /// Use this proxy setting for this run instead of the saved one (which never
+    /// includes proxy credentials).
+    pub proxy: Option<ProxyChoice>,
 }
 
 impl ResumeOptions {
+    /// Overrides the proxy for this run.
+    #[must_use]
+    pub fn proxy(mut self, proxy: ProxyChoice) -> Self {
+        self.proxy = Some(proxy);
+        self
+    }
+
     /// Replaces the download's own speed limit (`None` or 0: remove it).
     #[must_use]
     pub fn speed_limit(mut self, bytes_per_sec: Option<u64>) -> Self {
@@ -393,7 +404,11 @@ impl Engine {
     /// support, validators and the resolved file name. Costs one request, or two
     /// when the server answers `200` and range support must be verified.
     pub async fn probe(&self, ctx: &RequestContext) -> Result<ProbeResult> {
-        let connector = Connector::new(self.inner.env.tls.clone(), self.inner.cfg.clone());
+        let connector = Connector::new(
+            self.inner.env.tls.clone(),
+            self.inner.cfg.clone(),
+            ctx.proxy().clone(),
+        );
         let cancel = self.inner.root.child_token();
         let probed = probe::probe(&connector, ctx, &cancel).await?;
         let size = probed.kind.total();
@@ -536,6 +551,9 @@ impl Engine {
         for (name, value) in opts.headers {
             ctx.header(name, value);
         }
+        if let Some(p) = opts.proxy {
+            ctx.set_proxy(p);
+        }
         let dest = PathBuf::from(&saved.requested_dest);
         let destination = if saved.requested_kind == "file" {
             Destination::File(dest)
@@ -635,7 +653,17 @@ impl Engine {
                 reason: "is already completed".into(),
             });
         }
-        let connector = Connector::new(self.inner.env.tls.clone(), self.inner.cfg.clone());
+        let mut ctx = ctx;
+        if *ctx.proxy() == ProxyChoice::Default {
+            // No proxy choice with the new link: keep the download's.
+            let old = RequestContext::from_saved(&saved.url, &saved.request_ctx)?;
+            ctx.set_proxy(old.proxy().clone());
+        }
+        let connector = Connector::new(
+            self.inner.env.tls.clone(),
+            self.inner.cfg.clone(),
+            ctx.proxy().clone(),
+        );
         let cancel = self.inner.root.child_token();
         let partial = saved.temp_path.as_deref().map(Path::new);
         let target = crate::refresh::Target {

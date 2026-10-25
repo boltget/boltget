@@ -72,6 +72,10 @@ pub struct EngineConfig {
     /// (`None`: unlimited). [`Engine::open`](crate::Engine::open) replaces it
     /// with the stored [`Settings::speed_limit`] if one is set.
     pub speed_limit: Option<u64>,
+    /// Proxies for downloads that do not choose their own
+    /// ([`ProxyChoice::Default`](crate::ProxyChoice::Default)). Direct by default;
+    /// the CLI fills it from the environment ([`ProxyRules::from_env`](crate::ProxyRules::from_env)).
+    pub proxy: crate::proxy::ProxyRules,
 }
 
 impl Default for EngineConfig {
@@ -108,6 +112,7 @@ impl Default for EngineConfig {
             mark_of_the_web: true,
             user_agent: concat!("BoltGet/", env!("CARGO_PKG_VERSION")).to_owned(),
             speed_limit: None,
+            proxy: crate::proxy::ProxyRules::direct(),
         }
     }
 }

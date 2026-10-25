@@ -568,7 +568,7 @@ async fn setup_fresh(
     fixed: Option<PathBuf>,
 ) -> Result<Setup> {
     let cfg = env.cfg.clone();
-    let connector = Connector::new(env.tls.clone(), cfg.clone());
+    let connector = Connector::new(env.tls.clone(), cfg.clone(), req.ctx.proxy().clone());
     let original = Origin::of(req.ctx.url())?;
 
     // ---- Probe (its connection becomes worker 0) ----
@@ -951,7 +951,7 @@ fn prepare_resume(
         file,
         prealloc,
         info,
-        connector: Connector::new(env.tls.clone(), cfg.clone()),
+        connector: Connector::new(env.tls.clone(), cfg.clone(), req.ctx.proxy().clone()),
         original,
         worker_origin,
         // Start from the original URL: a signed redirect target saved last time
