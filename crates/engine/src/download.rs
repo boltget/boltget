@@ -1550,10 +1550,13 @@ fn redact_for_motw(url: &Url) -> String {
 struct Monitor {
     last: Option<Instant>,
     per_worker: HashMap<WorkerId, (u64, f64, Option<Instant>)>,
-    /// Median per-worker throughput, last measured while at least two workers
-    /// were transferring. Kept after the others finish, so a lone straggler at
-    /// the end of a download is still recognised as slow.
+    /// Decaying maximum of the median per-worker throughput. Kept after the
+    /// others finish, so a lone straggler at the end of a download is still
+    /// recognised as slow.
     reference: f64,
+    /// Whether two or more workers ever transferred at once (the tail rules
+    /// only make sense for a download that had several connections).
+    multi: bool,
 }
 
 impl Monitor {
@@ -1623,6 +1626,11 @@ impl Monitor {
             }
         }
         if rates.len() >= 2 {
+            self.multi = true;
+        }
+        // With one connection, its own earlier peak is the reference: a lone
+        // connection that drops to a crawl is reconnected too.
+        if !rates.is_empty() {
             rates.sort_by(f64::total_cmp);
             let median = rates[rates.len() / 2];
             // A decaying maximum (halves in about 17 s): when several connections
@@ -1641,7 +1649,7 @@ impl Monitor {
             .iter()
             .filter(|r| **r >= core.cfg.slow_fraction * median)
             .count();
-        let window = if fast == 0 {
+        let window = if fast == 0 && self.multi {
             core.cfg.slow_window.min(core.cfg.tail_slow_window)
         } else {
             core.cfg.slow_window
@@ -1670,6 +1678,7 @@ impl Monitor {
                 // (A rate of 0 may be a connection still connecting: that one
                 // is left to the starved rule below.)
                 let hopeless = fast == 0
+                    && self.multi
                     && entry.1 > 0.0
                     && remaining as f64 / entry.1 > core.cfg.tail_eta.as_secs_f64();
                 let limit = if hopeless {

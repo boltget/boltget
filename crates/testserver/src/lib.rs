@@ -17,6 +17,7 @@
 //! | `ifrange=ignore` | Do not evaluate `If-Range` (serve 206 even if it mismatches) |
 //! | `throttle=BPS` | Limit each response to BPS bytes per second |
 //! | `line_bps=BPS` | All responses with the same `key` share one line of BPS bytes per second (a saturated last mile) |
+//! | `crawl_after=B&crawl_bps=BPS&crawl_count=N` | The first N requests (all if absent) slow down to BPS after B body bytes |
 //! | `slow_index=K&slow_bps=BPS` | Request K (0-based) is limited to BPS instead (one bad connection) |
 //! | `stall_after=B&stall_count=N` | The first N requests stop sending after B body bytes |
 //! | `reset_after=B&reset_count=N` | The first N requests abort the connection after B body bytes |
@@ -623,6 +624,9 @@ fn data(
     });
     let plan = Plan {
         line,
+        crawl: num(q, "crawl_after")
+            .zip(num(q, "crawl_bps"))
+            .filter(|_| num(q, "crawl_count").is_none_or(|c| n < c)),
         seed,
         start,
         len,
@@ -645,6 +649,9 @@ fn data(
 
 #[derive(Debug, Clone)]
 struct Plan {
+    /// After this many bytes, slow down to this rate (a connection that starts
+    /// to crawl).
+    crawl: Option<(u64, u64)>,
     /// A line shared by all responses with the same key: (free-at, bytes per second).
     line: Option<(Arc<Mutex<tokio::time::Instant>>, u64)>,
     seed: u64,
@@ -689,6 +696,12 @@ async fn produce(p: Plan, tx: mpsc::Sender<Result<Bytes, std::io::Error>>, state
             let due = Duration::from_secs_f64((sent + n) as f64 / bps as f64);
             tokio::select! {
                 () = tokio::time::sleep_until(started + due) => {}
+                () = tx.closed() => return,
+            }
+        }
+        if let Some((_, bps)) = p.crawl.filter(|(a, b)| sent >= *a && *b > 0) {
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_secs_f64(n as f64 / bps as f64)) => {}
                 () = tx.closed() => return,
             }
         }

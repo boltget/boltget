@@ -134,3 +134,26 @@ async fn a_slow_connection_at_the_end_is_split() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_lone_connection_that_crawls_is_reconnected() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = cfg();
+    c.slow_window = Duration::from_secs(1);
+    let engine = Engine::new(c).unwrap();
+    let size = 4 * MIB;
+    // One connection: after 1 MiB its first response drops to 16 KiB/s, which
+    // would take over 3 minutes. Judged against its own earlier rate, it is
+    // replaced and the rest comes at full speed.
+    let url = srv.url(&format!(
+        "/data?size={size}&throttle=4194304&crawl_after=1048576&crawl_bps=16384&crawl_count=1"
+    ));
+    let t0 = Instant::now();
+    let done = get_with(&engine, request(&url, dir.path()).connections(1))
+        .await
+        .unwrap();
+    assert_content(&done, 1, size);
+    assert!(t0.elapsed() < Duration::from_secs(10), "{:?}", t0.elapsed());
+    assert!(srv.requests().len() >= 2, "reconnected");
+}
