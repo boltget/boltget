@@ -8,6 +8,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::events::DownloadId;
+
 /// Convenience alias used throughout the engine.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -36,6 +38,57 @@ pub enum ErrorKind {
     Cancelled,
     /// A bug or invariant violation inside the engine.
     Internal,
+    /// Another process owns the download database.
+    Busy,
+    /// The download database cannot be opened or used.
+    Database,
+    /// No download with the given id.
+    NotFound,
+    /// The operation does not apply to the download in its current state.
+    InvalidState,
+}
+
+impl ErrorKind {
+    /// The `snake_case` name used in JSON and in the database.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ErrorKind::Transient => "transient",
+            ErrorKind::Throttled => "throttled",
+            ErrorKind::LinkExpired => "link_expired",
+            ErrorKind::ResourceChanged => "resource_changed",
+            ErrorKind::RangeUnsupported => "range_unsupported",
+            ErrorKind::Disk => "disk",
+            ErrorKind::Permanent => "permanent",
+            ErrorKind::Integrity => "integrity",
+            ErrorKind::Cancelled => "cancelled",
+            ErrorKind::Internal => "internal",
+            ErrorKind::Busy => "busy",
+            ErrorKind::Database => "database",
+            ErrorKind::NotFound => "not_found",
+            ErrorKind::InvalidState => "invalid_state",
+        }
+    }
+
+    /// Parses [`ErrorKind::as_str`] output.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "transient" => ErrorKind::Transient,
+            "throttled" => ErrorKind::Throttled,
+            "link_expired" => ErrorKind::LinkExpired,
+            "resource_changed" => ErrorKind::ResourceChanged,
+            "range_unsupported" => ErrorKind::RangeUnsupported,
+            "disk" => ErrorKind::Disk,
+            "permanent" => ErrorKind::Permanent,
+            "integrity" => ErrorKind::Integrity,
+            "cancelled" => ErrorKind::Cancelled,
+            "internal" => ErrorKind::Internal,
+            "busy" => ErrorKind::Busy,
+            "database" => ErrorKind::Database,
+            "not_found" => ErrorKind::NotFound,
+            "invalid_state" => ErrorKind::InvalidState,
+            _ => return None,
+        })
+    }
 }
 
 /// Errors returned by the engine.
@@ -128,9 +181,45 @@ pub enum Error {
         size: u64,
     },
 
-    /// The download was cancelled.
+    /// The download was cancelled (or paused).
     #[error("cancelled")]
     Cancelled,
+
+    /// Another process holds the owner lock of the download database.
+    #[error(
+        "the download database in {} is in use by another BoltGet process",
+        dir.display()
+    )]
+    DatabaseLocked {
+        /// The data directory.
+        dir: PathBuf,
+    },
+
+    /// The download database cannot be opened or used.
+    #[error("download database: {0}")]
+    Database(String),
+
+    /// No download with this id.
+    #[error("no download with id {0}")]
+    UnknownDownload(DownloadId),
+
+    /// The operation does not apply to the download in its current state.
+    #[error("download {id} {reason}")]
+    InvalidState {
+        /// The download.
+        id: DownloadId,
+        /// Why, phrased to follow "download <id> ...".
+        reason: String,
+    },
+
+    /// A download with progress cannot continue because its partial file is gone.
+    #[error("cannot resume from {path}: {detail}")]
+    PartialMissing {
+        /// The partial file.
+        path: PathBuf,
+        /// What is wrong with it.
+        detail: String,
+    },
 
     /// A bug or invariant violation.
     #[error("internal error: {0}")]
@@ -153,11 +242,16 @@ impl Error {
             Error::Network { .. } | Error::Timeout(_) | Error::Protocol(_) => ErrorKind::Transient,
             Error::ResourceChanged(_) => ErrorKind::ResourceChanged,
             Error::RangeUnsupported(_) => ErrorKind::RangeUnsupported,
-            Error::Disk { .. } | Error::InsufficientSpace { .. } | Error::FileTooLarge { .. } => {
-                ErrorKind::Disk
-            }
+            Error::Disk { .. }
+            | Error::InsufficientSpace { .. }
+            | Error::FileTooLarge { .. }
+            | Error::PartialMissing { .. } => ErrorKind::Disk,
             Error::Cancelled => ErrorKind::Cancelled,
             Error::Internal(_) => ErrorKind::Internal,
+            Error::DatabaseLocked { .. } => ErrorKind::Busy,
+            Error::Database(_) => ErrorKind::Database,
+            Error::UnknownDownload(_) => ErrorKind::NotFound,
+            Error::InvalidState { .. } => ErrorKind::InvalidState,
         }
     }
 
@@ -193,6 +287,11 @@ impl Error {
             Error::FileTooLarge { .. } => "error.file_too_large_for_fs",
             Error::Cancelled => "error.cancelled",
             Error::Internal(_) => "error.internal",
+            Error::DatabaseLocked { .. } => "error.database_locked",
+            Error::Database(_) => "error.database",
+            Error::UnknownDownload(_) => "error.unknown_download",
+            Error::InvalidState { .. } => "error.invalid_state",
+            Error::PartialMissing { .. } => "error.partial_missing",
         }
     }
 
@@ -219,6 +318,12 @@ impl Error {
             path: path.into(),
             source,
         }
+    }
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(e: rusqlite::Error) -> Self {
+        Error::Database(e.to_string())
     }
 }
 
@@ -251,6 +356,33 @@ mod tests {
         assert_eq!(classify_status(408, false), ErrorKind::Transient);
         assert_eq!(classify_status(416, true), ErrorKind::ResourceChanged);
         assert_eq!(classify_status(400, true), ErrorKind::Permanent);
+    }
+
+    #[test]
+    fn kind_names_round_trip() {
+        for k in [
+            ErrorKind::Transient,
+            ErrorKind::Throttled,
+            ErrorKind::LinkExpired,
+            ErrorKind::ResourceChanged,
+            ErrorKind::RangeUnsupported,
+            ErrorKind::Disk,
+            ErrorKind::Permanent,
+            ErrorKind::Integrity,
+            ErrorKind::Cancelled,
+            ErrorKind::Internal,
+            ErrorKind::Busy,
+            ErrorKind::Database,
+            ErrorKind::NotFound,
+            ErrorKind::InvalidState,
+        ] {
+            assert_eq!(ErrorKind::parse(k.as_str()), Some(k));
+            assert_eq!(
+                serde_json::to_value(k).unwrap(),
+                serde_json::Value::from(k.as_str())
+            );
+        }
+        assert_eq!(ErrorKind::parse("nope"), None);
     }
 
     #[test]

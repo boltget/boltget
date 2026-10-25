@@ -48,6 +48,11 @@ pub(crate) fn create_preallocated(
     Ok((file, mode))
 }
 
+/// Opens an existing partial file for resuming (no truncation, no creation).
+pub(crate) fn open_partial(path: &Path) -> io::Result<File> {
+    OpenOptions::new().read(true).write(true).open(path)
+}
+
 /// Marks the file sparse. A no-op success on Unix, where `ftruncate` already
 /// creates sparse files on the common file systems.
 #[cfg_attr(

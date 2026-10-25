@@ -1,22 +1,25 @@
 //! The public engine API.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use ::http::{HeaderName, HeaderValue};
+use serde::Serialize;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::EngineConfig;
-use crate::download::{self, Env, Shared};
+use crate::download::{self, Env, Job, Shared};
 use crate::error::{Error, Result};
 use crate::events::{Completed, DownloadId, DownloadInfo, EngineEvent, Progress, State};
 use crate::filename::{self, NameSources};
 use crate::http::{self, Connector, Origin};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport};
 use crate::request::{RequestContext, redact_url};
+use crate::store::{DownloadSummary, Store, records};
 
 /// Where to save a download.
 #[derive(Debug, Clone)]
@@ -141,6 +144,53 @@ impl Limits {
     }
 }
 
+/// Options for [`Engine::resume`].
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct ResumeOptions {
+    /// Connections to use (defaults to the count the download was added with).
+    pub connections: Option<u32>,
+    /// Headers to add or replace. Secrets such as `Authorization` are not stored
+    /// in the database, so a download that needed them needs them again here.
+    pub headers: Vec<(HeaderName, HeaderValue)>,
+    /// Discard the saved progress and download again from the beginning (same
+    /// destination). Needed when the file changed on the server.
+    pub restart: bool,
+}
+
+impl ResumeOptions {
+    /// Sets the connection count.
+    #[must_use]
+    pub fn connections(mut self, n: u32) -> Self {
+        self.connections = Some(n);
+        self
+    }
+
+    /// Adds a request header (allowlisted ones only, as for [`RequestContext::header`]).
+    #[must_use]
+    pub fn header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.headers.push((name, value));
+        self
+    }
+
+    /// Starts over from byte 0.
+    #[must_use]
+    pub fn restart(mut self, restart: bool) -> Self {
+        self.restart = restart;
+        self
+    }
+}
+
+/// What [`Engine::remove`] did.
+#[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
+pub struct Removed {
+    /// The removed download.
+    pub id: DownloadId,
+    /// Files deleted from disk (with `delete_file`).
+    pub deleted: Vec<PathBuf>,
+}
+
 #[derive(Debug)]
 struct Inner {
     cfg: Arc<EngineConfig>,
@@ -149,21 +199,70 @@ struct Inner {
     next_id: AtomicU64,
     downloads: Mutex<HashMap<DownloadId, Arc<Shared>>>,
     root: CancellationToken,
+    store: Option<Store>,
 }
 
 /// The download engine. Cheap to clone; all clones share state.
 ///
-/// Phase 1 keeps everything in memory: there is no database, so downloads do not
-/// survive the process (checkpointing and resume arrive in phase 2).
+/// [`Engine::open`] keeps downloads in a database: they get persistent ids,
+/// progress is checkpointed, and paused or interrupted downloads continue with
+/// [`Engine::resume`]. [`Engine::new`] keeps everything in memory.
 #[derive(Debug, Clone)]
 pub struct Engine {
     inner: Arc<Inner>,
 }
 
+fn conflict_name(c: ConflictPolicy) -> &'static str {
+    match c {
+        ConflictPolicy::Rename => "rename",
+        ConflictPolicy::Overwrite => "overwrite",
+        ConflictPolicy::Fail => "fail",
+    }
+}
+
+fn conflict_from(s: &str) -> ConflictPolicy {
+    match s {
+        "overwrite" => ConflictPolicy::Overwrite,
+        "fail" => ConflictPolicy::Fail,
+        _ => ConflictPolicy::Rename,
+    }
+}
+
+/// Makes a destination absolute, so a saved download does not depend on the
+/// working directory of the process that resumes it.
+fn absolute(dest: Destination) -> Destination {
+    let abs = |p: PathBuf| std::path::absolute(&p).unwrap_or(p);
+    match dest {
+        Destination::Directory(d) => Destination::Directory(abs(d)),
+        Destination::File(f) => Destination::File(abs(f)),
+    }
+}
+
 impl Engine {
-    /// Creates an engine. Must be called inside a Tokio runtime only when
-    /// downloads are added; construction itself does not need one.
+    /// Creates an in-memory engine: no database, downloads do not survive the
+    /// process. Construction does not need a Tokio runtime; adding downloads does.
     pub fn new(config: EngineConfig) -> Result<Self> {
+        Self::build(config, None, 1)
+    }
+
+    /// Opens the engine with its database in `data_dir` (created if needed):
+    /// takes the single-owner lock (`boltget.db.lock`), applies migrations, and
+    /// marks downloads that a previous process left running as paused.
+    ///
+    /// Fails with [`Error::DatabaseLocked`] if another process owns the database.
+    pub fn open(config: EngineConfig, data_dir: impl AsRef<Path>) -> Result<Self> {
+        let opened = Store::open(data_dir.as_ref())?;
+        Self::build(config, Some(opened.store), opened.next_id)
+    }
+
+    /// Lists the downloads in `data_dir` without taking ownership (read-only),
+    /// so it works while another process owns the database. The list reflects
+    /// that process's last checkpoint.
+    pub fn peek(data_dir: impl AsRef<Path>) -> Result<Vec<DownloadSummary>> {
+        Store::peek(data_dir.as_ref())
+    }
+
+    fn build(config: EngineConfig, store: Option<Store>, next_id: u64) -> Result<Self> {
         let cfg = Arc::new(config.normalized());
         let tls = http::tls_config()?;
         let limits = Limits::new(cfg.max_per_host, cfg.max_total);
@@ -178,9 +277,10 @@ impl Engine {
                 },
                 cfg,
                 events,
-                next_id: AtomicU64::new(1),
+                next_id: AtomicU64::new(next_id),
                 downloads: Mutex::new(HashMap::new()),
                 root: CancellationToken::new(),
+                store,
             }),
         })
     }
@@ -188,6 +288,29 @@ impl Engine {
     /// The effective configuration.
     pub fn config(&self) -> &EngineConfig {
         &self.inner.cfg
+    }
+
+    /// The data directory, for an engine with a database.
+    pub fn data_dir(&self) -> Option<&Path> {
+        self.inner.store.as_ref().map(Store::dir)
+    }
+
+    fn store(&self) -> Result<&Store> {
+        self.inner
+            .store
+            .as_ref()
+            .ok_or_else(|| Error::Database("this engine has no download database".into()))
+    }
+
+    fn downloads(&self) -> std::sync::MutexGuard<'_, HashMap<DownloadId, Arc<Shared>>> {
+        self.inner
+            .downloads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn running(&self, id: DownloadId) -> Option<Arc<Shared>> {
+        self.downloads().get(&id).cloned()
     }
 
     /// Probes a URL without downloading it (for an "add" dialog): size, range
@@ -245,36 +368,207 @@ impl Engine {
         })
     }
 
-    /// Starts a download. Requires a Tokio runtime.
-    pub fn add(&self, req: AddRequest) -> DownloadHandle {
+    /// Starts a download. Requires a Tokio runtime. With a database, the download
+    /// is recorded before this returns (the write is queued in order ahead of
+    /// everything the download does later).
+    pub fn add(&self, mut req: AddRequest) -> DownloadHandle {
+        req.destination = absolute(req.destination);
         let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
-        let shared = Arc::new(Shared::new(
-            id,
-            self.inner.root.child_token(),
-            self.inner.events.clone(),
-        ));
-        self.inner
-            .downloads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(id, shared.clone());
+        if let Some(store) = &self.inner.store {
+            let (kind, dest) = match &req.destination {
+                Destination::Directory(d) => ("dir", d),
+                Destination::File(f) => ("file", f),
+            };
+            let rec = records::NewRecord {
+                id,
+                url: req.ctx.url().to_string(),
+                request_ctx: req.ctx.to_saved(),
+                requested_kind: kind,
+                requested_dest: dest.to_string_lossy().into_owned(),
+                conflict: conflict_name(req.conflict),
+                max_connections: req.connections,
+            };
+            store.send("new download", move |c| records::insert(c, &rec));
+        }
+        let shared = self.new_shared(id);
+        self.downloads().insert(id, shared.clone());
         let _ = self.inner.events.send(EngineEvent::Added {
             id,
             url: redact_url(req.ctx.url()),
         });
+        self.spawn(shared, Job::new(req))
+    }
+
+    fn new_shared(&self, id: DownloadId) -> Arc<Shared> {
+        Arc::new(Shared::new(
+            id,
+            self.inner.root.child_token(),
+            self.inner.events.clone(),
+            self.inner.store.clone(),
+        ))
+    }
+
+    fn spawn(&self, shared: Arc<Shared>, job: Job) -> DownloadHandle {
         let env = self.inner.env.clone();
         let task_shared = shared.clone();
         let inner = self.inner.clone();
         let join = tokio::spawn(async move {
-            let r = download::run(task_shared, env, req).await;
-            inner
-                .downloads
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(&id);
-            r
+            // Unregisters the download and signals `done` even if the task panics.
+            let _finish = Finish {
+                inner,
+                id: task_shared.id,
+                done: task_shared.done.clone(),
+            };
+            download::run(task_shared, env, job).await
         });
         DownloadHandle { shared, join }
+    }
+
+    /// Continues a paused, interrupted, failed or cancelled download from its
+    /// last checkpoint (the resume procedure in `docs/ENGINE.md`): the partial
+    /// file is checked against the checkpoint, every request carries the saved
+    /// validators, and a changed file fails with [`Error::ResourceChanged`]
+    /// instead of mixing two versions. Downloads the server cannot resume start
+    /// over. Requires a Tokio runtime.
+    pub async fn resume(&self, id: DownloadId, opts: ResumeOptions) -> Result<DownloadHandle> {
+        let store = self.store()?.clone();
+        if self.running(id).is_some() {
+            return Err(Error::InvalidState {
+                id,
+                reason: "is already running".into(),
+            });
+        }
+        let saved = store
+            .call(move |c| records::load(c, id))
+            .await?
+            .ok_or(Error::UnknownDownload(id))?;
+        if saved.state == State::Completed {
+            return Err(Error::InvalidState {
+                id,
+                reason: "is already completed".into(),
+            });
+        }
+        let mut ctx = RequestContext::from_saved(&saved.url, &saved.request_ctx)?;
+        for (name, value) in opts.headers {
+            ctx.header(name, value);
+        }
+        let dest = PathBuf::from(&saved.requested_dest);
+        let destination = if saved.requested_kind == "file" {
+            Destination::File(dest)
+        } else {
+            Destination::Directory(dest)
+        };
+        let mut req = AddRequest::new(ctx, destination).conflict(conflict_from(&saved.conflict));
+        req.connections = opts.connections.or(saved.max_connections);
+        let job = if opts.restart {
+            store.call(move |c| records::reset_progress(c, id)).await?;
+            Job {
+                req,
+                fixed_path: saved.path(),
+                resume: None,
+            }
+        } else {
+            Job {
+                req,
+                fixed_path: None,
+                resume: Some(Box::new(saved)),
+            }
+        };
+        let shared = {
+            let mut map = self.downloads();
+            if map.contains_key(&id) {
+                return Err(Error::InvalidState {
+                    id,
+                    reason: "is already running".into(),
+                });
+            }
+            let shared = self.new_shared(id);
+            map.insert(id, shared.clone());
+            shared
+        };
+        Ok(self.spawn(shared, job))
+    }
+
+    /// Asks a running download to pause without waiting. Returns false if it is
+    /// not running in this engine.
+    pub fn request_pause(&self, id: DownloadId) -> bool {
+        self.running(id).is_some_and(|s| {
+            s.request_pause();
+            true
+        })
+    }
+
+    /// Pauses a download: a running one stops, flushes and writes a final
+    /// checkpoint before this returns; a queued one is marked paused. Returns the
+    /// resulting state (`Paused`, or the state a download that was not running is
+    /// in, such as `Failed`). A completed download is an [`Error::InvalidState`].
+    pub async fn pause(&self, id: DownloadId) -> Result<State> {
+        if let Some(shared) = self.running(id) {
+            shared.request_pause();
+            shared.done.cancelled().await;
+            return Ok(shared.state());
+        }
+        let Some(store) = &self.inner.store else {
+            return Err(Error::UnknownDownload(id));
+        };
+        store
+            .call(move |c| {
+                let s = records::get_summary(c, id)?.ok_or(Error::UnknownDownload(id))?;
+                match s.state {
+                    State::Completed => Err(Error::InvalidState {
+                        id,
+                        reason: "is already completed".into(),
+                    }),
+                    // Queued, or left "running" by a process that is gone.
+                    State::Queued | State::Probing | State::Downloading | State::Retrying => {
+                        records::set_state(c, id, State::Paused, None)?;
+                        Ok(State::Paused)
+                    }
+                    other => Ok(other),
+                }
+            })
+            .await
+    }
+
+    /// Removes a download from the list (pausing it first if it runs). With
+    /// `delete_file`, also deletes its partial file and, if it completed, the
+    /// downloaded file.
+    pub async fn remove(&self, id: DownloadId, delete_file: bool) -> Result<Removed> {
+        if let Some(shared) = self.running(id) {
+            shared.request_pause();
+            shared.done.cancelled().await;
+        }
+        let store = self.store().map_err(|_| Error::UnknownDownload(id))?;
+        let summary = store
+            .call(move |c| {
+                let s = records::get_summary(c, id)?.ok_or(Error::UnknownDownload(id))?;
+                records::delete(c, id)?;
+                Ok(s)
+            })
+            .await?;
+        let mut deleted = Vec::new();
+        if delete_file {
+            let mut paths: Vec<PathBuf> = summary.partial_path.into_iter().collect();
+            if summary.state == State::Completed {
+                paths.extend(summary.path);
+            }
+            for p in paths {
+                match std::fs::remove_file(&p) {
+                    Ok(()) => deleted.push(p),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(Error::disk(&p, e)),
+                }
+            }
+        }
+        Ok(Removed { id, deleted })
+    }
+
+    /// All downloads in the database, oldest first (empty without a database).
+    pub async fn list(&self) -> Result<Vec<DownloadSummary>> {
+        match &self.inner.store {
+            Some(store) => store.call(|c| records::list(c)).await,
+            None => Ok(Vec::new()),
+        }
     }
 
     /// Subscribes to engine events. Slow subscribers miss events (`Lagged`)
@@ -285,32 +579,54 @@ impl Engine {
 
     /// Progress snapshots for the given running downloads (unknown ids are skipped).
     pub fn progress(&self, ids: &[DownloadId]) -> Vec<Progress> {
-        let map = self
-            .inner
-            .downloads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.downloads();
         ids.iter()
             .filter_map(|id| map.get(id).map(|s| s.progress()))
             .collect()
     }
 
-    /// Cancels a running download. Returns false if it is not running.
+    /// Cancels a running download (state `Cancelled`; the partial file and, with
+    /// a database, the checkpoint are kept). Returns false if it is not running.
     pub fn cancel(&self, id: DownloadId) -> bool {
-        let map = self
-            .inner
-            .downloads
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        map.get(&id).is_some_and(|s| {
+        self.running(id).is_some_and(|s| {
             s.cancel.cancel();
             true
         })
     }
 
-    /// Cancels every download. Partial files are flushed and kept.
-    pub fn shutdown(&self) {
+    /// Pauses every running download (each flushes and checkpoints), then closes
+    /// the database and releases the owner lock. Downloads added afterwards stop
+    /// immediately.
+    pub async fn shutdown(&self) {
+        let running: Vec<Arc<Shared>> = self.downloads().values().cloned().collect();
+        for s in &running {
+            s.request_pause();
+        }
         self.inner.root.cancel();
+        for s in &running {
+            s.done.cancelled().await;
+        }
+        if let Some(store) = &self.inner.store {
+            store.close().await;
+        }
+    }
+}
+
+/// Runs when a download task ends, however it ends.
+struct Finish {
+    inner: Arc<Inner>,
+    id: DownloadId,
+    done: CancellationToken,
+}
+
+impl Drop for Finish {
+    fn drop(&mut self) {
+        self.inner
+            .downloads
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.id);
+        self.done.cancel();
     }
 }
 
@@ -337,7 +653,7 @@ impl DownloadHandle {
         self.shared.progress()
     }
 
-    /// Destination details, once the probe succeeded.
+    /// Destination details, once the probe succeeded (or the checkpoint loaded).
     pub fn info(&self) -> Option<&DownloadInfo> {
         self.shared.info()
     }
@@ -347,12 +663,19 @@ impl DownloadHandle {
         self.shared.cancel.cancel();
     }
 
+    /// Requests a pause: like [`DownloadHandle::cancel`], but the download ends
+    /// in `Paused` and can be resumed. [`DownloadHandle::wait`] then returns
+    /// [`Error::Cancelled`].
+    pub fn pause(&self) {
+        self.shared.request_pause();
+    }
+
     /// A token that cancels this download when cancelled.
     pub fn cancellation_token(&self) -> CancellationToken {
         self.shared.cancel.clone()
     }
 
-    /// Waits for the download to finish.
+    /// Waits for the download to finish (completed, failed, paused or cancelled).
     pub async fn wait(self) -> Result<Completed> {
         match self.join.await {
             Ok(r) => r,

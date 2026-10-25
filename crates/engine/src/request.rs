@@ -17,6 +17,19 @@ const ALLOWED_HEADERS: &[HeaderName] = &[
     header::ORIGIN,
 ];
 
+/// Headers that are secrets and therefore never written to the database. A
+/// resumed download needs them supplied again (`docs/ARCHITECTURE.md`, "Security").
+const SECRET_HEADERS: &[HeaderName] = &[header::AUTHORIZATION];
+
+/// The persisted form of a [`RequestContext`] (without the URL, stored separately).
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct SavedContext {
+    #[serde(default)]
+    headers: Vec<(String, String)>,
+    #[serde(default)]
+    suggested_name: Option<String>,
+}
+
 /// Everything needed to (re)issue requests for a download.
 #[derive(Debug, Clone)]
 pub struct RequestContext {
@@ -86,6 +99,34 @@ impl RequestContext {
     pub fn suggested_name(&self) -> Option<&str> {
         self.suggested_name.as_deref()
     }
+
+    /// JSON for the database: allowlisted headers except secrets, and the
+    /// suggested name.
+    pub(crate) fn to_saved(&self) -> String {
+        let saved = SavedContext {
+            headers: self
+                .headers
+                .iter()
+                .filter(|(n, _)| !SECRET_HEADERS.contains(n))
+                .filter_map(|(n, v)| Some((n.as_str().to_owned(), v.to_str().ok()?.to_owned())))
+                .collect(),
+            suggested_name: self.suggested_name.clone(),
+        };
+        serde_json::to_string(&saved).unwrap_or_else(|_| "{}".into())
+    }
+
+    /// Rebuilds a context from the database. Unknown or invalid headers are dropped.
+    pub(crate) fn from_saved(url: &str, saved: &str) -> Result<Self> {
+        let mut ctx = Self::new(url)?;
+        let saved: SavedContext = serde_json::from_str(saved).unwrap_or_default();
+        for (n, v) in saved.headers {
+            if let (Ok(n), Ok(v)) = (HeaderName::try_from(n), HeaderValue::try_from(v)) {
+                ctx.header(n, v);
+            }
+        }
+        ctx.suggested_name = saved.suggested_name;
+        Ok(ctx)
+    }
 }
 
 /// A URL with the query string, fragment and credentials removed, for logs and
@@ -123,6 +164,25 @@ mod tests {
         assert!(RequestContext::new("ftp://example.com/a").is_err());
         assert!(RequestContext::new("not a url").is_err());
         assert!(RequestContext::new("http://example.com").is_ok());
+    }
+
+    #[test]
+    fn saved_form_drops_secrets() {
+        let ctx = RequestContext::new("https://example.com/a?x=1")
+            .unwrap()
+            .with_header(header::REFERER, HeaderValue::from_static("https://r/"))
+            .with_header(header::AUTHORIZATION, HeaderValue::from_static("Bearer t"))
+            .with_suggested_name("a.bin");
+        let saved = ctx.to_saved();
+        assert!(!saved.contains("Bearer"), "{saved}");
+        let back = RequestContext::from_saved(ctx.url().as_str(), &saved).unwrap();
+        assert_eq!(back.url(), ctx.url());
+        assert_eq!(back.headers().get(header::REFERER).unwrap(), "https://r/");
+        assert!(back.headers().get(header::AUTHORIZATION).is_none());
+        assert_eq!(back.suggested_name(), Some("a.bin"));
+        // Garbage degrades to an empty context rather than failing the resume.
+        let bare = RequestContext::from_saved("https://example.com/a", "not json").unwrap();
+        assert!(bare.headers().is_empty());
     }
 
     #[test]
