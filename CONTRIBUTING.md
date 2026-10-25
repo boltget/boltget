@@ -124,6 +124,7 @@ Never point development builds at your real BoltGet data: development builds use
   - Example: `feat/engine-link-refresh`, `fix/cli-json-sizes`.
   - Aim to merge within days, not weeks. Split large work into a series of PRs that each leave `main` working.
 - **Squash-merge only.** Every PR becomes one commit on `main`. The repository is configured to allow only squash merges and to require a linear history.
+- **Maintainers commit directly to `main`** while the project is small, as a series of focused Conventional Commits that each build and pass tests. Contributors without write access always go through a PR.
 - **The PR title becomes the commit subject**, so it must be a valid Conventional Commit (checked by CI).
 - No force-pushes to `main`, ever. Force-pushing your own PR branch is fine.
 - Release tags (`vX.Y.Z`) are created by maintainers on `main` (see [docs/RELEASE.md](docs/RELEASE.md)).
