@@ -1596,11 +1596,14 @@ impl Monitor {
             .retain(|id, _| stats.iter().any(|(w, _)| w == id));
         let reaction = core.rtt() + core.cfg.reaction_slack;
         let mut rates = Vec::new();
+        // The latest sample of each worker: a stall shows there at once.
+        let mut latest: HashMap<WorkerId, f64> = HashMap::new();
         for (id, stat) in &stats {
             let net = stat.net.load(Ordering::Relaxed);
             let entry = self.per_worker.entry(*id).or_insert((net, 0.0, None));
             let inst = net.saturating_sub(entry.0) as f64 / dt;
             entry.0 = net;
+            latest.insert(*id, inst);
             // Smoothing that still follows a connection that slows down within a
             // second or so: the tail split and the slow-connection check depend on
             // it (0.3 took about 3 s to notice a stall at 100 MB/s).
@@ -1650,12 +1653,14 @@ impl Monitor {
             if stat.seg.load(Ordering::Relaxed) == u32::MAX {
                 continue;
             }
-            if entry.1 < core.cfg.slow_fraction * median {
+            // Slow by the average, or stalled right now.
+            let rate = entry.1.min(latest.get(id).copied().unwrap_or(entry.1));
+            if rate < core.cfg.slow_fraction * median {
                 let since = *entry.2.get_or_insert(now);
                 // A connection starved to a trickle (under 5% of the reference,
                 // typical when a server throttles extra connections) gets a
                 // short window too.
-                let starved = entry.1 < median / 20.0;
+                let starved = rate < median / 20.0;
                 // The last connections, slow, with more than `tail_eta` to go: a
                 // new connection costs one round trip, so do not wait at all.
                 let seg = stat.seg.load(Ordering::Relaxed);
