@@ -86,7 +86,7 @@ async fn segmented_download_is_byte_identical() {
     .unwrap();
     assert_content(&done, 3, size);
     assert_eq!(done.info.probe.ranges, RangeSupport::Yes);
-    assert_eq!(done.info.initial_connections, 8);
+    assert_eq!(done.info.initial_connections, 4);
     assert!(done.max_connections > 1, "expected parallel connections");
     assert!(done.segments >= 8);
     // The probe used GET with an open range, never HEAD.

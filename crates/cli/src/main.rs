@@ -215,6 +215,10 @@ struct RunArgs {
     #[arg(long, hide = true, value_name = "MS")]
     flush_interval_ms: Option<u64>,
 
+    /// Connections an adaptive download starts with. For benchmarks.
+    #[arg(long, hide = true, value_name = "N")]
+    initial_connections: Option<u32>,
+
     /// Smallest segment worth splitting, in bytes. For tests.
     #[arg(long, hide = true, value_name = "BYTES")]
     min_split_size: Option<u64>,
@@ -461,6 +465,9 @@ fn engine_config(run: &RunArgs) -> EngineConfig {
     if let Some(n) = run.max_connections {
         cfg.max_connections = n;
         cfg.initial_connections = cfg.initial_connections.min(n);
+    }
+    if let Some(n) = run.initial_connections {
+        cfg.initial_connections = n.clamp(1, cfg.max_connections);
     }
     if let Some(ms) = run.flush_interval_ms {
         cfg.flush_interval = Duration::from_millis(ms);

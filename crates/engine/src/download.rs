@@ -1616,14 +1616,27 @@ impl Monitor {
         if rates.len() >= 2 {
             rates.sort_by(f64::total_cmp);
             let median = rates[rates.len() / 2];
-            if median > 0.0 {
-                self.reference = median;
-            }
+            // A decaying maximum (halves in about 17 s): when several connections
+            // trickle at the same time, their median must not become the
+            // yardstick that makes them look healthy.
+            self.reference = median.max(self.reference * 0.98);
         }
         let median = self.reference;
         if core.cfg.slow_window.is_zero() || median <= 0.0 {
             return;
         }
+        // When no connection is healthy any more (the stragglers at the end), they
+        // hold up the whole download: give them much less time (the tail
+        // window) before reconnecting.
+        let fast = rates
+            .iter()
+            .filter(|r| **r >= core.cfg.slow_fraction * median)
+            .count();
+        let window = if fast == 0 {
+            core.cfg.slow_window.min(core.cfg.tail_slow_window)
+        } else {
+            core.cfg.slow_window
+        };
         for (id, stat) in &stats {
             let Some(entry) = self.per_worker.get_mut(id) else {
                 continue;
@@ -1633,7 +1646,16 @@ impl Monitor {
             }
             if entry.1 < core.cfg.slow_fraction * median {
                 let since = *entry.2.get_or_insert(now);
-                if now.duration_since(since) >= core.cfg.slow_window {
+                // A connection starved to a trickle (under 2% of the reference,
+                // typical when a server throttles extra connections) gets the
+                // short window too.
+                let starved = entry.1 < median / 50.0;
+                let limit = if starved {
+                    window.min(core.cfg.tail_slow_window)
+                } else {
+                    window
+                };
+                if now.duration_since(since) >= limit {
                     tracing::debug!(
                         worker = id,
                         rate = entry.1,

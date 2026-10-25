@@ -83,7 +83,9 @@ impl Controller {
             last: Last::Steady,
             slow_start: true,
             window_start: None,
-            quiet_until: cfg.settle,
+            // Skip the first window: every connection is still in TCP slow start,
+            // so a baseline measured then would make any increase look good.
+            quiet_until: cfg.settle + cfg.window,
             tainted: false,
             last_throttle: None,
         }
@@ -176,7 +178,13 @@ impl Controller {
         if !o.can_grow || self.target >= self.ceiling {
             return;
         }
-        let step = if self.slow_start { self.target } else { 1 };
+        // Doubling, but by at most 4 at a time: some servers punish bursts of
+        // new connections from one client.
+        let step = if self.slow_start {
+            self.target.min(4)
+        } else {
+            1
+        };
         let next = (self.target + step).min(self.ceiling);
         self.last = Last::Increased {
             from: self.target,

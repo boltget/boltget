@@ -11,7 +11,8 @@ use std::time::Duration;
 )]
 #[non_exhaustive]
 pub struct EngineConfig {
-    /// Connections a download starts with (design target 8, like IDM's default).
+    /// Connections a download starts with (4, measured in v0.1; the adaptive
+    /// controller then adds more while they help).
     pub initial_connections: u32,
     /// Hard cap on connections per download (design target 16, range 1–32).
     pub max_connections: u32,
@@ -99,12 +100,15 @@ pub struct EngineConfig {
     pub tail_split_size: u64,
     /// See `tail_split_size` (1 s).
     pub tail_eta: Duration,
+    /// A slow connection that is the last one still transferring is reconnected
+    /// after this long instead of `slow_window` (3 s).
+    pub tail_slow_window: Duration,
 }
 
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
-            initial_connections: 8,
+            initial_connections: 4,
             max_connections: 16,
             max_per_host: 16,
             max_total: 64,
@@ -144,6 +148,7 @@ impl Default for EngineConfig {
             host_ceiling_ttl: Duration::from_secs(24 * 3600),
             tail_split_size: 256 * 1024,
             tail_eta: Duration::from_secs(1),
+            tail_slow_window: Duration::from_secs(3),
         }
     }
 }
