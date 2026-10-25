@@ -96,12 +96,13 @@ pub struct EngineConfig {
     /// How long a host's learned connection ceiling (after `429`/`503`) is kept (24 h).
     pub host_ceiling_ttl: Duration,
     /// Near the end, a connection that would need more than `tail_eta` for its
-    /// remainder has it split down to halves of this size (256 KiB; 0 disables).
+    /// remainder has it split down to halves of this size (64 KiB; 0 disables).
     pub tail_split_size: u64,
     /// See `tail_split_size` (1 s).
     pub tail_eta: Duration,
     /// A slow connection that is the last one still transferring is reconnected
-    /// after this long instead of `slow_window` (3 s).
+    /// after this long instead of `slow_window` (1 s; a starved connection while
+    /// others are healthy gets 3 x this).
     pub tail_slow_window: Duration,
 }
 
@@ -146,9 +147,9 @@ impl Default for EngineConfig {
             adapt_gain: 0.10,
             adapt_cooldown: Duration::from_secs(10),
             host_ceiling_ttl: Duration::from_secs(24 * 3600),
-            tail_split_size: 256 * 1024,
+            tail_split_size: 64 * 1024,
             tail_eta: Duration::from_secs(1),
-            tail_slow_window: Duration::from_secs(3),
+            tail_slow_window: Duration::from_secs(1),
         }
     }
 }

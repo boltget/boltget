@@ -1598,10 +1598,13 @@ impl Monitor {
             let entry = self.per_worker.entry(*id).or_insert((net, 0.0, None));
             let inst = net.saturating_sub(entry.0) as f64 / dt;
             entry.0 = net;
+            // Smoothing that still follows a connection that slows down within a
+            // second or so: the tail split and the slow-connection check depend on
+            // it (0.3 took about 3 s to notice a stall at 100 MB/s).
             entry.1 = if entry.1 == 0.0 {
                 inst
             } else {
-                0.7 * entry.1 + 0.3 * inst
+                0.4 * entry.1 + 0.6 * inst
             };
             let seg = stat.seg.load(Ordering::Relaxed);
             if seg != u32::MAX {
@@ -1646,12 +1649,12 @@ impl Monitor {
             }
             if entry.1 < core.cfg.slow_fraction * median {
                 let since = *entry.2.get_or_insert(now);
-                // A connection starved to a trickle (under 2% of the reference,
-                // typical when a server throttles extra connections) gets the
+                // A connection starved to a trickle (under 5% of the reference,
+                // typical when a server throttles extra connections) gets a
                 // short window too.
-                let starved = entry.1 < median / 50.0;
+                let starved = entry.1 < median / 20.0;
                 let limit = if starved {
-                    window.min(core.cfg.tail_slow_window)
+                    window.min(core.cfg.tail_slow_window * 3)
                 } else {
                     window
                 };
