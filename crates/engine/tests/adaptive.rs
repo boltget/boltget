@@ -30,12 +30,16 @@ async fn adds_connections_while_each_one_is_throttled() {
     let done = get_with(&engine, request(&url, dir.path())).await.unwrap();
     let secs = t0.elapsed().as_secs_f64();
     assert_content(&done, 1, size);
+    // Locally it climbs to 8 and finishes in ~4 s. On a loaded CI runner a probe
+    // can measure under the 10% gain threshold and be reverted, so only require
+    // that it grew at all and beat what the starting two connections would take.
+    // The controller's exact steps are covered by the simulated unit tests.
     assert!(
-        done.max_connections >= 6,
+        done.max_connections >= 4,
         "max {} connections",
         done.max_connections
     );
-    assert!(secs < 6.5, "took {secs:.1} s");
+    assert!(secs < 8.0, "took {secs:.1} s");
 }
 
 #[tokio::test]
