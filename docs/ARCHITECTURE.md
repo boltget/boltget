@@ -292,6 +292,8 @@ Settings are typed in Rust (`struct Settings` with `serde` defaults) and stored 
 > - `request_ctx` is plain JSON **without secrets** (no `Authorization`) instead of a DPAPI-encrypted blob, until cookies make encryption necessary; see [Security](#security).
 > - `queue`, `category`, `download_source` and `media_job` are not created yet; they arrive with their features as new migrations. `setting` exists but is unused.
 > - Segment rows of a completed download are deleted.
+>
+> **Schema versions 2–4 (v0.1 phase 3):** v2 adds `download.speed_limit_bps`; v3 adds `checksum_algo`, `checksum_expected`, `checksum_source` (`user` or the response header it came from) and `checksum_actual`; v4 creates `download_source` as drafted (`primary` and `refreshed` rows; after a link refresh `download.url` is the new link). The `setting` table is now used, one JSON value per key: `engine.speed_limit_bps` (global limit) and `engine.host_ceilings` (`{"scheme://host:port": [ceiling, until_unix_ms]}`, learned connection ceilings). `request_ctx` may also hold the cookie file path and the proxy URL without credentials, still no secrets.
 
 ### Download state machine
 
@@ -318,6 +320,8 @@ stateDiagram-v2
 
 `Postprocessing` (ffmpeg muxing) sits between `Verifying` and `Completed` for media jobs.
 
+> **Phase 3:** `Verifying` (hashing what is left after the last byte), `Corrupt` (checksum mismatch; the partial file is kept, resume with `restart` downloads again, resume without a checksum keeps it) and `NeedsNewLink` (expired link; `refresh_link` validates a new one and sets `Paused`) are implemented. `Verifying` is entered only when there is a checksum, and only for the part not yet hashed during the download.
+>
 > **Implemented in v0.1:** `Queued`, `Probing`, `Downloading`, `Retrying`, `Paused`, `Completed`, `Failed` and `Cancelled` (stopped by the caller; resumable like `Paused`). There is no scheduler yet, so resuming goes straight from `Paused`/`Failed`/`Cancelled` to `Downloading` (or `Probing` when it has to start over) instead of through `Queued`, and `Verifying`, `NeedsNewLink` and `Corrupt` arrive with checksums and link refresh. A download a dead process left in `Probing`/`Downloading`/`Retrying` is set to `Paused` when the database is next opened.
 
 ## Persistence
@@ -330,6 +334,7 @@ stateDiagram-v2
 - **Write batching:** segment checkpoints for all active downloads are written in one transaction per checkpoint interval, not one transaction per segment update.
   - *v0.1 deviation:* one transaction per download per writer flush (see [ENGINE.md, Checkpointing](ENGINE.md#checkpointing-and-crash-safe-resume)); still never one per segment update.
 - **Secrets in the DB:** `request_ctx` (cookies, Authorization header, proxy credentials) is encrypted with Windows DPAPI (`CryptProtectData`, current-user scope) before storage. It is deleted when the download completes, unless the user opts to keep it for re-downloads. On other platforms: the OS keychain via the `keyring` crate holds a per-install key used to encrypt this column.
+  - *v0.1 deviation:* no secret is stored yet, so nothing needs encrypting: cookies come from a `cookies.txt` whose path is saved and which is read again on resume; `Authorization`, `--cookie` values and proxy passwords are passed again to `resume`. DPAPI arrives with browser-captured cookies (v0.2/v0.3). See [ENGINE.md, Request context](ENGINE.md#request-context).
 - **Logs:** rotating files in `%LOCALAPPDATA%\BoltGet\logs` via `tracing` + `tracing-appender`. URLs are logged with query strings redacted by default (signed URLs are credentials).
 
 ## Threading and async model
