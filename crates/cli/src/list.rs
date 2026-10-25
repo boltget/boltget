@@ -78,7 +78,7 @@ fn print_table(list: &[DownloadSummary]) {
         .unwrap_or(1)
         .max(2);
     println!(
-        "{:>id_w$}  {:<11}  {:>9}  {:>10}  NAME",
+        "{:>id_w$}  {:<14}  {:>9}  {:>10}  NAME",
         "ID", "STATE", "PROGRESS", "SIZE"
     );
     for s in list {
@@ -87,7 +87,7 @@ fn print_table(list: &[DownloadSummary]) {
             .map_or_else(|| "?".to_owned(), |t| HumanBytes(t).to_string());
         let name = s.file_name.clone().unwrap_or_else(|| s.url.clone());
         println!(
-            "{:>id_w$}  {:<11}  {:>9}  {:>10}  {name}",
+            "{:>id_w$}  {:<14}  {:>9}  {:>10}  {name}",
             s.id.to_string(),
             s.state.as_str(),
             progress_cell(s),

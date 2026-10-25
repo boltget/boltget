@@ -351,11 +351,11 @@ pub(crate) async fn run(shared: Arc<Shared>, env: Env, job: Job) -> Result<Compl
         Err(Error::Cancelled) if shared.pause_requested() => shared.set_state(State::Paused, None),
         Err(Error::Cancelled) => shared.set_state(State::Cancelled, None),
         Err(e) if e.kind() == ErrorKind::LinkExpired => {
-            tracing::warn!(id = %shared.id, error = %e, "the download needs a new link");
+            tracing::info!(id = %shared.id, error = %e, "the download needs a new link");
             shared.set_state(State::NeedsNewLink, Some(e));
         }
         Err(e) if e.kind() == ErrorKind::Integrity => {
-            tracing::warn!(id = %shared.id, error = %e, "download is corrupt");
+            tracing::info!(id = %shared.id, error = %e, "download is corrupt");
             shared.set_state(State::Corrupt, Some(e));
         }
         Err(e) => {
