@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `boltget bench`: measures download times on your own network. It runs each URL, or the targets in a TOML file such as `bench/targets.toml`, several times (`--runs`, `--warmup`), compares connection settings in rotating order (`-c auto,8`), checks size and SHA-256, and reports the median, interquartile range, min-max, MiB/s, time to first byte and tail time as a table, line-delimited JSON (`--json`) or CSV (`--csv`). Downloaded files are deleted after each run.
+- A first benchmark against Internet Download Manager, with method, raw data and limitations: `docs/BENCHMARK.md`. The harness (`bench/`) includes a versioned target list, a PowerShell script that drives IDM and BoltGet on the same files, and `boltget-testserver`, a local server for reproducible lab scenarios.
+
 - The number of connections adapts: a download starts with 4 and adds connections only while they make it faster, reverts ones that do not, and halves when the server answers `429`/`503`, remembering that host's limit for 24 hours. `-c N` still fixes the count; `--max-connections` caps the adaptive one.
 - Slow connections no longer hold up the end of a download: a slow connection's remaining bytes are split with an idle connection down to 64 KiB, and a stalled or very slow last connection is replaced within about a second.
 - Speed limits: `--limit 5M` (also `500K`, `1048576`; `off` to remove) on `get`, `resume` and `refresh` limits one download and is saved with it; `boltget config set limit 5M` sets a global limit for all downloads, saved in the settings (`config get`, `config unset`, `config list`). Limits change without reconnecting.

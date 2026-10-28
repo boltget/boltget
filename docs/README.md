@@ -16,6 +16,7 @@ Design documents for BoltGet. They define what we are building and how; code tha
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Components, process model, IPC and events, data model, persistence, threading, error handling, security |
 | [ENGINE.md](ENGINE.md) | The download engine spec: probing, dynamic segmentation, adaptive connections, HTTP/2, preallocation, write path, checkpointing, retries, link refresh, rate limiting, integrity, proxies, cookies, benchmarks |
+| [BENCHMARK.md](BENCHMARK.md) | Benchmark method, results against IDM, raw data and limitations |
 | [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md) | The WXT extension, capture rules, context menus, cookie/header forwarding, native messaging registration, media detection, store policies |
 | [VIDEO.md](VIDEO.md) | yt-dlp and ffmpeg sidecars: install, verification, updates, the format picker, media flow |
 | [TECH-STACK.md](TECH-STACK.md) | Every major technology decision as a short ADR, with rejected alternatives |
