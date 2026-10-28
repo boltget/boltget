@@ -165,7 +165,8 @@ fn verify(plan: &Plan, target: &Path, out: &Path, state: &Path, path: &Path) {
 }
 
 /// Runs one download through up to `plan.kills` kills and a final resume.
-/// Returns the number of kills (fewer if it finished first).
+/// Returns the number of kills counted in `stats.kills` (fewer if it
+/// finished first).
 fn run_download(plan: &Plan, rng: &mut fastrand::Rng, stats: &Stats) -> usize {
     let out = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
@@ -173,6 +174,7 @@ fn run_download(plan: &Plan, rng: &mut fastrand::Rng, stats: &Stats) -> usize {
     let mut id: Option<u64> = None;
     let mut saved = 0u64;
     let mut remaining_ms = plan.full_ms;
+    let mut killed = 0;
     for attempt in 0..=plan.kills {
         let last = attempt == plan.kills;
         if id.is_some() && saved > 0 {
@@ -242,7 +244,7 @@ fn run_download(plan: &Plan, rng: &mut fastrand::Rng, stats: &Stats) -> usize {
             let path = PathBuf::from(done["path"].as_str().unwrap());
             verify(plan, &target, out.path(), state.path(), &path);
             stats.downloads.fetch_add(1, Ordering::Relaxed);
-            return attempt;
+            return killed;
         }
 
         // Kill at a random moment: mostly while transferring, sometimes during
@@ -260,6 +262,7 @@ fn run_download(plan: &Plan, rng: &mut fastrand::Rng, stats: &Stats) -> usize {
         let errors = err_reader.join().unwrap_or_default();
         if !finished {
             stats.kills.fetch_add(1, Ordering::Relaxed);
+            killed += 1;
         }
         if std::env::var_os("BOLTGET_CRASH_DEBUG").is_some() {
             eprintln!(
@@ -277,7 +280,8 @@ fn run_download(plan: &Plan, rng: &mut fastrand::Rng, stats: &Stats) -> usize {
                 stats.finished_first.fetch_add(1, Ordering::Relaxed);
                 verify(plan, &target, out.path(), state.path(), &target);
                 stats.downloads.fetch_add(1, Ordering::Relaxed);
-                return attempt;
+                // The kill may have landed after the completion record.
+                return killed;
             }
             Some(row) => {
                 let partial_exists = row
