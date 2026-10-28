@@ -170,7 +170,13 @@ impl CookieJar {
                 .trim()
                 .parse()
                 .map_err(|_| format!("line {}: the expiry is not a number", i + 1))?;
-            let expires = (expiry > 0).then(|| UNIX_EPOCH + Duration::from_secs(expiry as u64));
+            // An expiry beyond what `SystemTime` can hold means "never" within
+            // this download, like a session cookie.
+            let expires = if expiry > 0 {
+                UNIX_EPOCH.checked_add(Duration::from_secs(expiry as u64))
+            } else {
+                None
+            };
             let domain = f[0].trim();
             let cookie = Cookie {
                 name: f[5].to_owned(),
@@ -288,12 +294,14 @@ impl CookieJar {
             }
         }
         if let Some(secs) = max_age {
-            // Max-Age wins over Expires; zero or less deletes the cookie.
-            c.expires = Some(if secs <= 0 {
-                UNIX_EPOCH
+            // Max-Age wins over Expires; zero or less deletes the cookie. One
+            // too large for `SystemTime` never expires (RFC 6265 5.2.2: the
+            // latest representable time).
+            c.expires = if secs <= 0 {
+                Some(UNIX_EPOCH)
             } else {
-                now + Duration::from_secs(secs as u64)
-            });
+                now.checked_add(Duration::from_secs(secs as u64))
+            };
         }
         if c.secure && url.scheme() != "https" {
             return;
@@ -358,6 +366,24 @@ mod tests {
             header(&spaced, "http://example.com/").as_deref(),
             Some("a=b c")
         );
+    }
+
+    #[test]
+    fn expiry_beyond_system_time_never_expires() {
+        // Found by the `cookies` fuzz target: both used to panic on overflow.
+        let jar = CookieJar::from_netscape(
+            ".example.com	TRUE	/	FALSE	9223372036854775807	forever	1
+",
+        )
+        .unwrap();
+        assert_eq!(
+            header(&jar, "https://example.com/").as_deref(),
+            Some("forever=1")
+        );
+        let mut jar = CookieJar::new();
+        let url = u("https://example.com/");
+        jar.set_cookie(&url, "a=b; Max-Age=9223372036854775807", SystemTime::now());
+        assert_eq!(header(&jar, "https://example.com/").as_deref(), Some("a=b"));
     }
 
     #[test]
