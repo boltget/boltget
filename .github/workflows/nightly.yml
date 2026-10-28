@@ -38,6 +38,7 @@ jobs:
     timeout-minutes: 45
     env:
       FUZZ_SECONDS: ${{ inputs.fuzz_seconds || '60' }}
+      FUZZ_TARGET: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,25 +48,25 @@ jobs:
           toolchain: nightly
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-fuzz
+          tool: cargo-fuzz,cargo-deny
       - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: fuzz
+      # Not cargo-deny-action: its container has no toolchain matching
+      # rust-toolchain.toml.
       - name: Licenses of the fuzz crate
-        uses: EmbarkStudios/cargo-deny-action@v2.1.1
-        with:
-          manifest-path: fuzz/Cargo.toml
-          command: check bans licenses sources
+        run: cargo deny --manifest-path fuzz/Cargo.toml check bans licenses sources
       # `+nightly` overrides rust-toolchain.toml (stable) for cargo-fuzz and the
-      # cargo it runs.
+      # cargo it runs. The prebuilt cargo-fuzz is a musl binary and would build
+      # for its own target by default, which the nightly toolchain lacks.
       - name: Build fuzz targets
-        run: cargo +nightly fuzz build
+        run: cargo +nightly fuzz build --target "$FUZZ_TARGET"
       - name: Run each target for ${{ env.FUZZ_SECONDS }} s
         run: |
           failed=""
           for t in $(cargo +nightly fuzz list); do
             echo "::group::$t"
-            if ! cargo +nightly fuzz run "$t" -- -max_total_time="$FUZZ_SECONDS"; then
+            if ! cargo +nightly fuzz run --target "$FUZZ_TARGET" "$t" -- -max_total_time="$FUZZ_SECONDS"; then
               failed="$failed $t"
             fi
             echo "::endgroup::"
