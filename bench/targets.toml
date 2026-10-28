@@ -1,0 +1,61 @@
+# Benchmark targets for `boltget bench` and bench/idm-compare.ps1.
+#
+# Versioned: change a target's URL, size or hash only together with a note in
+# docs/BENCHMARK.md, so published results stay traceable to what was measured.
+# Public targets are hosting providers' speed-test files, which exist to be
+# downloaded for measurements; use them sparingly (a few runs, not loops).
+#
+# `{lab}` is replaced by `--lab <URL>` (boltget bench) or the script's own
+# boltget-testserver. Lab content is generated (incompressible) from the seed.
+version = 1
+
+# --- Public hosts ---
+
+[[target]]
+name = "cachefly-10mb"
+url = "http://cachefly.cachefly.net/10mb.test"
+size = 10485760
+sha256 = "e5b844cc57f57094ea4585e235f36c78c1cd222262bb89d53c94dcb4d6b3e55d"
+notes = "CacheFly CDN, plain HTTP. Small file: start-up cost dominates."
+
+[[target]]
+name = "cachefly-100mb"
+url = "http://cachefly.cachefly.net/100mb.test"
+size = 104857600
+sha256 = "28614fccd52ff53e2d603c8a1968d2c5d3249d2796be558ff9749e3d172d5a8a"
+notes = "CacheFly CDN, plain HTTP, nearby edge."
+
+[[target]]
+name = "nforce-100mb"
+url = "https://mirror.nforce.com/pub/speedtests/100mb.bin"
+size = 104857600
+sha256 = "20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e"
+notes = "NFOrce (Netherlands), HTTPS, Apache. Farther away: per-connection speed is RTT-limited."
+
+[[target]]
+name = "ovh-100mb"
+url = "https://proof.ovh.net/files/100Mb.dat"
+size = 104857600
+notes = "OVHcloud (France), HTTPS, nginx."
+
+[[target]]
+name = "thinkbroadband-100mb"
+url = "http://ipv4.download.thinkbroadband.com/100MB.zip"
+size = 104857600
+notes = "thinkbroadband (UK), plain HTTP, nginx."
+
+# --- Local lab (boltget-testserver) ---
+
+[[target]]
+name = "lab-throttled-100mib"
+url = "{lab}/data?size=104857600&seed=101&throttle=2097152"
+size = 104857600
+sha256 = "69527432e04c79b66016e285823a429a79a400b04a892bb8c4b0b56cfa60dde8"
+notes = "Every connection limited to 2 MiB/s by the server: the case segmentation exists for."
+
+[[target]]
+name = "lab-1gib"
+url = "{lab}/data?size=1073741824&seed=102"
+size = 1073741824
+sha256 = "0e724a6864bd4a7cf59f1f2b2d1f6c3e9c9e77167af108d6d6f512584052185b"
+notes = "Loopback, no limit: measures the client's own overhead (CPU, disk writes, finishing the file)."

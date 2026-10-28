@@ -1,0 +1,41 @@
+﻿{
+    "date":  "2026-10-28T20:10:21.0536375+03:00",
+    "os":  "Microsoft Windows 11 Home Single Language 10.0.26200",
+    "cpu":  "AMD Ryzen 5 5500",
+    "logical_cpus":  12,
+    "ram_gib":  15.9,
+    "disks":  {
+                  "FriendlyName":  "MLD M300 NVMe SSD",
+                  "MediaType":  "SSD",
+                  "BusType":  "NVMe",
+                  "Size":  500107862016
+              },
+    "network":  {
+                    "Name":  "Ethernet",
+                    "InterfaceDescription":  "Realtek PCIe GbE Family Controller",
+                    "LinkSpeed":  "1 Gbps"
+                },
+    "idm_version":  "6, 43, 16, 2",
+    "idm_registry_version":  "v6.43b16 Trial",
+    "idm_connection_and_limit_values":  {
+
+                                        },
+    "idm_note":  "Settings as installed (not changed by this script). No value matching conn/limit means IDM uses its built-in default.",
+    "boltget_version":  "boltget 0.1.0-dev",
+    "boltget_commit":  "2266755",
+    "boltget_dirty":  true,
+    "targets":  [
+                    "cachefly-10mb",
+                    "cachefly-100mb",
+                    "nforce-100mb",
+                    "lab-throttled-100mib",
+                    "lab-1gib"
+                ],
+    "runs":  5,
+    "warmup":  1,
+    "boltget_settings":  [
+                             "auto",
+                             "8"
+                         ],
+    "lab_port":  8090
+}
