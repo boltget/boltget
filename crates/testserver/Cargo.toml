@@ -21,7 +21,7 @@ hyper-util.workspace = true
 md-5.workspace = true
 percent-encoding.workspace = true
 sha2.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
 tokio-util.workspace = true
 
 [lints]

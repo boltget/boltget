@@ -45,6 +45,14 @@
 //! - `/auth?...`: like `/data`, but 401 unless `Authorization` is present.
 //! - `/cookie?need=<name=value>&...`: like `/data`, but 403 unless that cookie is sent.
 //! - `/setcookie?set=<Set-Cookie value>&to=<url>`: a redirect that sets a cookie.
+//! - `/_stats`: JSON counters (`connections`, `max_concurrent`, `requests`,
+//!   `body_bytes`) since start or the last `/_stats?reset=1`, which reads and
+//!   then resets them. A connection counts from its first other request, so
+//!   asking does not change them. The benchmark harness uses it to see how many
+//!   connections a client really opened.
+//!
+//! The `boltget-testserver` binary serves the same routes on a fixed port, for
+//! benchmarks: `boltget-testserver --port 8090`.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -136,6 +144,8 @@ struct State {
     max_active: AtomicUsize,
     connections: AtomicUsize,
     body_bytes: AtomicU64,
+    /// Requests since start or the last stats reset (`/_stats` excluded).
+    requests: AtomicUsize,
     tokens: Mutex<HashMap<String, usize>>,
     /// Shared "lines" for `line_bps`: when the line is free again, per key.
     lines: Mutex<HashMap<String, Arc<Mutex<tokio::time::Instant>>>>,
@@ -159,10 +169,15 @@ impl Drop for TestServer {
 impl TestServer {
     /// Starts a server on an ephemeral localhost port.
     pub async fn start() -> TestServer {
-        let listener = TcpListener::bind("127.0.0.1:0")
+        TestServer::start_on(SocketAddr::from(([127, 0, 0, 1], 0)))
             .await
-            .expect("bind test server");
-        let addr = listener.local_addr().expect("local addr");
+            .expect("bind test server")
+    }
+
+    /// Starts a server on `addr` (port 0 picks a free port).
+    pub async fn start_on(addr: SocketAddr) -> std::io::Result<TestServer> {
+        let listener = TcpListener::bind(addr).await?;
+        let addr = listener.local_addr()?;
         let state = Arc::new(State {
             started: std::time::Instant::now(),
             counters: Mutex::default(),
@@ -171,6 +186,7 @@ impl TestServer {
             max_active: AtomicUsize::default(),
             connections: AtomicUsize::default(),
             body_bytes: AtomicU64::default(),
+            requests: AtomicUsize::default(),
             tokens: Mutex::default(),
             lines: Mutex::default(),
             next_token: AtomicUsize::default(),
@@ -187,12 +203,20 @@ impl TestServer {
                 let s = s.clone();
                 let st = st.clone();
                 tokio::spawn(async move {
-                    s.connections.fetch_add(1, Ordering::SeqCst);
-                    let now = s.active.fetch_add(1, Ordering::SeqCst) + 1;
-                    s.max_active.fetch_max(now, Ordering::SeqCst);
+                    // A connection counts from its first request that is not
+                    // `/_stats`, so asking for the counters does not change them.
+                    let counted = Arc::new(std::sync::atomic::AtomicBool::new(false));
                     let svc_state = s.clone();
-                    let svc = service_fn(move |req| {
+                    let svc_counted = counted.clone();
+                    let svc = service_fn(move |req: Request<Incoming>| {
                         let s = svc_state.clone();
+                        if req.uri().path() != "/_stats"
+                            && !svc_counted.swap(true, Ordering::SeqCst)
+                        {
+                            s.connections.fetch_add(1, Ordering::SeqCst);
+                            let now = s.active.fetch_add(1, Ordering::SeqCst) + 1;
+                            s.max_active.fetch_max(now, Ordering::SeqCst);
+                        }
                         async move { Ok::<_, Infallible>(handle(&s, addr, &req)) }
                     });
                     let conn = http1::Builder::new()
@@ -202,11 +226,13 @@ impl TestServer {
                         () = st.cancelled() => {}
                         _ = conn => {}
                     }
-                    s.active.fetch_sub(1, Ordering::SeqCst);
+                    if counted.load(Ordering::SeqCst) {
+                        s.active.fetch_sub(1, Ordering::SeqCst);
+                    }
                 });
             }
         });
-        TestServer { addr, state, stop }
+        Ok(TestServer { addr, state, stop })
     }
 
     /// `http://127.0.0.1:<port><path_and_query>`.
@@ -237,6 +263,32 @@ impl TestServer {
     /// Body bytes sent so far (all responses).
     pub fn body_bytes_sent(&self) -> u64 {
         self.state.body_bytes.load(Ordering::SeqCst)
+    }
+
+    /// Resets the counters behind `/_stats` (as `/_stats?reset=1` does).
+    pub fn reset_stats(&self) {
+        self.state.reset_stats();
+    }
+}
+
+impl State {
+    fn reset_stats(&self) {
+        self.connections.store(0, Ordering::SeqCst);
+        // Connections still open count towards the next maximum.
+        self.max_active
+            .store(self.active.load(Ordering::SeqCst), Ordering::SeqCst);
+        self.body_bytes.store(0, Ordering::SeqCst);
+        self.requests.store(0, Ordering::SeqCst);
+    }
+
+    fn stats_json(&self) -> String {
+        format!(
+            "{{\"connections\":{},\"max_concurrent\":{},\"requests\":{},\"body_bytes\":{}}}\n",
+            self.connections.load(Ordering::SeqCst),
+            self.max_active.load(Ordering::SeqCst),
+            self.requests.load(Ordering::SeqCst),
+            self.body_bytes.load(Ordering::SeqCst),
+        )
     }
 }
 
@@ -269,6 +321,13 @@ fn empty() -> BoxBody {
 fn text(s: &'static str) -> BoxBody {
     use http_body_util::BodyExt;
     http_body_util::Full::new(Bytes::from_static(s.as_bytes()))
+        .map_err(|never: Infallible| match never {})
+        .boxed()
+}
+
+fn full(s: String) -> BoxBody {
+    use http_body_util::BodyExt;
+    http_body_util::Full::new(Bytes::from(s))
         .map_err(|never: Infallible| match never {})
         .boxed()
 }
@@ -308,6 +367,19 @@ fn handle(state: &Arc<State>, addr: SocketAddr, req: &Request<Incoming>) -> Resp
         at: state.started.elapsed(),
     };
     let q = query_map(&query);
+    if path == "/_stats" {
+        let body = state.stats_json();
+        if q.contains_key("reset") {
+            state.reset_stats();
+        }
+        return Response::builder()
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::CONNECTION, "close")
+            .body(full(body))
+            .expect("valid response");
+    }
+    state.requests.fetch_add(1, Ordering::SeqCst);
     let resp = if path == "/redirect" {
         redirect(&q, addr)
     } else if path == "/switch" {
