@@ -1,0 +1,127 @@
+# Long-running suites that are too slow for every push (docs/ENGINE.md,
+# "Testing strategy"): libFuzzer on the engine's parsers of untrusted input, the
+# kill-and-resume harness at 1,000 cycles, and the segment property tests at a
+# high iteration count. Unsigned nightly builds (docs/RELEASE.md) come later.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # daily, 02:17 UTC
+  workflow_dispatch:
+    inputs:
+      fuzz_seconds:
+        description: "libFuzzer time budget per target, in seconds"
+        default: "60"
+      crash_cycles:
+        description: "Kill-and-resume cycles per platform"
+        default: "1000"
+      proptest_cases:
+        description: "Property test cases"
+        default: "262144"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+
+jobs:
+  fuzz:
+    name: fuzz (libFuzzer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FUZZ_SECONDS: ${{ inputs.fuzz_seconds || '60' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: fuzz
+      - name: Licenses of the fuzz crate
+        uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          manifest-path: fuzz/Cargo.toml
+          command: check bans licenses sources
+      # `+nightly` overrides rust-toolchain.toml (stable) for cargo-fuzz and the
+      # cargo it runs.
+      - name: Build fuzz targets
+        run: cargo +nightly fuzz build
+      - name: Run each target for ${{ env.FUZZ_SECONDS }} s
+        run: |
+          failed=""
+          for t in $(cargo +nightly fuzz list); do
+            echo "::group::$t"
+            if ! cargo +nightly fuzz run "$t" -- -max_total_time="$FUZZ_SECONDS"; then
+              failed="$failed $t"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::findings in:$failed (inputs in the fuzz-artifacts upload)"
+            exit 1
+          fi
+      - name: Upload findings
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
+
+  crash-resume:
+    name: kill-and-resume (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      BOLTGET_CRASH_CYCLES: ${{ inputs.crash_cycles || '1000' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2.9.3
+      # The seed is printed at the start; BOLTGET_CRASH_SEED reproduces a run.
+      - name: Kill-and-resume harness
+        run: cargo test -p boltget-cli --locked --test crash_resume -- --nocapture
+
+  proptest:
+    name: property tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      PROPTEST_CASES: ${{ inputs.proptest_cases || '262144' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2.9.3
+      # Segment invariants, plus the fuzz targets' random and mutated inputs.
+      - name: Engine unit and property tests
+        run: cargo test -p boltget-engine --release --locked --lib

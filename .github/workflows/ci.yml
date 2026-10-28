@@ -40,6 +40,8 @@ jobs:
           filters: |
             rust:
               - "crates/**"
+              # The engine's unit tests run the fuzz seed corpus.
+              - "fuzz/**"
               - "Cargo.toml"
               - "Cargo.lock"
               - "rust-toolchain.toml"
@@ -85,6 +87,10 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
+      # The fuzz targets run nightly (nightly.yml); here they only have to build.
+      - name: Check fuzz targets
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo check --manifest-path fuzz/Cargo.toml --locked --bins
 
   deny:
     name: cargo-deny (${{ matrix.checks }})
