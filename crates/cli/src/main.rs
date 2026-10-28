@@ -8,6 +8,7 @@
 //! boltget remove <id> [--delete-file]
 //! boltget refresh <id> <new-url> [-H ...]
 //! boltget config list|get|set|unset [limit] [<value>]
+//! boltget bench [<url>...] [--targets bench/targets.toml] [--runs 5] [-c auto,8] [--json]
 //! ```
 //!
 //! Downloads are kept in a database (`--state`, default `%LOCALAPPDATA%\BoltGet`)
@@ -16,6 +17,7 @@
 // A CLI prints to stdout by design.
 #![allow(clippy::print_stdout)]
 
+mod bench;
 mod display;
 mod json;
 mod list;
@@ -143,6 +145,9 @@ enum Command {
     /// Show or change settings (the global speed limit).
     #[command(after_long_help = settings::HELP)]
     Config(settings::ConfigArgs),
+    /// Measure download times: repeated, interleaved runs with statistics.
+    #[command(after_long_help = bench::HELP)]
+    Bench(bench::BenchArgs),
 }
 
 /// Options shared by the commands that run a download.
@@ -887,6 +892,7 @@ async fn main() -> ExitCode {
         Command::Refresh(args) => refresh(args, state, cli.verbose).await,
         Command::Remove(args) => remove(&args, state).await,
         Command::Config(args) => settings::run(&args, state).await,
+        Command::Bench(args) => bench::run(args).await,
     };
     ExitCode::from(code)
 }

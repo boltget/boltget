@@ -839,3 +839,196 @@ async fn cookie_file_cookie_and_user_flags() {
     let out = get(srv.url("/data"), vec![s("-b"), s("novalue")], "e").await;
     assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bench_runs_targets_file_against_the_lab() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let dl = work.path().join("dl");
+    let size = 1_500_000u64;
+    let hash = sha256_hex(&content(5, size));
+    let targets = work.path().join("targets.toml");
+    std::fs::write(
+        &targets,
+        format!(
+            "version = 1\n\n[[target]]\nname = \"lab-small\"\nurl = \"{{lab}}/data?size={size}&seed=5&throttle=8388608\"\nsize = {size}\nsha256 = \"{hash}\"\n\n[[target]]\nname = \"lab-nohash\"\nurl = \"{{lab}}/data?size=300000&seed=6\"\n\n[[target]]\nname = \"elsewhere\"\nurl = \"http://example.invalid/never\"\n"
+        ),
+    )
+    .unwrap();
+    let csv = work.path().join("runs.csv");
+    let out = boltget(
+        state.path(),
+        vec![
+            s("bench"),
+            s("--targets"),
+            targets.display().to_string(),
+            s("-t"),
+            s("lab-*"),
+            s("--lab"),
+            srv.url("/"),
+            s("--runs"),
+            s("2"),
+            s("-c"),
+            s("auto,2"),
+            s("--json"),
+            s("--csv"),
+            csv.display().to_string(),
+            s("--dir"),
+            dl.display().to_string(),
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let lines = lines(&out);
+    let runs: Vec<_> = lines.iter().filter(|l| l["event"] == "run").collect();
+    // 2 targets x 2 settings x (1 warm-up + 2 measured).
+    assert_eq!(runs.len(), 12, "{lines:?}");
+    assert!(runs.iter().all(|r| r["ok"] == true), "{runs:?}");
+    for r in runs.iter().filter(|r| r["target"] == "lab-small") {
+        assert_eq!(r["bytes"], size);
+        assert_eq!(r["sha256"], hash.as_str());
+    }
+    let nohash = sha256_hex(&content(6, 300_000));
+    assert!(
+        runs.iter()
+            .filter(|r| r["target"] == "lab-nohash")
+            .all(|r| r["sha256"] == nohash.as_str())
+    );
+    // A fixed count is honoured.
+    assert!(
+        runs.iter()
+            .filter(|r| r["setting"] == "2" && r["target"] == "lab-small")
+            .all(|r| r["max_connections"].as_u64().unwrap() <= 2)
+    );
+    let summaries: Vec<_> = lines.iter().filter(|l| l["event"] == "summary").collect();
+    assert_eq!(summaries.len(), 4);
+    for sm in &summaries {
+        assert_eq!(sm["runs"], 2);
+        assert_eq!(sm["failed"], 0);
+        assert!(sm["median_s"].as_f64().unwrap() > 0.0);
+        assert!(sm["q1_s"].as_f64() <= sm["q3_s"].as_f64());
+    }
+    // CSV: a header and one row per run.
+    let csv = std::fs::read_to_string(&csv).unwrap();
+    assert_eq!(csv.lines().count(), 13, "{csv}");
+    assert!(csv.starts_with("target,setting,phase,round,ok,"));
+    // The downloads were deleted.
+    assert_eq!(std::fs::read_dir(&dl).unwrap().count(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bench_reports_failures_and_needs_lab() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let targets = work.path().join("targets.toml");
+    std::fs::write(
+        &targets,
+        format!(
+            "version = 1\n[[target]]\nname = \"wrong-hash\"\nurl = \"{}\"\nsha256 = \"{}\"\n[[target]]\nname = \"lab-only\"\nurl = \"{{lab}}/data\"\n",
+            srv.url("/data?size=100000"),
+            "0".repeat(64)
+        ),
+    )
+    .unwrap();
+    let base = |more: &[&str]| {
+        let mut v = vec![
+            s("bench"),
+            s("--targets"),
+            targets.display().to_string(),
+            s("--dir"),
+            work.path().join("dl").display().to_string(),
+        ];
+        v.extend(more.iter().map(|m| s(m)));
+        v
+    };
+    // The checksum mismatch fails every run, exit code 9; the lab target is skipped.
+    let out = boltget(
+        state.path(),
+        base(&["--runs", "1", "--warmup", "0", "--json"]),
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(9), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("lab-only"), "{}", stderr(&out));
+    let lines = lines(&out);
+    assert_eq!(lines[0]["ok"], false);
+    assert!(lines[0]["error"].is_string());
+    assert_eq!(lines[1]["event"], "summary");
+    assert_eq!(lines[1]["failed"], 1);
+    assert!(lines[1]["median_s"].is_null());
+    // Only lab targets selected, without --lab: nothing to run.
+    let out = boltget(state.path(), base(&["-t", "lab-only"])).await;
+    assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
+    // --list shows the targets without downloading.
+    let out = boltget(
+        state.path(),
+        base(&["--list", "--lab", "http://127.0.0.1:1"]),
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let listed = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        listed.contains("wrong-hash") && listed.contains("lab-only"),
+        "{listed}"
+    );
+    // A malformed targets file is a usage error.
+    std::fs::write(&targets, "version = 1\n[[target]]\nname = \"x\"\n").unwrap();
+    let out = boltget(state.path(), base(&[])).await;
+    assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
+}
+
+/// One raw HTTP/1.1 GET; returns the body.
+fn http_get(addr: std::net::SocketAddr, path: &str) -> String {
+    use std::io::{Read, Write};
+    let mut s = std::net::TcpStream::connect(addr).expect("connect");
+    write!(
+        s,
+        "GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    )
+    .expect("send request");
+    let mut out = String::new();
+    s.read_to_string(&mut out).expect("read response");
+    out.split_once("\r\n\r\n")
+        .expect("response body")
+        .1
+        .to_owned()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn testserver_stats_count_connections_and_reset() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let addr = srv.addr();
+    let stats = |path: &'static str| {
+        tokio::task::spawn_blocking(move || {
+            serde_json::from_str::<serde_json::Value>(&http_get(addr, path)).unwrap()
+        })
+    };
+    let before = stats("/_stats?reset=1").await.unwrap();
+    assert_eq!(before["connections"], 0);
+    let size = 6 * 1024 * 1024;
+    let out = boltget(
+        state.path(),
+        vec![
+            s("get"),
+            srv.url(&format!("/data?size={size}&throttle=4194304")),
+            s("-o"),
+            dir.path().join("f").display().to_string(),
+            s("-c"),
+            s("3"),
+            s("-q"),
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let after = stats("/_stats?reset=1").await.unwrap();
+    assert_eq!(after["max_concurrent"], 3, "{after}");
+    assert!(after["connections"].as_u64().unwrap() >= 3, "{after}");
+    assert!(after["body_bytes"].as_u64().unwrap() >= size, "{after}");
+    let reset = stats("/_stats").await.unwrap();
+    assert_eq!(reset["connections"], 0, "{reset}");
+    assert_eq!(reset["max_concurrent"], 0, "{reset}");
+    assert_eq!(reset["requests"], 0, "{reset}");
+}
