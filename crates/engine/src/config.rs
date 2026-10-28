@@ -85,7 +85,8 @@ pub struct EngineConfig {
     /// ([`AddRequest::connections`](crate::AddRequest::connections)): start at
     /// `initial_connections` and add connections while they raise throughput.
     pub adaptive: bool,
-    /// Throughput is measured over this window after each change (1 s).
+    /// Throughput is measured over this window after each change (1 s). A step
+    /// that clearly pays off is kept after half of it.
     pub adapt_window: Duration,
     /// ... starting this long after the change, once new connections ramped up (500 ms).
     pub adapt_settle: Duration,

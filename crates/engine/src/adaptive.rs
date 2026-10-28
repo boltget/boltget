@@ -6,9 +6,17 @@
 //!
 //! - After every change it waits `settle` (new connections ramp up through TCP
 //!   slow start), then measures throughput over `window`.
+//! - The first baseline is measured from `settle` on, but accepted only once
+//!   throughput has stopped rising: the second half of its window is not faster
+//!   than the first by more than `gain` (the connections are past TCP slow
+//!   start). At the latest it is the window one window later.
 //! - An increase is kept only if throughput rose by more than `gain`; then it
 //!   increases again: doubling while each doubling pays off at least half of
-//!   what it ideally could, then one connection at a time.
+//!   what it ideally could, then one connection at a time. A doubling adds at
+//!   most 4 connections until a step pays off at least three quarters of its
+//!   ideal (the server limits each connection); from then on it doubles fully.
+//! - A step that pays off half its ideal after half a window is kept at once;
+//!   any other verdict waits for the full window.
 //! - An increase that did not pay off is reverted, and the count holds for
 //!   `cooldown` before probing again (from a fresh baseline).
 //! - `429`/`503` or refused connections halve the count and set a ceiling it
@@ -17,6 +25,7 @@
 //!   download, or workers still starting) are discarded, and nothing is probed
 //!   while there is no work left to split.
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 /// Controller tunables (design targets, see `EngineConfig`).
@@ -53,6 +62,30 @@ enum Last {
     Increased { from: u32, step: u32 },
 }
 
+/// One tick of the current measurement.
+#[derive(Debug, Clone, Copy)]
+struct Sample {
+    at: Duration,
+    bytes: u64,
+    /// Whether at least `target` workers ran.
+    full: bool,
+}
+
+/// Timer jitter allowed when comparing tick times: the supervisor ticks every
+/// 500 ms, and a tick that fires a millisecond early must not stretch a 1 s
+/// window (or a 500 ms settle) by a whole tick.
+const SLACK: Duration = Duration::from_millis(50);
+
+/// Whether `elapsed` covers `span`, allowing for timer jitter.
+fn covers(elapsed: Duration, span: Duration) -> bool {
+    elapsed + SLACK >= span
+}
+
+/// Bytes per second between two samples.
+fn rate_between(a: Sample, b: Sample) -> f64 {
+    b.bytes.saturating_sub(a.bytes) as f64 / b.at.saturating_sub(a.at).as_secs_f64().max(1e-3)
+}
+
 /// The controller of one download.
 #[derive(Debug, Clone)]
 pub(crate) struct Controller {
@@ -64,12 +97,15 @@ pub(crate) struct Controller {
     last: Last,
     /// Doubling until an increase pays off less than half its ideal.
     slow_start: bool,
-    /// The current measurement: (start time, bytes at start).
-    window_start: Option<(Duration, u64)>,
+    /// A step paid off at least three quarters of its ideal: double fully
+    /// instead of by at most 4.
+    proportional: bool,
+    /// The current measurement, oldest first (at most about one window long).
+    samples: VecDeque<Sample>,
     /// No measurement starts before this.
     quiet_until: Duration,
-    /// Whether the current window saw fewer workers than the target.
-    tainted: bool,
+    /// Until this time, the first baseline waits for steady throughput.
+    steady_by: Option<Duration>,
     /// When the server last pushed back.
     last_throttle: Option<Duration>,
 }
@@ -85,11 +121,14 @@ impl Controller {
             baseline: None,
             last: Last::Steady,
             slow_start: true,
-            window_start: None,
-            // Skip the first window: every connection is still in TCP slow start,
-            // so a baseline measured then would make any increase look good.
-            quiet_until: cfg.settle + cfg.window,
-            tainted: false,
+            proportional: false,
+            samples: VecDeque::new(),
+            quiet_until: cfg.settle,
+            // Every connection starts in TCP slow start, and a baseline measured
+            // then makes any increase look good. So the first window is trusted
+            // only once throughput is steady, and at the latest it is the
+            // second window.
+            steady_by: Some(cfg.settle + cfg.window * 2),
             last_throttle: None,
         }
     }
@@ -106,43 +145,78 @@ impl Controller {
     }
 
     fn restart_measurement(&mut self, now: Duration, wait: Duration) {
-        self.window_start = None;
+        self.samples.clear();
         self.quiet_until = now + wait;
-        self.tainted = false;
+    }
+
+    /// The next window starts at `now` (later decisions may push it back).
+    fn next_window(&mut self, now: Sample) {
+        self.samples.clear();
+        self.samples.push_back(now);
+    }
+
+    /// Whether throughput has stopped rising: the second half of the current
+    /// window is not faster than the first by more than `gain`. (Only rising
+    /// matters: TCP slow start makes the baseline too low. Half-second rates
+    /// vary by ±10% even on a steady line, so a two-sided test rarely passes.)
+    fn steady(&self) -> bool {
+        let (Some(&first), Some(&last)) = (self.samples.front(), self.samples.back()) else {
+            return false;
+        };
+        let mid = first.at + last.at.saturating_sub(first.at) / 2;
+        let inner = self.samples.len().saturating_sub(2);
+        let Some(&m) = self
+            .samples
+            .iter()
+            .skip(1)
+            .take(inner)
+            .min_by_key(|s| s.at.abs_diff(mid))
+        else {
+            return false;
+        };
+        let (a, b) = (rate_between(first, m), rate_between(m, last));
+        a > 0.0 && b <= a * (1.0 + self.cfg.gain)
     }
 
     /// Feeds one observation; returns the new target if it changed.
     pub(crate) fn tick(&mut self, o: Observation) -> Option<u32> {
-        if o.now < self.quiet_until {
+        if o.now + SLACK < self.quiet_until {
             return None;
         }
-        let Some((t0, b0)) = self.window_start else {
-            self.window_start = Some((o.now, o.bytes));
-            self.tainted = false;
-            return None;
+        let now = Sample {
+            at: o.now,
+            bytes: o.bytes,
+            full: o.active >= self.target,
         };
-        if o.active < self.target {
-            self.tainted = true;
+        self.samples.push_back(now);
+        // The window slides: it is the newest span that covers `window`.
+        while self.samples.len() > 2
+            && covers(o.now.saturating_sub(self.samples[1].at), self.cfg.window)
+        {
+            self.samples.pop_front();
         }
-        let elapsed = o.now.saturating_sub(t0);
-        if elapsed < self.cfg.window {
+        let first = *self.samples.front()?;
+        if self.samples.len() < 2 {
             return None;
         }
-        let rate = o.bytes.saturating_sub(b0) as f64 / elapsed.as_secs_f64().max(1e-3);
-        let tainted = self.tainted;
-        // The next window starts now (later decisions may push it back).
-        self.window_start = Some((o.now, o.bytes));
-        self.tainted = false;
-        if tainted {
+        let elapsed = o.now.saturating_sub(first.at);
+        let full_window = covers(elapsed, self.cfg.window);
+        let rate = rate_between(first, now);
+        if self.samples.iter().skip(1).any(|s| !s.full) {
             // Not all connections were running: the number says nothing about
             // the target. An increase whose workers found nothing to do is
             // simply undone.
-            if let Last::Increased { from, .. } = self.last
+            if full_window
+                && let Last::Increased { from, .. } = self.last
                 && !o.can_grow
             {
                 self.last = Last::Steady;
                 self.target = from;
+                self.next_window(now);
                 return Some(from);
+            }
+            if full_window {
+                self.next_window(now);
             }
             return None;
         }
@@ -150,27 +224,50 @@ impl Controller {
         match self.last {
             Last::Increased { from, step } => {
                 let base = self.baseline.unwrap_or(0.0);
-                if rate > base * (1.0 + self.cfg.gain) {
+                let ideal = f64::from(step) / f64::from(from.max(1));
+                let gained = if base > 0.0 { rate / base - 1.0 } else { 0.0 };
+                let passed = rate > base * (1.0 + self.cfg.gain);
+                // Half a window that already shows a clear slow-start gain is
+                // enough; any other verdict waits for the full window.
+                let early = passed && gained >= ideal / 2.0 && covers(elapsed, self.cfg.window / 2);
+                if !early && !full_window {
+                    return None;
+                }
+                if passed {
                     // It paid off. Keep doubling while it pays off at least half
                     // of the ideal (+step/from).
-                    let ideal = f64::from(step) / f64::from(from.max(1));
-                    if base > 0.0 && rate / base - 1.0 < ideal / 2.0 {
+                    if base > 0.0 && gained < ideal / 2.0 {
                         self.slow_start = false;
+                    }
+                    if base > 0.0 && gained >= ideal * 0.75 {
+                        self.proportional = true;
                     }
                     self.baseline = Some(rate);
                     self.last = Last::Steady;
+                    self.next_window(now);
                     self.grow(o, rate);
                 } else {
                     // Revert and hold.
                     self.target = from;
                     self.last = Last::Steady;
                     self.slow_start = false;
+                    self.proportional = false;
                     self.baseline = None;
                     self.restart_measurement(o.now, self.cfg.cooldown);
                 }
             }
             Last::Steady => {
+                if !full_window {
+                    return None;
+                }
+                if let Some(by) = self.steady_by {
+                    if o.now + SLACK < by && !self.steady() {
+                        return None;
+                    }
+                    self.steady_by = None;
+                }
                 self.baseline = Some(rate);
+                self.next_window(now);
                 self.grow(o, rate);
             }
         }
@@ -184,12 +281,13 @@ impl Controller {
         if o.cap.is_some_and(|c| rate >= 0.75 * c as f64) {
             return;
         }
-        // Doubling, but by at most 4 at a time: some servers punish bursts of
-        // new connections from one client.
-        let step = if self.slow_start {
-            self.target.min(4)
-        } else {
-            1
+        // Doubling, but by at most 4 at a time until the server has shown that
+        // it limits each connection: some servers punish bursts of new
+        // connections from one client.
+        let step = match (self.slow_start, self.proportional) {
+            (true, true) => self.target,
+            (true, false) => self.target.min(4),
+            (false, _) => 1,
         };
         let next = (self.target + step).min(self.ceiling);
         self.last = Last::Increased {
@@ -217,7 +315,9 @@ impl Controller {
         self.ceiling = n;
         self.last = Last::Steady;
         self.slow_start = false;
+        self.proportional = false;
         self.baseline = None;
+        self.steady_by = None;
         self.restart_measurement(now, self.cfg.cooldown);
         n
     }
@@ -266,6 +366,103 @@ mod tests {
     }
 
     const MB: f64 = 1e6;
+
+    /// Like `simulate`, at the supervisor's real tick (`tick`, which may run
+    /// slightly early) and with a rate that may depend on time. Returns the
+    /// time of every change and the count it changed to.
+    fn simulate_ticks(
+        mut c: Controller,
+        tick: Duration,
+        until: Duration,
+        noise: f64,
+        rate: impl Fn(u32, Duration) -> f64,
+    ) -> (Controller, Vec<(Duration, u32)>) {
+        let mut rng = fastrand::Rng::with_seed(7);
+        let mut bytes = 0f64;
+        let mut changes = Vec::new();
+        let mut now = Duration::ZERO;
+        while now < until {
+            now += tick;
+            let k = c.target();
+            let jitter = 1.0 + noise * (rng.f64() * 2.0 - 1.0);
+            bytes += rate(k, now) * jitter * tick.as_secs_f64();
+            if let Some(n) = c.tick(Observation {
+                now,
+                bytes: bytes as u64,
+                active: k,
+                can_grow: true,
+                cap: None,
+            }) {
+                changes.push((now, n));
+            }
+        }
+        (c, changes)
+    }
+
+    #[test]
+    fn ramps_fast_when_each_connection_is_throttled() {
+        // 2 MB/s per connection (the lab-throttled benchmark target), ticks of
+        // 499 ms: a 1 s window must not take three ticks. Steady from the
+        // start, so the first baseline is taken after 1.5 s; the step to 8
+        // doubles the rate, which lifts the 4-connection cap on the next one.
+        let (c, changes) = simulate_ticks(
+            Controller::new(cfg(), 4, 16),
+            Duration::from_millis(499),
+            Duration::from_secs(10),
+            0.05,
+            |k, _| f64::from(k) * 2.0 * MB,
+        );
+        assert_eq!(c.target(), 16, "{changes:?}");
+        let counts: Vec<u32> = changes.iter().map(|&(_, n)| n).collect();
+        assert_eq!(counts, [8, 16], "{changes:?}");
+        // 4 -> 8 after one second of steady baseline, 8 -> 16 one second later.
+        assert!(changes[0].0 <= Duration::from_millis(1600), "{changes:?}");
+        assert!(changes[1].0 <= Duration::from_millis(2600), "{changes:?}");
+    }
+
+    #[test]
+    fn waits_for_tcp_slow_start_before_the_first_baseline() {
+        // One connection fills the line, but every connection ramps up over the
+        // first 2 s. A baseline taken during the ramp would make the probe to 8
+        // look like a gain; the controller waits until the rate stops rising.
+        let ramp = |t: Duration| (t.as_secs_f64() / 2.0).min(1.0);
+        let (c, changes) = simulate_ticks(
+            Controller::new(cfg(), 4, 16),
+            Duration::from_millis(500),
+            Duration::from_secs(30),
+            0.02,
+            |_, t| 100.0 * MB * ramp(t),
+        );
+        assert_eq!(c.target(), 4, "{changes:?}");
+        // Probes beyond 4 are reverted, and nothing is probed during the ramp.
+        assert!(changes.iter().all(|&(_, n)| n <= 8), "{changes:?}");
+        assert!(
+            changes
+                .first()
+                .is_none_or(|&(t, _)| t >= Duration::from_secs(2)),
+            "{changes:?}"
+        );
+    }
+
+    #[test]
+    fn adds_at_most_four_until_a_step_pays_off_in_proportion() {
+        // Beyond 4 connections each new one adds only 60% of a connection's
+        // rate: 4 -> 8 pays off 60% of its ideal (enough to keep doubling, not
+        // enough to lift the cap), so the next step is 8 -> 12, not 8 -> 16.
+        let rate = |k: u32| {
+            let k = f64::from(k);
+            if k <= 4.0 { k } else { 4.0 + 0.6 * (k - 4.0) }
+        };
+        let (_, changes) = simulate_ticks(
+            Controller::new(cfg(), 4, 16),
+            Duration::from_millis(500),
+            Duration::from_secs(6),
+            0.0,
+            |k, _| rate(k) * MB,
+        );
+        let counts: Vec<u32> = changes.iter().map(|&(_, n)| n).collect();
+        assert_eq!(counts.get(..2), Some(&[8, 12][..]), "{changes:?}");
+    }
 
     #[test]
     fn climbs_when_each_connection_is_throttled() {

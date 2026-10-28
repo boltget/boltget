@@ -43,6 +43,30 @@ async fn adds_connections_while_each_one_is_throttled() {
 }
 
 #[tokio::test]
+async fn doubles_past_four_when_each_connection_is_throttled() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(adaptive_cfg(4)).unwrap();
+    let size = 40 * MIB;
+    // 1 MiB/s per connection: four connections would need 10 s.
+    let url = srv.url(&format!("/data?size={size}&throttle=1048576"));
+    let t0 = Instant::now();
+    let done = get_with(&engine, request(&url, dir.path())).await.unwrap();
+    let secs = t0.elapsed().as_secs_f64();
+    assert_content(&done, 1, size);
+    // Locally: 4 -> 8 after about 1.5 s and 8 -> 16 a second later, done in
+    // about 4.5 s. The 4 -> 8 step doubles the rate, so the next one may add
+    // more than 4; on a loaded runner it may add only 4 (8 -> 12), but both
+    // must pay off well before the end.
+    assert!(
+        done.max_connections >= 12,
+        "max {} connections",
+        done.max_connections
+    );
+    assert!(secs < 9.0, "took {secs:.1} s");
+}
+
+#[tokio::test]
 async fn keeps_few_connections_when_the_line_is_full() {
     let srv = TestServer::start().await;
     let dir = tempfile::tempdir().unwrap();
