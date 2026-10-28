@@ -35,7 +35,7 @@ Workflows (planned):
 | `pr-title.yml` | PR opened/edited | Validates the PR title as a Conventional Commit (exists now) |
 | `docs.yml` | changes to Markdown | Link check with lychee (exists now) |
 | `release.yml` | tag `v*` pushed by a maintainer | Builds, signs, publishes. See below. |
-| `nightly.yml` | schedule | Unsigned builds from `main`, plus long-running fuzz and crash-resume suites |
+| `nightly.yml` | schedule | Long-running suites: libFuzzer on the engine's parsers, kill-and-resume at 1,000 cycles, property tests at a high case count (exists now). Unsigned builds from `main` are added with the desktop app |
 
 ### Release workflow steps
 

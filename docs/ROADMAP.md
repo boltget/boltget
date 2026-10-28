@@ -32,17 +32,26 @@ Scope: `crates/engine`, `crates/cli`, `bench/`. HTTP/1.1 and HTTP/2, dynamic seg
 
 Exit criteria:
 
-- [ ] Cargo workspace, CI on Windows and Linux: `cargo fmt --check`, `cargo clippy -- -D warnings`, tests, `cargo-deny` (licenses, advisories)
+- [x] Cargo workspace, CI on Windows and Linux: `cargo fmt --check`, `cargo clippy -- -D warnings`, tests, `cargo-deny` (licenses, advisories)
 - [ ] Engine implements everything in [ENGINE.md](ENGINE.md) marked for v0.1; deviations are written back into ENGINE.md
+  *Status (2026-10-28):* implemented and documented in ENGINE.md, except the exFAT write window (see below). Gaps recorded in ENGINE.md as later work: pausing on long `Retry-After` and on lost connectivity, Digest auth.
 - [ ] Local test server covering every misbehaviour listed in [ENGINE.md, Testing strategy](ENGINE.md#testing-strategy)
-- [ ] Property tests for the segment invariants pass at a high iteration count in CI
-- [ ] Crash/kill-resume harness: at least 1,000 random kill-and-resume cycles across file sizes with byte-identical results, zero failures
+  *Status (2026-10-28):* every listed misbehaviour except HTTP/2 (the server speaks HTTP/1.1 only; HTTP/2 needs TLS with a test certificate the engine trusts).
+- [x] Property tests for the segment invariants pass at a high iteration count in CI
+  *Status (2026-10-28):* `PROPTEST_CASES=4096` in regular CI, 262,144 in the nightly workflow.
+- [x] Crash/kill-resume harness: at least 1,000 random kill-and-resume cycles across file sizes with byte-identical results, zero failures
+  *Status (2026-10-28):* 1,000 kills over 349 downloads, all byte-identical (ENGINE.md, Testing strategy); the nightly workflow repeats 1,000 cycles on Windows and Linux.
 - [ ] Sparse preallocation verified on NTFS (no zero-fill stall when the last segment writes first); exFAT and FAT32 behaviour handled as specified
-- [ ] `boltget get`, `list`, `pause`/`resume` (standalone), `refresh`, `bench` work; `--json` output is documented and stable enough to script against
+  *Status (2026-10-28):* NTFS verified by a unit test, FAT32 4 GiB check in place; the exFAT write window is not implemented (ENGINE.md, open question 4).
+- [x] `boltget get`, `list`, `pause`/`resume` (standalone), `refresh`, `bench` work; `--json` output is documented and stable enough to script against
 - [ ] Benchmark harness in `bench/`, lab environment scripted, real-world target list versioned
+  *Status (2026-10-28):* harness, `boltget bench`, `bench/idm-compare.ps1` and `bench/targets.toml` exist; the lab is `boltget-testserver` on loopback with per-connection throttling only. Added latency, loss, server-side connection limits and HTTP/2 are not scripted yet.
 - [ ] **Benchmark report published** (in the repo, later on the website) comparing BoltGet with IDM per [ENGINE.md, Benchmarks plan](ENGINE.md#benchmarks-plan-vs-idm), with raw data. BoltGet is equal or faster on the majority of scenarios; every scenario where it is slower has an issue explaining why and a plan
-- [ ] Default tunables (connection count, `min_split_size`, intervals) set from benchmark data, and ENGINE.md updated with the measured values
+  *Status (2026-10-28):* [BENCHMARK.md](BENCHMARK.md) published with raw data; BoltGet's default was equal to or faster than IDM's default on all 5 targets. Open: issues for the scenarios where the adaptive default is slower than a fixed connection count (per-connection-throttled servers), and the IDM-at-32-connections configuration, which was not run.
+- [x] Default tunables (connection count, `min_split_size`, intervals) set from benchmark data, and ENGINE.md updated with the measured values
+  *Status (2026-10-28):* start 4, maximum 16, `min_split_size` 1 MiB, with the measurements in ENGINE.md, open question 1.
 - [ ] Fuzz targets for header parsers run in CI for a fixed time budget without findings
+  *Status (2026-10-28):* seven targets in `fuzz/`, run nightly for 60 s each (`.github/workflows/nightly.yml`); their seed corpus also runs in `cargo test`. To tick once the nightly run has passed on `main`.
 
 ## v0.2: Desktop app
 
