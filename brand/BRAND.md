@@ -1,6 +1,6 @@
 # BoltGet brand guidelines
 
-BoltGet is a free, open-source download manager. The brand is built the way the
+BoltGet is a download manager built for speed. The brand is built the way the
 product works: quietly, precisely, and fast. This document is the reference for
 anyone who puts the BoltGet name or mark on something — the app, the website
 (boltget.app), the README, release notes, social media, slides.
@@ -286,19 +286,34 @@ Rules:
 BoltGet speaks like a good command-line tool's documentation: short, exact and
 calm. It's confident because it's specific, not because it's loud.
 
+- **Lead with capability.** Open with what BoltGet does and what it aims for:
+  speed, reliability, craft. Concrete capabilities over adjectives.
 - **Plain over clever.** Say what it does.
 - **Specific over superlative.** "16 connections per file" beats "blazing fast".
+  No hype words ("blazing", "revolutionary", "ultimate") and no emoji.
+- **"Free" and "open source" at most once per surface**, low on the page (the
+  license section, the footer, the pricing line). Never in a headline, tagline,
+  badge row or social image.
+- **No comparisons or jabs on front surfaces.** The README, the website hero,
+  social images and store listings talk about BoltGet, not other products.
+  Comparisons belong in [docs/FEATURES.md](../docs/FEATURES.md).
 - **Respect the user.** No dark patterns, no urgency, no exclamation marks in UI.
-- **Open by default.** Credit contributors, link the source, say what we don't do (no ads, no tracking).
+- **Credit and link.** Credit contributors, link the source, say what we don't
+  do (no ads, no tracking) where it is relevant.
 
-Tagline: **Every byte at full speed. Every line in the open.**
-Descriptor: **The free, open-source download manager.**
+Tagline: **Every byte, at full speed.**
+Descriptor: **A download manager built for speed.** Long form (GitHub About,
+store listings): "A download manager built for speed. Dynamic segmentation,
+crash-proof resume and seamless browser capture, for Windows."
+Social label (mono, uppercase): **DOWNLOAD MANAGER**
 
 | Context | Write | Avoid |
 |---|---|---|
-| Hero | Every byte at full speed. Every line in the open. | The ultimate blazing-fast download experience! |
+| Hero | Every byte, at full speed. | The ultimate blazing-fast download experience! |
 | Feature | Splits each file into up to 16 parts and fetches them in parallel. | Turbocharged multi-threaded acceleration technology. |
-| Pricing | Free. No ads, no account, no telemetry. Source on GitHub. | 100% FREE forever!!! |
+| Reliability | Kill it mid-download. It resumes where it stopped. | Never lose a download again, guaranteed! |
+| Pricing / license | GPL-3.0-or-later. No ads, no account, no telemetry. | 100% FREE forever!!! |
+| Positioning | Starts with 4 connections and adds more only while they help. | Faster than the one you paid for. |
 | Download done | Done. 4.2 GB in 43 s. | Woohoo! Your download is complete! |
 | Error | The server closed the connection. BoltGet will retry in 10 s. | Oops! Something went wrong :( |
 | Empty state | Paste a link or drop one here. | Nothing to see here… yet! |
