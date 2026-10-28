@@ -86,8 +86,8 @@ const GRAD_LIGHT = [[0, EMERALD[400]], [0.5, EMERALD[500]], [1, EMERALD[700]]];
 /** Copy. */
 const COPY = {
   en: {
-    label: 'OPEN-SOURCE DOWNLOAD MANAGER',
-    tagline: ['Every byte at full speed.', 'Every line in the open.'],
+    label: 'DOWNLOAD MANAGER',
+    tagline: ['Every byte, at full speed.'],
   },
   domain: 'boltget.app',
 };
@@ -662,18 +662,18 @@ function socialSvg({ W, H, pitch, markX, markY, textX, textY, scale = 1, title, 
 
 function buildSocial() {
   // Open Graph 1200x630 (pitch 36 -> 324 px arrow)
-  const og = socialSvg({ W: 1200, H: 630, pitch: 36, markX: 762, markY: 171, textX: 88, textY: 150, title: 'BoltGet — open-source download manager' });
+  const og = socialSvg({ W: 1200, H: 630, pitch: 36, markX: 762, markY: 171, textX: 88, textY: 196, title: 'BoltGet — every byte, at full speed' });
   writeSvg('social/og-image.svg', og);
   writePng('social/og-image.png', og, 1200, 630);
 
   // GitHub social preview 1280x640 (keep 40 px safe border)
-  const gh = socialSvg({ W: 1280, H: 640, pitch: 38, markX: 808, markY: 167, textX: 96, textY: 150, scale: 1.04, title: 'BoltGet — open-source download manager' });
+  const gh = socialSvg({ W: 1280, H: 640, pitch: 38, markX: 808, markY: 167, textX: 96, textY: 194, scale: 1.04, title: 'BoltGet — every byte, at full speed' });
   writeSvg('social/github-social.svg', gh);
   writePng('social/github-social.png', gh, 1280, 640);
 
   // X / Twitter header 1500x500: content kept to the centre band and away from
   // the avatar, which overlaps the lower-left corner.
-  const x = socialSvg({ W: 1500, H: 500, pitch: 28, markX: 1112, markY: 124, textX: 470, textY: 100, scale: 0.92, title: 'BoltGet — open-source download manager' });
+  const x = socialSvg({ W: 1500, H: 500, pitch: 28, markX: 1112, markY: 124, textX: 470, textY: 136, scale: 0.92, title: 'BoltGet — every byte, at full speed' });
   writeSvg('social/x-header.svg', x);
   writePng('social/x-header.png', x, 1500, 500);
 
@@ -915,9 +915,9 @@ ${scale('Neutral', NEUTRAL, 'neutral')}
 
 <h2>Typography</h2>
 <div class="type">
-<div class="row"><code>Display 56/600</code><div style="font-size:56px;font-weight:600;letter-spacing:-.035em;line-height:1.05">Every byte at full speed.</div></div>
-<div class="row"><code>H1 40/600</code><div style="font-size:40px;font-weight:600;letter-spacing:-.03em;line-height:1.1">Fast by default. Free for good.</div></div>
-<div class="row"><code>H2 28/600</code><div style="font-size:28px;font-weight:600;letter-spacing:-.02em">Every line in the open.</div></div>
+<div class="row"><code>Display 56/600</code><div style="font-size:56px;font-weight:600;letter-spacing:-.035em;line-height:1.05">Every byte, at full speed.</div></div>
+<div class="row"><code>H1 40/600</code><div style="font-size:40px;font-weight:600;letter-spacing:-.03em;line-height:1.1">Picks up exactly where it stopped.</div></div>
+<div class="row"><code>H2 28/600</code><div style="font-size:28px;font-weight:600;letter-spacing:-.02em">Every connection stays busy.</div></div>
 <div class="row"><code>Body 15/400</code><div>BoltGet splits each file into chunks and fetches them in parallel, then assembles them on disk.</div></div>
 <div class="row"><code>Mono 13/400</code><div class="mono" style="font-size:13px">4.2 GB · 16 connections · 98.4 MB/s · 00:43 left</div></div>
 </div>
