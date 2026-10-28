@@ -5,7 +5,11 @@
 <h1 align="center">BoltGet</h1>
 
 <p align="center">
-  <strong>The free, open-source download manager that is faster than the one you paid for.</strong>
+  <strong>Every byte, at full speed.</strong>
+</p>
+
+<p align="center">
+  A download manager built for speed. Dynamic segmentation, crash-proof resume and seamless browser capture, for Windows.
 </p>
 
 <p align="center">
@@ -15,7 +19,6 @@
 </p>
 
 <p align="center">
-  <img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-059669">
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-34D399">
   <img alt="Platform: Windows first" src="https://img.shields.io/badge/platform-Windows%20first-A7F3D0">
   <!-- Enable once the workflows exist:
@@ -26,39 +29,43 @@
 
 ---
 
-## What is BoltGet?
+## What it does
 
-BoltGet is a download manager for people who download big files and care how long it takes. It splits every download across multiple connections, keeps re-splitting the work so no connection sits idle, survives crashes and expired links, and does all of this behind an interface that stays out of your way.
+BoltGet splits every file across several connections and keeps them all busy until the last byte. Its engine is written in Rust and built around three goals: speed, reliability and craft.
 
-It is built to match and then beat **Internet Download Manager (IDM)** on the things that matter (raw speed, resume reliability, browser integration), while being free, open source (GPL-3.0-or-later), free of ads and nag screens, and eventually cross-platform.
+- **Dynamic segmentation.** A download starts with 4 connections and adds more only while they make it faster. When a connection finishes early, it takes over half of the largest remaining part, so all connections finish together. A slow or stalled connection is replaced within about a second. [Engine spec](docs/ENGINE.md)
+- **Crash-safe resume.** Progress is recorded only after the bytes are on disk. Kill the process or lose power, and `boltget resume` continues where it stopped. Our test harness has run 1,000 kill-and-resume cycles; every file came out byte-identical.
+- **Link refresh.** Signed link expired at 97%? Give BoltGet a new one. It checks that the file is the same (size, ETag or sample bytes) and continues instead of starting over.
+- **Bandwidth limits.** Per download and global, changed without reconnecting.
+- **Checksum verification.** SHA-256, SHA-512, SHA-1 or MD5, plus digests the server sends. The file is hashed while it downloads, so there is no wait at the end.
+- **Proxies and cookies.** HTTP, HTTPS and SOCKS5 proxies; browser `cookies.txt` files matched per request; HTTP Basic auth.
+- **A scriptable CLI.** Documented exit codes and line-delimited JSON events for every state change.
 
-## Why
+```console
+$ boltget get https://example.com/ubuntu-24.04.iso --checksum sha256:<hex>
+$ boltget list
+$ boltget resume 7
+$ boltget get https://example.com/big.zip --limit 5M --json
+```
 
-- **IDM is excellent at its core job, but** it is paid, Windows-only, has a dated UI, and nags users with license and fake-serial warnings.
-- **Free alternatives** tend to be bloated, abandoned, built on a general-purpose engine that is not tuned for desktop use, or repackaged with adware.
-- **Nobody has shipped all of it in one place:** IDM-class speed, a modern UI, honest open-source licensing, and a browser extension that complies with store policies.
+### Today
 
-The full argument, the principles we hold, and how we will *measure* "beating IDM" are in [docs/VISION.md](docs/VISION.md).
+The Rust engine and the `boltget` command-line tool: `get`, `list`, `pause`, `resume`, `refresh`, `remove` and `config`. It is pre-alpha and moving quickly. See [Status](#status).
 
-## Feature highlights (planned)
+### Coming
 
-| | |
-|---|---|
-| **Dynamic segmentation** | Starts N connections; whenever one finishes, it splits the largest remaining segment and opens a new connection. Connection count adapts to measured throughput. [Engine spec](docs/ENGINE.md) |
-| **Crash-safe resume** | Segment progress is checkpointed to SQLite only after the bytes are durable on disk. Pull the power cord and BoltGet resumes where it left off. |
-| **Link refresh** | Signed URL expired at 97%? Give BoltGet a fresh link. It checks size, ETag and sample bytes, then resumes instead of starting over. |
-| **Browser integration** | Chrome, Edge and Firefox extension (Manifest V3) catches downloads and forwards cookies, referrer and headers through native messaging. No localhost web server. [Details](docs/BROWSER-INTEGRATION.md) |
-| **Video and audio** | yt-dlp and ffmpeg, installed on demand and kept up to date, with a clean format and quality picker. [Details](docs/VIDEO.md) |
-| **Queues and scheduler** | Categories, queues, per-download and global speed limits, time windows. |
-| **Integrity** | SHA-256 (and other) checksum verification, plus server-provided digests when available. |
-| **CLI** | `boltget` runs on the same engine, for scripts and servers. |
-| **Modern UI** | Tauri 2 + Svelte 5. Dark-first, keyboard-first, small and fast. |
+- **Desktop app.** Tauri 2 and Svelte 5. Dark-first, keyboard-first, small and fast.
+- **Browser extension.** Chrome, Edge and Firefox (Manifest V3). Catches downloads and forwards cookies, referrer and headers through native messaging, with no local web server. [Details](docs/BROWSER-INTEGRATION.md)
+- **Video and audio.** yt-dlp and ffmpeg, installed on demand and kept up to date, with a clean format picker. [Details](docs/VIDEO.md)
+- **Queues and scheduling.** Categories, queues and time windows.
 
-The full matrix, with a comparison to IDM, Free Download Manager, Motrix and aria2 and the target milestone for each feature, is in [docs/FEATURES.md](docs/FEATURES.md).
+The full feature matrix, with milestones and comparisons, is in [docs/FEATURES.md](docs/FEATURES.md). What we are building toward and how we measure it is in [docs/VISION.md](docs/VISION.md).
 
 ## Status
 
-**Pre-alpha.** Work on the first milestone (v0.1: the Rust engine plus CLI, with a published benchmark against IDM) is under way. The engine already does dynamic segmentation with an adaptive connection count, sparse preallocation, crash-safe resume, link refresh, speed limits, checksum verification, proxies and cookie files, and `boltget get`, `list`, `pause`, `resume`, `remove`, `refresh` and `config` work from the command line. There is no installer or desktop app yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Pre-alpha.** Work on the first milestone, v0.1 (the Rust engine and CLI, with a published benchmark), is under way. There is no installer or desktop app yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+
+To try the CLI from source: `cargo run --release -p boltget-cli -- get <url>`.
 
 ## Install (planned)
 
@@ -71,13 +78,14 @@ Nothing to install yet. Once releases exist:
 
 ## Repository layout
 
-The repository is a monorepo (pnpm workspaces + a Cargo workspace). Most of these directories do not exist yet; this is the planned layout.
+The repository is a monorepo (pnpm workspaces + a Cargo workspace). The `apps/` and `packages/` directories do not exist yet; this is the planned layout.
 
 ```
 boltget/
 ├── crates/
 │   ├── engine/          Rust download engine (library): probing, segmentation, I/O, persistence
-│   └── cli/             `boltget` command-line tool on top of the engine
+│   ├── cli/             `boltget` command-line tool on top of the engine
+│   └── testserver/      Local HTTP server that simulates misbehaving servers for tests
 ├── apps/
 │   ├── desktop/         Tauri 2 desktop app (Svelte 5 + TypeScript + Vite)
 │   │   └── src-tauri/   Rust backend that embeds the engine
@@ -86,15 +94,15 @@ boltget/
 ├── packages/
 │   └── ui/              Shared Svelte components and design tokens (app + site)
 ├── brand/               Icon, animated icon, brand guidelines (brand/BRAND.md)
-└── docs/                Design documents (you are here)
+└── docs/                Design documents
 ```
 
 ## Documentation
 
 | Document | What it covers |
 |---|---|
-| [Vision](docs/VISION.md) | Problem, principles, non-goals, what "beating IDM" means |
-| [Features](docs/FEATURES.md) | Feature matrix vs IDM and others, with milestones |
+| [Vision](docs/VISION.md) | Problem, principles, non-goals, how we measure success |
+| [Features](docs/FEATURES.md) | Feature matrix and comparisons, with milestones |
 | [Architecture](docs/ARCHITECTURE.md) | Components, process model, IPC, data model, security |
 | [Engine](docs/ENGINE.md) | The download engine spec: probing, segmentation, resume, benchmarks |
 | [Browser integration](docs/BROWSER-INTEGRATION.md) | Extension, capture rules, native messaging |
@@ -104,13 +112,13 @@ boltget/
 | [Website](docs/WEBSITE.md) | boltget.app structure, hero, performance budget |
 | [Roadmap](docs/ROADMAP.md) | Milestones and exit criteria |
 | [Release](docs/RELEASE.md) | Versioning, channels, signing, updater |
-| [Brand](brand/BRAND.md) | Visual identity and tokens |
+| [Brand](brand/BRAND.md) | Visual identity, tokens and voice |
 
 The complete index is [docs/README.md](docs/README.md).
 
 ## Contributing
 
-BoltGet is designed in the open, and the best time to shape it is now, while the design is still on paper. Start with [CONTRIBUTING.md](CONTRIBUTING.md). It is the rulebook for everything: Conventional Commits, branching, PR rules, the RFC process, code style, the string catalog and our policy on AI-assisted contributions.
+The best time to shape BoltGet is now, while most of it is still being designed. Start with [CONTRIBUTING.md](CONTRIBUTING.md). It is the rulebook for everything: Conventional Commits, branching, PR rules, the RFC process, code style, the string catalog and our policy on AI-assisted contributions.
 
 - Questions and ideas: [GitHub Discussions](https://github.com/boltget/boltget/discussions) (see [SUPPORT.md](SUPPORT.md))
 - Bugs and concrete feature requests: [Issues](https://github.com/boltget/boltget/issues)
@@ -120,8 +128,6 @@ BoltGet is designed in the open, and the best time to shape it is now, while the
 
 ## License
 
-BoltGet is licensed under the **GNU General Public License v3.0 or later** ([LICENSE](LICENSE)).
-
-Why copyleft: the download-manager space is full of closed, ad-stuffed repackages of other people's work. The GPL means anyone can use, study, modify and redistribute BoltGet, and any distributed fork has to stay open too.
+BoltGet is free and open source under the **GNU General Public License v3.0 or later** ([LICENSE](LICENSE)). Copyleft keeps it that way: anyone can use, study, modify and share it, and any distributed fork stays open too.
 
 "BoltGet" and the BoltGet icon identify this project. Please do not use them to brand a modified build in a way that suggests it is the official one.
