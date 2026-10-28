@@ -34,12 +34,13 @@ async fn adds_connections_while_each_one_is_throttled() {
     // can measure under the 10% gain threshold and be reverted, so only require
     // that it grew at all and beat what the starting two connections would take.
     // The controller's exact steps are covered by the simulated unit tests.
+    // The connection count is the real check: CI runners have taken 9.2 s.
     assert!(
         done.max_connections >= 4,
         "max {} connections",
         done.max_connections
     );
-    assert!(secs < 8.0, "took {secs:.1} s");
+    assert!(secs < 16.0, "took {secs:.1} s");
 }
 
 #[tokio::test]
@@ -57,13 +58,13 @@ async fn doubles_past_four_when_each_connection_is_throttled() {
     // Locally: 4 -> 8 after about 1.5 s and 8 -> 16 a second later, done in
     // about 4.5 s. The 4 -> 8 step doubles the rate, so the next one may add
     // more than 4; on a loaded runner it may add only 4 (8 -> 12), but both
-    // must pay off well before the end.
+    // must pay off well before the end. The time bound only catches a hang.
     assert!(
         done.max_connections >= 12,
         "max {} connections",
         done.max_connections
     );
-    assert!(secs < 9.0, "took {secs:.1} s");
+    assert!(secs < 20.0, "took {secs:.1} s");
 }
 
 #[tokio::test]

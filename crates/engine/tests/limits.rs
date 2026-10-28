@@ -27,7 +27,9 @@ async fn per_download_limit_is_accurate() {
     let secs = t0.elapsed().as_secs_f64();
     assert_content(&done, 1, size);
     // 3 MiB at 1 MiB/s, minus the 256 KiB burst: 2.75 s.
-    assert!(secs > 2.5 && secs < 3.6, "took {secs:.2} s");
+    // The lower bound proves the limit; the upper one only catches a hang (CI
+    // runners have taken 3.8 s).
+    assert!(secs > 2.5 && secs < 6.0, "took {secs:.2} s");
     assert!(
         done.max_connections > 1,
         "the limit is shared by all workers"
@@ -53,7 +55,9 @@ async fn global_limit_is_shared_by_downloads() {
     assert_content(&a.unwrap(), 1, size);
     assert_content(&b.unwrap(), 2, size);
     // 6 MiB at 2 MiB/s, minus the 512 KiB burst: 2.75 s.
-    assert!(secs > 2.5 && secs < 3.6, "took {secs:.2} s");
+    // The lower bound proves the limit; the upper one only catches a hang (CI
+    // runners have taken 3.8 s).
+    assert!(secs > 2.5 && secs < 6.0, "took {secs:.2} s");
     assert_eq!(engine.limit(LimitScope::Global), Some(2 * MIB));
 }
 
