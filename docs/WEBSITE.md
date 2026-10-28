@@ -83,7 +83,7 @@ CI runs Lighthouse CI on every PR touching `apps/web` against the preview build,
 - Benchmark summary with a link to the full methodology and raw data.
 - "Moving from IDM" guide: concepts map (categories, queues, scheduler), and settings import if it exists by then.
 - Dated ("Last reviewed: <date>, IDM version <x>"). Reviewed before each BoltGet minor release.
-- Tone: confident, factual, no mockery of IDM. IDM is a good product; BoltGet is a better deal.
+- Tone: confident, factual, no mockery of IDM. IDM is a good product; the page shows measured results and lets them speak.
 
 ## OG images and metadata
 
