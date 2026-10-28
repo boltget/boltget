@@ -35,6 +35,9 @@ mod engine;
 mod error;
 mod events;
 mod filename;
+#[cfg(any(test, feature = "fuzzing"))]
+#[doc(hidden)]
+pub mod fuzzing;
 mod headers;
 mod http;
 mod integrity;

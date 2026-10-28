@@ -1,0 +1,74 @@
+# Fuzz targets for the engine's parsers of untrusted input. Not a member of the
+# main workspace: cargo-fuzz needs a nightly toolchain. Each target calls one
+# function of `boltget_engine::fuzzing`, where the checked properties live; the
+# seed corpus in `corpus/<target>/` also runs as a unit test of the engine.
+#
+#   cargo +nightly fuzz run content_range -- -max_total_time=60
+[package]
+name = "boltget-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+boltget-engine = { path = "../crates/engine", features = ["fuzzing"] }
+libfuzzer-sys = "0.4.10"
+
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "content_range"
+path = "fuzz_targets/content_range.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content_disposition"
+path = "fuzz_targets/content_disposition.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "retry_after"
+path = "fuzz_targets/retry_after.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "digest_headers"
+path = "fuzz_targets/digest_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cookies"
+path = "fuzz_targets/cookies.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "probe_response"
+path = "fuzz_targets/probe_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "user_input"
+path = "fuzz_targets/user_input.rs"
+test = false
+doc = false
+bench = false

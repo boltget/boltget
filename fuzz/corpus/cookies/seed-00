@@ -1,0 +1,3 @@
+# Netscape HTTP Cookie File
+.example.com	TRUE	/	FALSE	0	session	abc
+www.example.com	FALSE	/dir	TRUE	4102444800	id	42

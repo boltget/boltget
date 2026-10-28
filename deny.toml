@@ -36,6 +36,7 @@ allow = [
     "0BSD",
     "BSL-1.0",
     "CDLA-Permissive-2.0", # webpki-root-certs data (Linux platform verifier fallback)
+    "NCSA",                # libFuzzer, via libfuzzer-sys (fuzz/ only, never distributed)
 ]
 confidence-threshold = 0.9
 # The allow list is the project policy (CONTRIBUTING.md), not just what is used today.

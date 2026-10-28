@@ -25,3 +25,6 @@
 # Lockfiles: treat as generated in diffs.
 Cargo.lock      linguist-generated=true -diff
 pnpm-lock.yaml  linguist-generated=true -diff
+
+# Fuzz seed corpora: byte-exact inputs, never converted.
+fuzz/corpus/** -text

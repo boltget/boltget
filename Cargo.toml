@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/engine", "crates/cli", "crates/testserver"]
+# Fuzz targets: their own workspace, built with nightly by cargo-fuzz
+# (docs/ENGINE.md, "Testing strategy").
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0-dev"
