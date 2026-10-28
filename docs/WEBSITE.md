@@ -37,7 +37,7 @@ The hero shows what BoltGet does, not a stock illustration of speed.
    - A **speed counter** with tabular figures ticks alongside, and a connection count.
 3. **Honesty rule:** this is a simulation of the algorithm, not a real download. The counter is labelled as such in small text ("Simulated. See real benchmarks"), linking to `/benchmarks`. The site never presents invented numbers as measurements.
 
-Copy above it: one headline, one sentence, one primary button ("Download for Windows"), one secondary link ("See the benchmark"). Example direction, final copy TBD: *"Downloads, at full speed."* / *"Free and open source. Splits every file across many connections, and keeps every connection busy until the last byte."*
+Copy above it: one headline, one sentence, one primary button ("Download for Windows"), one secondary link ("See the benchmark"). Headline: the tagline, *"Every byte, at full speed."* Sentence, final wording TBD: *"Splits every file across many connections and keeps each one busy until the last byte."* Hero copy follows the voice rules in [brand/BRAND.md](../brand/BRAND.md#8-voice-and-tone): lead with what BoltGet does, no "free" or "open source" in the hero, no comparisons with other products.
 
 Behaviour:
 
@@ -47,7 +47,7 @@ Behaviour:
 
 ### Below the hero
 
-Three proof points, each one sentence plus a small visual: **Faster** (benchmark chart vs IDM), **Never loses progress** (crash-and-resume), **Free, open, no ads** (license, GitHub link). Then a short feature grid, the browser extension, a screenshot of the app in dark theme, and the download button again. That is the whole page.
+Three proof points, each one sentence plus a small visual: **Fast** (measured throughput from the benchmark, linking to `/benchmarks`, where the comparisons live), **Never loses progress** (crash-and-resume), **Catches downloads from the browser** (the extension). Then a short feature grid, a screenshot of the app in dark theme, and the download button again. The license and GitHub link sit once, low on the page (footer). That is the whole page.
 
 ## Performance budget
 
