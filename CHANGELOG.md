@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Faster on servers that limit the speed of each connection: the adaptive connection count reaches 16 connections in about 2.5 s instead of about 6 s. On a local server limited to 2 MiB/s per connection, a 100 MiB download now takes 5.1 s instead of 6.8 s (8 fixed connections: 6.6 s). Servers that do not reward more connections, and those that answer `429`/`503`, are handled as before.
+
 ### Added
 
 - `boltget bench`: measures download times on your own network. It runs each URL, or the targets in a TOML file such as `bench/targets.toml`, several times (`--runs`, `--warmup`), compares connection settings in rotating order (`-c auto,8`), checks size and SHA-256, and reports the median, interquartile range, min-max, MiB/s, time to first byte and tail time as a table, line-delimited JSON (`--json`) or CSV (`--csv`). Downloaded files are deleted after each run.

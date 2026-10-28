@@ -76,4 +76,5 @@ Connections: for lab targets, the most simultaneous connections the server saw; 
 ### Follow-up
 
 - **Adaptive ramp on throttled servers.** On `lab-throttled-100mib` the adaptive default was slower than a fixed 8 connections although it ended with twice as many. The controller's step size or interval needs work for servers that limit each connection; to be tracked as an issue with this run as the reproduction.
+  *Update:* fixed after this run (faster first baseline, full doubling once a step pays off in proportion, early verdicts on clear gains). On the same lab target adaptive now takes 5.12 s against 6.65 s for `-c 8`; numbers and method are in [ENGINE.md, open question 1](ENGINE.md#open-questions). The published numbers above are unchanged.
 - **Default connection count.** The data does not support changing it: the adaptive start of 4 was the best or tied configuration on four of five targets, and fixed 8 was slower on the 10 MiB file. The default stays as specified in [ENGINE.md](ENGINE.md#open-questions).
