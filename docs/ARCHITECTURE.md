@@ -293,7 +293,7 @@ Settings are typed in Rust (`struct Settings` with `serde` defaults) and stored 
 > - `queue`, `category`, `download_source` and `media_job` are not created yet; they arrive with their features as new migrations. `setting` exists but is unused.
 > - Segment rows of a completed download are deleted.
 >
-> **Schema versions 2–4 (v0.1 phase 3):** v2 adds `download.speed_limit_bps`; v3 adds `checksum_algo`, `checksum_expected`, `checksum_source` (`user` or the response header it came from) and `checksum_actual`; v4 creates `download_source` as drafted (`primary` and `refreshed` rows; after a link refresh `download.url` is the new link). The `setting` table is now used, one JSON value per key: `engine.speed_limit_bps` (global limit) and `engine.host_ceilings` (`{"scheme://host:port": [ceiling, until_unix_ms]}`, learned connection ceilings). `request_ctx` may also hold the cookie file path and the proxy URL without credentials, still no secrets.
+> **Schema versions 2–4 (v0.1 phase 3):** v2 adds `download.speed_limit_bps`; v3 adds `checksum_algo`, `checksum_expected`, `checksum_source` (`user` or the response header it came from) and `checksum_actual`; v4 creates `download_source` as drafted (`primary` and `refreshed` rows; after a link refresh `download.url` is the new link). The `setting` table is now used, one JSON value per key: `engine.speed_limit_bps` (global limit) and `engine.host_ceilings` (`{"scheme://host:port": [ceiling, until_unix_ms]}`, learned connection ceilings). *Later in phase 3:* `engine.host_starts`, same format, holds learned start counts for hosts that limit each connection (no schema change). `request_ctx` may also hold the cookie file path and the proxy URL without credentials, still no secrets.
 
 ### Download state machine
 

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Faster on servers that limit the speed of each connection: the adaptive connection count reaches 16 connections in about 2.5 s instead of about 6 s. On a local server limited to 2 MiB/s per connection, a 100 MiB download now takes 5.1 s instead of 6.8 s (8 fixed connections: 6.6 s). Servers that do not reward more connections, and those that answer `429`/`503`, are handled as before.
+- Faster on servers that limit the speed of each connection: the adaptive connection count reaches 16 connections in about 1.3 s (it took about 6 s before). On a local server limited to 2 MiB/s per connection, a 100 MiB download now takes 4.3 s instead of 6.8 s (8 fixed connections: 6.6 s; 16 fixed: 4.0 s). BoltGet also remembers such a server for 24 hours, and the next download from it starts with the number of connections that paid off: a 10 MiB file from that server then takes 1.0 s instead of 1.4 s. Servers that do not reward more connections, and those that answer `429`/`503`, are handled as before.
 
 ### Added
 
