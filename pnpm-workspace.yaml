@@ -1,0 +1,10 @@
+# pnpm workspace (ADR-011): one lockfile at the root for every JavaScript
+# package. brand/ is a member so `cd brand && pnpm install` keeps working.
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "brand"
+
+# pnpm 10 runs no dependency install scripts unless they are listed here.
+onlyBuiltDependencies:
+  - sharp

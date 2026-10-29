@@ -1,0 +1,13 @@
+{
+  "name": "boltget-workspace",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "scripts": {
+    "build:web": "pnpm --filter @boltget/web build",
+    "dev:web": "pnpm --filter @boltget/web dev"
+  }
+}
