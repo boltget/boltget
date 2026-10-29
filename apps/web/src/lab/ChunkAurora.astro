@@ -1,0 +1,179 @@
+---
+// Lab A: the atmospheric field behind the hero. A slow emerald-to-teal aurora
+// (WebGL fragment shader, no library) that, towards the bottom, breaks up into
+// square chunks with even gaps that thin out into the white page: the chunks
+// of a file, arriving. The pixels stay square; nothing glows.
+//
+// Without WebGL or JavaScript the CSS gradient on the wrapper shows instead.
+// Under reduced motion one still frame is drawn. The loop pauses while the
+// field is off screen or the tab is hidden.
+---
+
+<div class="aurora" aria-hidden="true">
+  <canvas></canvas>
+</div>
+
+<style>
+  .aurora {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(80% 60% at 78% 30%, #0f766e 0%, transparent 70%),
+      radial-gradient(60% 50% at 18% 18%, #064e3b 0%, transparent 70%),
+      linear-gradient(180deg, #021c16 0%, #053d31 38%, #0f766e 58%, #a7f3d0 76%, #ffffff 96%);
+  }
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+  canvas.on {
+    opacity: 1;
+  }
+</style>
+
+<script>
+  const VERT = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+  const FRAG = `precision highp float;
+uniform vec2 uRes;uniform float uTime;uniform float uCell;uniform float uGap;
+float h21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.-2.*f);
+return mix(mix(h21(i),h21(i+vec2(1.,0.)),u.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),u.x),u.y);}
+float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}
+vec3 hex(float r,float g,float b){return vec3(r,g,b)/255.;}
+vec3 ramp(float x){
+  vec3 c0=hex(3.,30.,24.);vec3 c1=hex(2.,52.,40.);vec3 c2=hex(4.,108.,82.);vec3 c3=hex(13.,148.,136.);
+  vec3 c4=hex(52.,211.,175.);vec3 c5=hex(167.,243.,208.);vec3 c6=hex(236.,253.,245.);vec3 c7=vec3(1.);
+  x=clamp(x,0.,1.);
+  if(x<.16)return mix(c0,c1,x/.16);
+  if(x<.32)return mix(c1,c2,(x-.16)/.16);
+  if(x<.46)return mix(c2,c3,(x-.32)/.14);
+  if(x<.60)return mix(c3,c4,(x-.46)/.14);
+  if(x<.74)return mix(c4,c5,(x-.60)/.14);
+  if(x<.88)return mix(c5,c6,(x-.74)/.14);
+  return mix(c6,c7,(x-.88)/.12);
+}
+float field(vec2 px,float t){
+  vec2 uv=px/uRes.y;float y=px.y/uRes.y;
+  vec2 q=vec2(fbm(uv*1.3+vec2(0.,t*.035)),fbm(uv*1.3+vec2(5.2,1.3)-vec2(t*.028,0.)));
+  float n=fbm(uv*1.15+1.9*q+vec2(t*.018,-t*.01));
+  float curtain=exp(-pow((y-.40-.10*sin(uv.x*2.2+t*.12)+.06*q.x)*3.6,2.));
+  return y*.78+(n-.5)*.62+curtain*.28-.04;
+}
+void main(){
+  vec2 px=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y);
+  float y=px.y/uRes.y;float t=uTime;
+  float k=smoothstep(.50,.93,y);
+  vec2 cell=floor(px/uCell);vec2 local=fract(px/uCell);
+  vec2 cc=(cell+.5)*uCell;
+  vec3 smoothC=ramp(field(px,t));
+  vec3 cellC=ramp(field(cc,t)+k*.05);
+  float h=h21(cell);
+  float wave=.05*sin(t*.7+h*37.)+.04*sin(t*.31+cell.x*.21);
+  float present=step(h,1.08-k*1.12+wave);
+  float g=uGap/uCell;
+  float inside=step(local.x,1.-g)*step(local.y,1.-g);
+  vec3 base=mix(smoothC,vec3(1.),smoothstep(.0,.55,k));
+  vec3 chunk=mix(cellC,vec3(1.),k*.35);
+  float useChunk=smoothstep(.0,.12,k);
+  vec3 col=mix(smoothC,mix(base,chunk,inside*present),useChunk);
+  col=mix(col,vec3(1.),smoothstep(.95,1.,y));
+  gl_FragColor=vec4(col,1.);
+}`;
+
+  for (const root of document.querySelectorAll<HTMLElement>(".aurora")) {
+    const canvas = root.querySelector("canvas");
+    const gl = canvas?.getContext("webgl", { antialias: false, alpha: false, premultipliedAlpha: false });
+    if (!canvas || !gl) continue;
+
+    const shader = (type: number, src: string) => {
+      const s = gl.createShader(type);
+      if (!s) return null;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+    };
+    const vs = shader(gl.VERTEX_SHADER, VERT);
+    const fs = shader(gl.FRAGMENT_SHADER, FRAG);
+    const prog = gl.createProgram();
+    if (!vs || !fs || !prog) continue;
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) continue;
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, "p");
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const uRes = gl.getUniformLocation(prog, "uRes");
+    const uTime = gl.getUniformLocation(prog, "uTime");
+    const uCell = gl.getUniformLocation(prog, "uCell");
+    const uGap = gl.getUniformLocation(prog, "uGap");
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const frozen = document.documentElement.classList.contains("frozen");
+    let dpr = 1;
+    const resize = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.round(root.clientWidth * dpr);
+      const h = Math.round(root.clientHeight * dpr);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      gl.viewport(0, 0, w, h);
+      const cssCell = root.clientWidth < 640 ? 10 : 13;
+      gl.uniform2f(uRes, w, h);
+      gl.uniform1f(uCell, Math.round(cssCell * dpr));
+      gl.uniform1f(uGap, Math.max(1, Math.round(2 * dpr)));
+    };
+
+    let visible = true;
+    let raf = 0;
+    let last = performance.now();
+    let time = 14; // start mid-flow, so the first frame is already composed
+    const draw = () => {
+      gl.uniform1f(uTime, time);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+    const frame = (now: number) => {
+      raf = 0;
+      time += Math.min(0.05, (now - last) / 1000);
+      last = now;
+      draw();
+      schedule();
+    };
+    const schedule = () => {
+      if (raf || frozen || !visible || document.hidden || reduced.matches) return;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+
+    resize();
+    draw();
+    canvas.classList.add("on");
+    schedule();
+
+    new ResizeObserver(() => {
+      resize();
+      draw();
+    }).observe(root);
+    new IntersectionObserver(([entry]) => {
+      visible = entry?.isIntersecting ?? true;
+      schedule();
+    }).observe(root);
+    document.addEventListener("visibilitychange", schedule);
+    reduced.addEventListener("change", () => {
+      draw();
+      schedule();
+    });
+  }
+</script>

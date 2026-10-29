@@ -1,0 +1,305 @@
+---
+// Design lab, direction B ("Block map"): dark and bold; the hero is the map
+// of a file the real CLI is downloading. See docs/WEBSITE.md, Redesign.
+// Noindex; not linked from the site.
+import Lab from "../../layouts/Lab.astro";
+import BlockMap from "../../lab/BlockMap.svelte";
+import lockup from "../../../../../brand/svg/lockup-horizontal-on-dark.svg";
+import { t } from "../../i18n";
+import { fixed, latestRun, rowOf } from "../../lib/bench";
+import { longDate } from "../../lib/format";
+
+const run = latestRun();
+const lab = rowOf(run, "lab-1gib", "boltget", "auto");
+const cdn = rowOf(run, "cachefly-100mb", "boltget", "auto");
+
+const nav = [
+  { href: "/benchmarks/", label: t("nav.benchmarks") },
+  { href: "/docs/", label: t("nav.docs") },
+  { href: "/changelog/", label: t("nav.changelog") },
+  { href: t("site.repo"), label: t("nav.github") },
+];
+
+const strings = {
+  prompt: t("lab.b.prompt"),
+  title: t("lab.b.terminalTitle"),
+  url: t("lab.file.url"),
+  name: t("lab.file.name"),
+  folder: t("lab.file.folder"),
+  hash: t("lab.file.hash"),
+  demoLabel: t("lab.b.demoLabel"),
+  demoNote: t("lab.b.demoNote"),
+  legend: t("lab.b.mapLegend"),
+  honestyLink: t("lab.honestyLink"),
+};
+
+const figures = [
+  { value: fixed(lab.medianMibS, 1), caption: t("lab.b.measured.lab") },
+  { value: fixed(cdn.medianMibS, 1), caption: t("lab.b.measured.cdn") },
+];
+const points = (["one", "two", "three"] as const).map((k) => ({
+  title: t(`lab.b.points.${k}.title`),
+  body: t(`lab.b.points.${k}.body`),
+}));
+const lockH = 24;
+const lockW = Math.round((lockup.width / lockup.height) * lockH);
+---
+
+<Lab title={t("lab.b.title")} description={t("lab.b.description")} theme="dark" other={{ href: "/lab/a/", label: "A" }}>
+  <section class="hero" aria-labelledby="b-title" data-map-host>
+    <header class="wrap top">
+      <a href="/" aria-label={t("nav.home")}><img src={lockup.src} width={lockW} height={lockH} alt="" /></a>
+      <nav aria-label={t("nav.label")}>
+        {nav.map((n) => <a href={n.href}>{n.label}</a>)}
+      </nav>
+    </header>
+    <div class="wrap copy">
+      <h1 id="b-title">{t("lab.headline")}</h1>
+      <div class="row">
+        <div class="aside">
+          <p class="sentence">{t("lab.sentence")}</p>
+          <p class="links">
+            <a class="tlink" href="/docs/getting-started/">{t("lab.primary")}</a>
+            <a class="tlink" href="/benchmarks/">{t("lab.secondary")}</a>
+          </p>
+          <p class="status">{t("lab.status")}</p>
+        </div>
+        <div class="stage">
+          <BlockMap client:load s={strings} />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="measured wrap" aria-labelledby="b-measured">
+    <h2 id="b-measured" class="kicker">{t("lab.b.measured.label", { date: longDate(run.date) })}</h2>
+    <ul class="figures">
+      {
+        figures.map((f) => (
+          <li>
+            <p class="figure">
+              {f.value}
+              <span>MiB/s</span>
+            </p>
+            <p class="cap">{f.caption}</p>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="more"><a class="tlink" href="/benchmarks/">{t("lab.b.measured.link")}</a></p>
+  </section>
+
+  <section class="points wrap" aria-label={t("home.proof.heading")}>
+    <ol>
+      {
+        points.map((p, i) => (
+          <li>
+            <span class="n">{String(i + 1).padStart(2, "0")}</span>
+            <h3>{p.title}</h3>
+            <p>{p.body}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+
+  <footer class="wrap foot">
+    <p>{t("footer.license")}</p>
+  </footer>
+</Lab>
+
+<style>
+  .hero {
+    position: relative;
+    isolation: isolate;
+    min-height: 100svh;
+    overflow: hidden;
+    background: #08080b;
+  }
+  /* Keeps the text readable over the map: a soft darkening behind the copy. */
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      radial-gradient(55% 45% at 26% 32%, rgb(8 8 11 / 0.9) 0%, rgb(8 8 11 / 0.55) 60%, transparent 100%),
+      radial-gradient(30% 40% at 14% 78%, rgb(8 8 11 / 0.85) 0%, transparent 100%),
+      linear-gradient(180deg, rgb(8 8 11 / 0.85) 0%, transparent 18%, transparent 80%, #08080b 100%);
+  }
+  .top,
+  .copy {
+    position: relative;
+    z-index: 2;
+  }
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    height: 5rem;
+  }
+  .top nav {
+    display: flex;
+    gap: clamp(1rem, 2.5vw, 2.25rem);
+    font-size: 0.875rem;
+  }
+  .top nav a {
+    color: #a1a1aa;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .top nav a:hover {
+    color: #fafafa;
+  }
+  .copy {
+    padding-top: clamp(2.5rem, 9vh, 6.5rem);
+    padding-bottom: 4rem;
+  }
+  h1 {
+    font-size: clamp(3.25rem, 10.2vw, 10.5rem);
+    line-height: 0.88;
+    letter-spacing: -0.06em;
+    max-width: 8ch;
+    color: #fafafa;
+    animation: in 1s var(--ease-out) both;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr);
+    gap: 2.5rem clamp(2rem, 5vw, 5rem);
+    align-items: end;
+    margin-top: clamp(2.5rem, 6vh, 4.5rem);
+  }
+  .aside {
+    max-width: 24rem;
+    animation: in 1s 0.1s var(--ease-out) both;
+  }
+  .sentence {
+    font-size: clamp(1.0625rem, 1.4vw, 1.25rem);
+    line-height: 1.5;
+    color: #d4d4d8;
+    text-wrap: pretty;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.75rem;
+    margin-top: 1.5rem;
+    font-weight: 600;
+  }
+  .links a {
+    color: #fafafa;
+  }
+  .links a:first-child {
+    color: #6ee7b7;
+  }
+  .status {
+    margin-top: 1.5rem;
+    font-size: 0.8125rem;
+    color: #71717a;
+  }
+  .stage {
+    min-width: 0;
+    animation: in 1.1s 0.2s var(--ease-out) both;
+  }
+  @keyframes in {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+  }
+
+  .kicker {
+    font: 400 0.8125rem/1 var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #34d399;
+  }
+  .measured {
+    padding-block: clamp(5rem, 12vw, 9rem) 2rem;
+  }
+  .figures {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem;
+    margin-top: 2.5rem;
+  }
+  .figure {
+    font: 400 clamp(3.5rem, 10vw, 9.5rem) / 0.9 var(--font-mono);
+    letter-spacing: -0.07em;
+    color: #fafafa;
+  }
+  .figure span {
+    margin-left: 0.2em;
+    font-size: 0.22em;
+    letter-spacing: 0;
+    color: #a1a1aa;
+  }
+  .cap {
+    margin-top: 1rem;
+    color: #a1a1aa;
+  }
+  .more {
+    margin-top: 2.5rem;
+    font-weight: 600;
+    color: #6ee7b7;
+  }
+  .points {
+    padding-block: clamp(4rem, 10vw, 8rem) 2rem;
+  }
+  .points ol {
+    list-style: none;
+    padding: 0;
+    border-top: 1px solid #27272a;
+  }
+  .points li {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 1rem 2rem;
+    align-items: baseline;
+    padding-block: 2.25rem;
+    border-bottom: 1px solid #27272a;
+  }
+  .n {
+    font: 400 0.8125rem/1 var(--font-mono);
+    color: #34d399;
+  }
+  .points h3 {
+    font-size: clamp(1.5rem, 3vw, 2.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+    color: #fafafa;
+  }
+  .points li p {
+    color: #a1a1aa;
+  }
+  .foot {
+    padding-block: 5rem;
+    font-size: 0.8125rem;
+    color: #71717a;
+  }
+
+  @media (max-width: 60rem) {
+    .row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 40rem) {
+    .hero::after {
+      background: linear-gradient(180deg, rgb(8 8 11 / 0.9) 0%, rgb(8 8 11 / 0.72) 50%, rgb(8 8 11 / 0.2) 75%, #08080b 100%);
+    }
+    .top nav a:nth-child(n + 3) {
+      display: none;
+    }
+    .figures {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .points li {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

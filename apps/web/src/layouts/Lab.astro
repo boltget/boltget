@@ -1,0 +1,48 @@
+---
+// Shell for the design lab pages (/lab/a, /lab/b): prototypes of home page
+// directions for review (docs/WEBSITE.md, Redesign). Noindex, left out of the
+// sitemap (astro.config.mjs), not linked from the site.
+import "../../../../brand/tokens/tokens.css";
+import "../styles/fonts.css";
+import "../styles/lab.css";
+import geistSemiBold from "../../../../brand/fonts/Geist-SemiBold.woff2?url";
+import { t } from "../i18n";
+
+interface Props {
+  title: string;
+  description: string;
+  theme: "light" | "dark";
+  /** The other prototype, for the switcher. */
+  other: { href: string; label: string };
+}
+
+const { title, description, theme, other } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" dir="ltr" data-theme={theme} class={`lab lab-${theme}`}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{`${title} | ${t("site.name")}`}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content={theme === "light" ? "#022C22" : "#08080B"} />
+    <meta name="color-scheme" content={theme} />
+    <link rel="preload" href={geistSemiBold} as="font" type="font/woff2" crossorigin />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <slot name="head" />
+    <script is:inline>
+      // Review aid: ?at=<seconds> freezes the demos; skip the entrance motion too.
+      if (new URLSearchParams(location.search).has("at")) document.documentElement.classList.add("frozen");
+    </script>
+  </head>
+  <body>
+    <slot />
+    <aside class="lab-switch" aria-label={t("lab.noindex")}>
+      <span>{t("lab.noindex")}</span>
+      <a href={other.href}>{t("lab.switch", { other: other.label })}</a>
+    </aside>
+  </body>
+</html>

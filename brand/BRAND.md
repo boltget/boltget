@@ -207,7 +207,37 @@ user space (36, 36) → (144, 144):
 
 The gradient belongs to the mark. Do not use it on buttons, text or backgrounds.
 In CSS, use `--gradient-mark` only for small brand moments such as a progress bar
-fill.
+fill. One exception, because the squares *are* chunks: a file map drawn as a
+field of square pixels (the website's "block map") may colour its squares along
+the mark's gradient, at most 14% opacity once settled, briefly brighter while a
+square is being written.
+
+### Atmosphere (website)
+
+*Extension, October 2026, for the website redesign (docs/WEBSITE.md, Home page).
+Proposed; final once the redesign direction is chosen.*
+
+The website may use one atmospheric field at the top of a page: a slow, soft
+gradient that reads as weather, not decoration. Its ramp, top to bottom:
+
+| Stop | Hex | | Stop | Hex |
+|---|---|---|---|---|
+| Deep | `#031E18` | | Teal light | `#34D3AF` |
+| Emerald deep | `#023428` | | Mint | `#A7F3D0` (emerald-200) |
+| Emerald | `#046C52` | | Mist | `#ECFDF5` (emerald-50) |
+| Teal | `#0D9488` | | Paper | `#FFFFFF` |
+
+Rules:
+
+- Towards the bottom, the field breaks into **square chunks with even gaps**
+  that thin out into the page (the chunk grid of the social art, in colour).
+  The chunks are square, never rounded, and never glow.
+- Teal is allowed **only** inside the atmosphere and as a data series colour
+  (file maps, connection colours). It is never an accent, link or button colour.
+- Text on the field is white and sits on the darker stops.
+- The mark keeps its own gradient; it is never recoloured to the atmosphere.
+- **Paper** (white page, ink text, `emerald-700` accent) is a first-class
+  marketing theme alongside the dark default.
 
 ## 5. Typography
 

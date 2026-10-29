@@ -249,5 +249,107 @@
     "heading": "Nothing at this address.",
     "body": "The page may have moved, or the link may be mistyped.",
     "home": "Go to the home page"
+  },
+  "lab": {
+    "noindex": "Design lab: a prototype for review, not part of the site.",
+    "switch": "Compare: {other}",
+    "headline": "Every byte, at full speed.",
+    "sentence": "Splits every file across many connections and keeps each one busy until the last byte.",
+    "primary": "Try the CLI preview",
+    "secondary": "See the benchmark",
+    "status": "v0.1 is the engine and the command-line tool. The Windows app arrives in v0.2.",
+    "file": {
+      "url": "https://cdn.example.com/releases/atlas-4.2-x64.zip",
+      "name": "atlas-4.2-x64.zip",
+      "host": "cdn.example.com",
+      "folder": "C:\\Users\\ada\\Downloads",
+      "hash": "9f2c41d07be35a8e6c1f0d94a2b7e85c3d61f0a9b4e27c58d13a6f09e2b4c7d1"
+    },
+    "honesty": "Simulated download, illustrative numbers.",
+    "honestyLink": "Measured results",
+    "a": {
+      "title": "Lab A: Daylight",
+      "description": "Design lab, direction A: a light, atmospheric home page with a live preview of the desktop app.",
+      "preview": "Preview · v0.2 app",
+      "appName": "BoltGet",
+      "nav": {
+        "all": "All downloads",
+        "active": "Active",
+        "completed": "Completed",
+        "scheduled": "Scheduled"
+      },
+      "empty": "Paste a link or drop one here.",
+      "download": "Download",
+      "connecting": "Connecting to {host}",
+      "meta": "{size} · {host} · resumable",
+      "stats": {
+        "speed": "Speed",
+        "received": "Received",
+        "left": "Time left",
+        "connections": "Connections"
+      },
+      "map": "File map",
+      "mapNote": "Each square is a slice of the file",
+      "graph": "Throughput",
+      "conn": {
+        "connecting": "Connecting",
+        "receiving": "Receiving",
+        "idle": "Finished"
+      },
+      "done": "Done. {size} in {time} s.",
+      "verified": "SHA-256 verified",
+      "open": "Show in folder",
+      "demoLabel": "A simulated preview of the planned BoltGet desktop app: a link is pasted, the file is split across connections that come online one by one, and the download finishes with a verified checksum.",
+      "demoNote": "Simulated preview of the desktop app planned for v0.2. The numbers are illustrative.",
+      "statement": {
+        "label": "How it works",
+        "body": "It starts with four connections and adds more only while they make the download faster. When one finishes early, it takes over half of the largest part left, so every connection finishes together."
+      },
+      "proof": {
+        "fastTitle": "{value} MiB/s",
+        "fastBody": "Median for a 1 GiB file over loopback, measured {date}.",
+        "cdnTitle": "{value} MiB/s",
+        "cdnBody": "Median from a public CDN over a home line, same run.",
+        "resumeTitle": "1,000 restarts",
+        "resumeBody": "Killed mid-download and resumed a thousand times in testing. Every file byte-identical.",
+        "link": "Method and raw data"
+      },
+      "recent": {
+        "heading": "Earlier today",
+        "one": "studio-7.1-setup.exe",
+        "two": "survey-2026-q3.parquet",
+        "three": "field-notes-114.mp3",
+        "done": "Done"
+      }
+    },
+    "b": {
+      "title": "Lab B: Block map",
+      "description": "Design lab, direction B: a dark home page where the whole hero is the map of a file being downloaded by the real command-line tool.",
+      "prompt": "PS C:\\Users\\ada>",
+      "terminalTitle": "Windows PowerShell",
+      "demoLabel": "A simulated run of the BoltGet command-line tool: boltget get downloads a file over several connections while the page behind it fills in like a map of the file, then reports the time and a verified checksum.",
+      "demoNote": "Simulated run in the real output format of the v0.1 CLI. The numbers are illustrative.",
+      "mapLegend": "The page is the file. Each square is a slice; each bright edge is a connection writing.",
+      "measured": {
+        "label": "Measured {date}",
+        "lab": "1 GiB over loopback, median of 5 runs",
+        "cdn": "100 MiB from a public CDN over a home line",
+        "link": "Method and raw data"
+      },
+      "points": {
+        "one": {
+          "title": "Splits each file across up to 16 connections.",
+          "body": "Starts with four and adds more only while they make the download faster."
+        },
+        "two": {
+          "title": "Kill it mid-download. It resumes where it stopped.",
+          "body": "Progress is recorded only once the bytes are on disk."
+        },
+        "three": {
+          "title": "Every connection finishes together.",
+          "body": "When one runs out of work, it takes over half of the largest part left."
+        }
+      }
+    }
   }
 }

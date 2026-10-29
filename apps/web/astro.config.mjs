@@ -3,6 +3,7 @@
 import { defineConfig } from "astro/config";
 import svelte from "@astrojs/svelte";
 import starlight from "@astrojs/starlight";
+import sitemap from "@astrojs/sitemap";
 
 export default defineConfig({
   site: "https://boltget.app",
@@ -12,6 +13,9 @@ export default defineConfig({
   prefetch: false,
   integrations: [
     svelte(),
+    // Added explicitly (Starlight would add it otherwise) so the design lab
+    // pages under /lab/ stay out of the sitemap. They are also noindex.
+    sitemap({ filter: (page) => !new URL(page).pathname.startsWith("/lab/") }),
     starlight({
       title: "BoltGet docs",
       description: "How to install and use BoltGet, the download manager built for speed.",
