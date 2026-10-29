@@ -68,6 +68,52 @@ async fn doubles_past_four_when_each_connection_is_throttled() {
 }
 
 #[tokio::test]
+async fn a_host_that_limits_each_connection_starts_high_next_time() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    // 512 KiB/s per connection: 4 -> 8 doubles the rate even on a loaded
+    // runner, which is what marks the host as limiting each connection. Large
+    // enough that the step is taken even if the first baseline comes late.
+    let size = 12 * MIB;
+    let first = {
+        let engine = Engine::open(adaptive_cfg(4), state.path()).unwrap();
+        let url = srv.url(&format!("/data?size={size}&throttle=524288"));
+        let done = get_with(&engine, request(&url, dir.path())).await.unwrap();
+        engine.shutdown().await;
+        done
+    };
+    assert_content(&first, 1, size);
+    assert_eq!(first.info.initial_connections, 4);
+    assert!(
+        first.max_connections >= 8,
+        "max {} connections",
+        first.max_connections
+    );
+    // A new engine on the same database: the next file from the host starts at
+    // the count that paid off, not at 4.
+    let engine = Engine::open(adaptive_cfg(4), state.path()).unwrap();
+    let url = srv.url(&format!("/data?size={size}&seed=2&throttle=524288"));
+    let t0 = Instant::now();
+    let done = get_with(&engine, request(&url, dir.path())).await.unwrap();
+    assert_content(&done, 2, size);
+    assert!(
+        done.info.initial_connections >= 8,
+        "started with {}",
+        done.info.initial_connections
+    );
+    // A fixed count is still a fixed count.
+    let url = srv.url(&format!("/data?size={}&seed=3&throttle=4194304", 2 * MIB));
+    let fixed = get_with(&engine, request(&url, dir.path()).connections(2))
+        .await
+        .unwrap();
+    assert_eq!(fixed.max_connections, 2);
+    // Only catches a hang (8 connections need about 3 s for 12 MiB).
+    assert!(t0.elapsed() < Duration::from_secs(20), "{:?}", t0.elapsed());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
 async fn keeps_few_connections_when_the_line_is_full() {
     let srv = TestServer::start().await;
     let dir = tempfile::tempdir().unwrap();

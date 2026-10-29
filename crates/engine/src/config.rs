@@ -12,7 +12,9 @@ use std::time::Duration;
 #[non_exhaustive]
 pub struct EngineConfig {
     /// Connections a download starts with (4, measured in v0.1; the adaptive
-    /// controller then adds more while they help).
+    /// controller then adds more while they help). An adaptive download from a
+    /// host that limits each connection starts at the count that paid off there
+    /// last time instead.
     pub initial_connections: u32,
     /// Hard cap on connections per download (design target 16, range 1–32).
     pub max_connections: u32,
@@ -94,7 +96,8 @@ pub struct EngineConfig {
     pub adapt_gain: f64,
     /// After an increase that did not pay off, hold this long before probing again (10 s).
     pub adapt_cooldown: Duration,
-    /// How long a host's learned connection ceiling (after `429`/`503`) is kept (24 h).
+    /// How long a host's learned connection ceiling (after `429`/`503`) and
+    /// learned start count (a host that limits each connection) are kept (24 h).
     pub host_ceiling_ttl: Duration,
     /// Near the end, a connection that would need more than `tail_eta` for its
     /// remainder has it split down to halves of this size (64 KiB; 0 disables).

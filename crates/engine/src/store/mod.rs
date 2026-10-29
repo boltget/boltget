@@ -77,7 +77,9 @@ pub(crate) struct Opened {
     /// The stored settings.
     pub(crate) settings: crate::config::Settings,
     /// Learned per-host connection ceilings.
-    pub(crate) ceilings: records::Ceilings,
+    pub(crate) ceilings: records::HostCounts,
+    /// Learned per-host start counts.
+    pub(crate) starts: records::HostCounts,
 }
 
 fn open_connection(path: &Path, read_only: bool) -> Result<Connection> {
@@ -138,7 +140,8 @@ impl Store {
         let recovered = records::recover_interrupted(&conn)?;
         let next_id = records::next_id(&conn)?;
         let settings = records::load_settings(&conn)?;
-        let ceilings = records::load_host_ceilings(&conn)?;
+        let ceilings = records::load_host_counts(&conn, records::SETTING_HOST_CEILINGS)?;
+        let starts = records::load_host_counts(&conn, records::SETTING_HOST_STARTS)?;
         if recovered > 0 {
             tracing::info!(
                 recovered,
@@ -169,6 +172,7 @@ impl Store {
             next_id,
             settings,
             ceilings,
+            starts,
         })
     }
 

@@ -647,12 +647,16 @@ pub(crate) fn set_request_ctx(conn: &Connection, id: DownloadId, ctx: &str) -> R
 /// `{"https://host:443": [ceiling, until_unix_ms], ...}`.
 pub(crate) const SETTING_HOST_CEILINGS: &str = "engine.host_ceilings";
 
-/// Learned per-host connection ceilings with their expiry.
-pub(crate) type Ceilings = std::collections::HashMap<String, (u32, SystemTime)>;
+/// Setting key of the learned per-host start counts (hosts that limit each
+/// connection), in the same format as [`SETTING_HOST_CEILINGS`].
+pub(crate) const SETTING_HOST_STARTS: &str = "engine.host_starts";
 
-pub(crate) fn load_host_ceilings(conn: &Connection) -> Result<Ceilings> {
-    let mut out = Ceilings::new();
-    if let Some(serde_json::Value::Object(map)) = get_setting(conn, SETTING_HOST_CEILINGS)? {
+/// Learned per-host connection counts with their expiry.
+pub(crate) type HostCounts = std::collections::HashMap<String, (u32, SystemTime)>;
+
+pub(crate) fn load_host_counts(conn: &Connection, key: &str) -> Result<HostCounts> {
+    let mut out = HostCounts::new();
+    if let Some(serde_json::Value::Object(map)) = get_setting(conn, key)? {
         for (origin, v) in map {
             if let Some([n, until]) = v.as_array().map(Vec::as_slice)
                 && let (Some(n), Some(until)) = (n.as_u64(), until.as_u64())
@@ -670,7 +674,7 @@ pub(crate) fn load_host_ceilings(conn: &Connection) -> Result<Ceilings> {
     Ok(out)
 }
 
-pub(crate) fn save_host_ceilings(conn: &Connection, c: &Ceilings) -> Result<()> {
+pub(crate) fn save_host_counts(conn: &Connection, key: &str, c: &HostCounts) -> Result<()> {
     let map: serde_json::Map<String, serde_json::Value> = c
         .iter()
         .map(|(o, (n, until))| {
@@ -680,9 +684,5 @@ pub(crate) fn save_host_ceilings(conn: &Connection, c: &Ceilings) -> Result<()> 
             (o.clone(), serde_json::json!([n, ms]))
         })
         .collect();
-    put_setting(
-        conn,
-        SETTING_HOST_CEILINGS,
-        Some(&serde_json::Value::Object(map)),
-    )
+    put_setting(conn, key, Some(&serde_json::Value::Object(map)))
 }

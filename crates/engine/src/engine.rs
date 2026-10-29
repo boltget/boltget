@@ -137,31 +137,16 @@ pub(crate) struct ConnPermit {
     _global: OwnedSemaphorePermit,
 }
 
-/// Per-host and global connection caps, shared by all downloads.
-#[derive(Debug, Clone)]
-pub(crate) struct Limits {
-    global: Arc<Semaphore>,
-    per_host: Arc<Mutex<HashMap<Origin, Arc<Semaphore>>>>,
-    max_per_host: usize,
-    /// Connection ceilings learned from hosts that pushed back (`429`/`503`),
-    /// with their expiry. Keyed by origin (`scheme://host:port`).
-    ceilings: Arc<Mutex<HashMap<String, (u32, SystemTime)>>>,
-}
+/// A connection count per host learned by earlier downloads, with its expiry.
+/// Keyed by origin (`scheme://host:port`).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct HostCounts(Arc<Mutex<HashMap<String, (u32, SystemTime)>>>);
 
-impl Limits {
-    fn new(max_per_host: u32, max_total: u32) -> Self {
-        Self {
-            global: Arc::new(Semaphore::new(max_total as usize)),
-            per_host: Arc::default(),
-            max_per_host: max_per_host as usize,
-            ceilings: Arc::default(),
-        }
-    }
-
-    /// The learned connection ceiling for `origin`, if one is in force.
-    pub(crate) fn ceiling(&self, origin: &Origin) -> Option<u32> {
+impl HostCounts {
+    /// The count for `origin`, if one is in force.
+    pub(crate) fn get(&self, origin: &Origin) -> Option<u32> {
         let map = self
-            .ceilings
+            .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         map.get(&origin.to_string())
@@ -169,16 +154,16 @@ impl Limits {
             .map(|(n, _)| *n)
     }
 
-    /// Records that `origin` allows at most `n` connections until `until`.
-    /// Returns the whole (unexpired) table, to be saved.
-    pub(crate) fn set_ceiling(
+    /// Records `n` for `origin` until `until`. Returns the whole (unexpired)
+    /// table, to be saved.
+    pub(crate) fn set(
         &self,
         origin: &Origin,
         n: u32,
         until: SystemTime,
     ) -> HashMap<String, (u32, SystemTime)> {
         let mut map = self
-            .ceilings
+            .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = SystemTime::now();
@@ -187,14 +172,39 @@ impl Limits {
         map.clone()
     }
 
-    /// Loads saved ceilings (expired ones are dropped).
-    pub(crate) fn load_ceilings(&self, saved: HashMap<String, (u32, SystemTime)>) {
+    /// Loads saved counts (expired ones are dropped).
+    pub(crate) fn load(&self, saved: HashMap<String, (u32, SystemTime)>) {
         let now = SystemTime::now();
         let mut map = self
-            .ceilings
+            .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         map.extend(saved.into_iter().filter(|(_, (_, u))| *u > now));
+    }
+}
+
+/// Per-host and global connection caps, shared by all downloads.
+#[derive(Debug, Clone)]
+pub(crate) struct Limits {
+    global: Arc<Semaphore>,
+    per_host: Arc<Mutex<HashMap<Origin, Arc<Semaphore>>>>,
+    max_per_host: usize,
+    /// Connection ceilings learned from hosts that pushed back (`429`/`503`).
+    pub(crate) ceilings: HostCounts,
+    /// Start counts learned from hosts that limit each connection: the count
+    /// that paid off last time.
+    pub(crate) starts: HostCounts,
+}
+
+impl Limits {
+    fn new(max_per_host: u32, max_total: u32) -> Self {
+        Self {
+            global: Arc::new(Semaphore::new(max_total as usize)),
+            per_host: Arc::default(),
+            max_per_host: max_per_host as usize,
+            ceilings: HostCounts::default(),
+            starts: HostCounts::default(),
+        }
     }
 
     fn host(&self, origin: &Origin) -> Arc<Semaphore> {
@@ -383,7 +393,8 @@ impl Engine {
             config.speed_limit = opened.settings.speed_limit;
         }
         let engine = Self::build(config, Some(opened.store), opened.next_id)?;
-        engine.inner.env.limits.load_ceilings(opened.ceilings);
+        engine.inner.env.limits.ceilings.load(opened.ceilings);
+        engine.inner.env.limits.starts.load(opened.starts);
         Ok(engine)
     }
 

@@ -237,6 +237,10 @@ struct Core {
     /// `Retry-After`, so one throttled worker holds back all of them).
     hold_until: Mutex<Option<tokio::time::Instant>>,
     stats: Mutex<HashMap<WorkerId, Arc<WorkerStat>>>,
+    /// Payload bytes read from the network by all workers (monotonic, counted
+    /// as they arrive rather than as they are handed to the writer, so the
+    /// adaptive controller sees a smooth rate even on short windows).
+    received: AtomicU64,
     sup: mpsc::UnboundedSender<SupMsg>,
     /// Cancels workers (user cancel or a fatal error).
     stop: CancellationToken,
@@ -494,16 +498,22 @@ fn split_config(cfg: &EngineConfig) -> SplitConfig {
 }
 
 /// The connection count a download starts with: the one it asks for, or the
-/// default capped by what the host is known to allow.
+/// default (raised to what paid off last time on a host that limits each
+/// connection) capped by what the host is known to allow.
 fn wanted_connections(env: &Env, req: &AddRequest, origin: &Origin) -> u32 {
     let cfg = &env.cfg;
-    match req.connections {
-        Some(n) => n.clamp(1, cfg.max_connections),
-        None => cfg
-            .initial_connections
-            .min(env.limits.ceiling(origin).unwrap_or(u32::MAX))
-            .clamp(1, cfg.max_connections),
+    if let Some(n) = req.connections {
+        return n.clamp(1, cfg.max_connections);
     }
+    let learned = if cfg.adaptive {
+        env.limits.starts.get(origin).unwrap_or(0)
+    } else {
+        0
+    };
+    cfg.initial_connections
+        .max(learned)
+        .min(env.limits.ceilings.get(origin).unwrap_or(u32::MAX))
+        .clamp(1, cfg.max_connections)
 }
 
 /// Everything [`execute`] needs, from a fresh probe or from a checkpoint.
@@ -1128,6 +1138,7 @@ async fn execute(
         retrying: AtomicU32::new(0),
         hold_until: Mutex::new(None),
         stats: Mutex::new(HashMap::new()),
+        received: AtomicU64::new(0),
         sup: sup_tx,
         stop: shared.cancel.child_token(),
     });
@@ -1153,7 +1164,8 @@ async fn execute(
     let mut ctl = (req.connections.is_none() && cfg.adaptive).then(|| {
         let ceiling = env
             .limits
-            .ceiling(&core.worker_origin)
+            .ceilings
+            .get(&core.worker_origin)
             .unwrap_or(u32::MAX)
             .min(cfg.max_connections);
         Controller::new(
@@ -1232,14 +1244,25 @@ async fn execute(
     }
 
     // ---- Supervise ----
-    let mut tick = tokio::time::interval(Duration::from_millis(500));
+    // The controller ticks every 250 ms (its first baseline and clear verdicts
+    // need quarter-window resolution); throughput tracking every 500 ms.
+    let mut tick = tokio::time::interval(Duration::from_millis(250));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut tick_count = 0u64;
     let mut monitor = Monitor::default();
     let mut last_error: Option<Error> = None;
+    // The last `429`/`503`: shown while retrying, never fatal by itself (the
+    // throttled worker gave its segment back for the others).
+    let mut throttle_error: Option<Error> = None;
+    // Bytes received when workers last ran out; progress since then resets
+    // the respawn budget.
+    let mut respawn_bytes = 0u64;
     let mut fatal: Option<Error> = None;
     let mut respawns = 0u32;
     let mut writer_result: Option<Result<std::fs::File>> = None;
     let mut seg_count = core.table(|t| t.segments().len())?;
+    // The start count last recorded for this host by this download.
+    let mut learned: Option<u32> = None;
 
     loop {
         if workers.is_empty() {
@@ -1252,7 +1275,14 @@ async fn execute(
                 break;
             }
             // Workers left without an error while work remains (a race between a
-            // worker going idle and another releasing its segment).
+            // worker going idle and another releasing its segment, or the last
+            // ones were throttled or retired after `429`/`503`; a new worker waits
+            // for the hold).
+            let received = core.received.load(Ordering::Relaxed);
+            if received > respawn_bytes {
+                respawn_bytes = received;
+                respawns = 0;
+            }
             respawns += 1;
             if respawns > 3 {
                 fatal = Some(Error::Internal("no progress and no workers".into()));
@@ -1319,7 +1349,9 @@ async fn execute(
                     Exit::Throttled(e) => {
                         // Fewer connections is the point; if nobody is left, carry on
                         // with one (it waits for the hold set by the throttled worker).
-                        last_error = Some(e);
+                        // Not a `last_error`: workers running out later (retired
+                        // after the halving) must not turn it into a failure.
+                        throttle_error = Some(e);
                         let running = workers.len() as u32;
                         target = match ctl.as_mut() {
                             Some(c) => {
@@ -1337,24 +1369,36 @@ async fn execute(
                 }
             }
             _ = tick.tick() => {
-                monitor.tick(&core);
+                if tick_count.is_multiple_of(2) {
+                    monitor.tick(&core);
+                }
+                tick_count += 1;
                 if fatal.is_none() && !shared.cancel.is_cancelled() && core.table(|t| t.is_splittable())? {
                     let running = workers.len() as u32;
                     let can_grow = core.table(|t| t.can_split())?;
                     if let Some(c) = ctl.as_mut()
                         && let Some(n) = c.tick(Observation {
                             now: started.elapsed(),
-                            bytes: shared.downloaded.load(Ordering::Relaxed),
+                            bytes: core.received.load(Ordering::Relaxed),
                             active: running,
                             can_grow,
                             cap: match (core.rate.download.rate(), core.rate.global.rate()) {
                                 (Some(a), Some(b)) => Some(a.min(b)),
                                 (a, b) => a.or(b),
                             },
+                            remaining: core
+                                .total
+                                .map(|t| t.saturating_sub(shared.downloaded.load(Ordering::Relaxed))),
                         })
                     {
                         tracing::debug!(id = %shared.id, from = target, to = n, "adaptive connection count");
                         target = n;
+                    }
+                    if let Some(k) = ctl.as_ref().and_then(Controller::per_connection_count)
+                        && learned != Some(k)
+                    {
+                        learned = Some(k);
+                        remember_start(env, &core, k);
                     }
                     if running > target {
                         monitor.retire_slowest(&core, (running - target) as usize);
@@ -1374,7 +1418,7 @@ async fn execute(
                 let active = shared.connections.load(Ordering::Relaxed);
                 let retrying = core.retrying.load(Ordering::Relaxed);
                 if active > 0 && retrying >= active {
-                    shared.set_state(State::Retrying, last_error.as_ref());
+                    shared.set_state(State::Retrying, last_error.as_ref().or(throttle_error.as_ref()));
                 } else if shared.state() == State::Retrying {
                     shared.set_state(State::Downloading, None);
                 }
@@ -1525,10 +1569,23 @@ async fn execute(
 /// memory and, with a database, for `host_ceiling_ttl`).
 fn remember_ceiling(env: &Env, core: &Core, ceiling: u32) {
     let until = std::time::SystemTime::now() + env.cfg.host_ceiling_ttl;
-    let all = env.limits.set_ceiling(&core.worker_origin, ceiling, until);
+    let all = env.limits.ceilings.set(&core.worker_origin, ceiling, until);
     if let Some(store) = &core.shared.store {
         store.send("host ceilings", move |c| {
-            records::save_host_ceilings(c, &all)
+            records::save_host_counts(c, records::SETTING_HOST_CEILINGS, &all)
+        });
+    }
+}
+
+/// Records the count that paid off on a host that limits each connection, so
+/// later downloads from it start there (in memory and, with a database, for
+/// `host_ceiling_ttl`).
+fn remember_start(env: &Env, core: &Core, start: u32) {
+    let until = std::time::SystemTime::now() + env.cfg.host_ceiling_ttl;
+    let all = env.limits.starts.set(&core.worker_origin, start, until);
+    if let Some(store) = &core.shared.store {
+        store.send("host starts", move |c| {
+            records::save_host_counts(c, records::SETTING_HOST_STARTS, &all)
         });
     }
 }
@@ -2304,6 +2361,8 @@ async fn stream(
             }
             Ok(Some(data)) => {
                 stat.net.fetch_add(data.len() as u64, Ordering::Relaxed);
+                core.received
+                    .fetch_add(data.len() as u64, Ordering::Relaxed);
                 // Bandwidth limit: pay for this read before the next one. Time
                 // spent here is outside `chunk`'s stall timer, so throttling is
                 // never mistaken for a stall.

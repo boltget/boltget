@@ -5,18 +5,25 @@
 //! Hill climbing on measured aggregate throughput:
 //!
 //! - After every change it waits `settle` (new connections ramp up through TCP
-//!   slow start), then measures throughput over `window`.
-//! - The first baseline is measured from `settle` on, but accepted only once
-//!   throughput has stopped rising: the second half of its window is not faster
-//!   than the first by more than `gain` (the connections are past TCP slow
-//!   start). At the latest it is the window one window later.
+//!   slow start), then measures throughput over `window`. Measuring starts
+//!   after half of `settle`, but only an early pass (below) and a steady first
+//!   baseline may use that first half.
+//! - The first baseline is measured from `settle / 2` on, but accepted only once
+//!   throughput has stopped rising: the second half of its window (at least
+//!   half of `window`) is not faster than the first by more than `gain` (the
+//!   connections are past TCP slow start). At the latest it is the full window
+//!   one window later.
 //! - An increase is kept only if throughput rose by more than `gain`; then it
 //!   increases again: doubling while each doubling pays off at least half of
 //!   what it ideally could, then one connection at a time. A doubling adds at
 //!   most 4 connections until a step pays off at least three quarters of its
 //!   ideal (the server limits each connection); from then on it doubles fully.
-//! - A step that pays off half its ideal after half a window is kept at once;
-//!   any other verdict waits for the full window.
+//!   The count confirmed then is reported as the host's start for later
+//!   downloads ([`Controller::per_connection_count`]).
+//! - A step that pays off half its ideal after a quarter window is kept at
+//!   once; any other verdict waits for the full window.
+//! - Nothing is probed when the rest of the download would end before a step
+//!   could be judged (`settle` + `window` at the current rate).
 //! - An increase that did not pay off is reverted, and the count holds for
 //!   `cooldown` before probing again (from a fresh baseline).
 //! - `429`/`503` or refused connections halve the count and set a ceiling it
@@ -52,6 +59,8 @@ pub(crate) struct Observation {
     /// The bandwidth limit in force (bytes per second), if any: at the limit,
     /// more connections cannot help.
     pub(crate) cap: Option<u64>,
+    /// Bytes still to download, if the size is known.
+    pub(crate) remaining: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,13 +106,18 @@ pub(crate) struct Controller {
     last: Last,
     /// Doubling until an increase pays off less than half its ideal.
     slow_start: bool,
-    /// A step paid off at least three quarters of its ideal: double fully
-    /// instead of by at most 4.
+    /// A step paid off at least three quarters of its ideal (the server limits
+    /// each connection): double fully instead of by at most 4.
     proportional: bool,
+    /// The highest count confirmed while the server limited each connection.
+    per_connection: Option<u32>,
     /// The current measurement, oldest first (at most about one window long).
     samples: VecDeque<Sample>,
     /// No measurement starts before this.
     quiet_until: Duration,
+    /// A verdict that is not an early pass only uses samples from this time on
+    /// (the last change plus `settle`).
+    settled_at: Duration,
     /// Until this time, the first baseline waits for steady throughput.
     steady_by: Option<Duration>,
     /// When the server last pushed back.
@@ -122,12 +136,16 @@ impl Controller {
             last: Last::Steady,
             slow_start: true,
             proportional: false,
+            per_connection: None,
             samples: VecDeque::new(),
-            quiet_until: cfg.settle,
+            // Measuring starts after half the settle time: the first baseline
+            // waits for steady throughput anyway.
+            quiet_until: cfg.settle / 2,
+            settled_at: cfg.settle,
             // Every connection starts in TCP slow start, and a baseline measured
             // then makes any increase look good. So the first window is trusted
             // only once throughput is steady, and at the latest it is the
-            // second window.
+            // second full window.
             steady_by: Some(cfg.settle + cfg.window * 2),
             last_throttle: None,
         }
@@ -144,9 +162,17 @@ impl Controller {
         self.ceiling
     }
 
+    /// The highest count confirmed after a step paid off in proportion (the
+    /// server limits each connection), if any: a good start for the next
+    /// download from the same host.
+    pub(crate) fn per_connection_count(&self) -> Option<u32> {
+        self.per_connection
+    }
+
     fn restart_measurement(&mut self, now: Duration, wait: Duration) {
         self.samples.clear();
         self.quiet_until = now + wait;
+        self.settled_at = now + wait;
     }
 
     /// The next window starts at `now` (later decisions may push it back).
@@ -227,10 +253,13 @@ impl Controller {
                 let ideal = f64::from(step) / f64::from(from.max(1));
                 let gained = if base > 0.0 { rate / base - 1.0 } else { 0.0 };
                 let passed = rate > base * (1.0 + self.cfg.gain);
-                // Half a window that already shows a clear slow-start gain is
-                // enough; any other verdict waits for the full window.
-                let early = passed && gained >= ideal / 2.0 && covers(elapsed, self.cfg.window / 2);
-                if !early && !full_window {
+                // A quarter window that already shows a clear gain is enough,
+                // even before the new connections have fully settled (TCP slow
+                // start can only make the gain look smaller); any other verdict
+                // waits for the full window after `settle`.
+                let early = passed && gained >= ideal / 2.0 && covers(elapsed, self.cfg.window / 4);
+                let settled = first.at + SLACK >= self.settled_at;
+                if !(early || full_window && settled) {
                     return None;
                 }
                 if passed {
@@ -241,6 +270,9 @@ impl Controller {
                     }
                     if base > 0.0 && gained >= ideal * 0.75 {
                         self.proportional = true;
+                    }
+                    if self.proportional {
+                        self.per_connection = self.per_connection.max(Some(self.target));
                     }
                     self.baseline = Some(rate);
                     self.last = Last::Steady;
@@ -257,14 +289,16 @@ impl Controller {
                 }
             }
             Last::Steady => {
-                if !full_window {
-                    return None;
-                }
                 if let Some(by) = self.steady_by {
-                    if o.now + SLACK < by && !self.steady() {
+                    // The first baseline: half a window or more once throughput
+                    // is steady, at the latest the full window ending at `by`.
+                    let early = covers(elapsed, self.cfg.window / 2) && self.steady();
+                    if !(early || full_window && o.now + SLACK >= by) {
                         return None;
                     }
                     self.steady_by = None;
+                } else if !full_window {
+                    return None;
                 }
                 self.baseline = Some(rate);
                 self.next_window(now);
@@ -281,9 +315,17 @@ impl Controller {
         if o.cap.is_some_and(|c| rate >= 0.75 * c as f64) {
             return;
         }
+        // A step that would end with the download cannot be judged, and its
+        // new connections would only add handshakes to the tail.
+        let verdict = (self.cfg.settle + self.cfg.window).as_secs_f64();
+        if o.remaining.is_some_and(|r| r as f64 <= rate * verdict) {
+            return;
+        }
         // Doubling, but by at most 4 at a time until the server has shown that
         // it limits each connection: some servers punish bursts of new
-        // connections from one client.
+        // connections from one client. (Not straight to the ceiling: a host
+        // whose line fills at a few more connections would get a burst of
+        // probes it cannot use.)
         let step = match (self.slow_start, self.proportional) {
             (true, true) => self.target,
             (true, false) => self.target.min(4),
@@ -295,7 +337,10 @@ impl Controller {
             step: next - self.target,
         };
         self.target = next;
-        self.restart_measurement(o.now, self.cfg.settle);
+        // Measuring starts after half the settle time, for an early pass; the
+        // full verdict still starts at `settle`.
+        self.restart_measurement(o.now, self.cfg.settle / 2);
+        self.settled_at = o.now + self.cfg.settle;
     }
 
     /// The server pushed back (`429`/`503`, refused or reset connections) while
@@ -359,6 +404,7 @@ mod tests {
                 active: k,
                 can_grow: true,
                 cap: None,
+                remaining: None,
             });
             seen.push(c.target());
         }
@@ -392,6 +438,7 @@ mod tests {
                 active: k,
                 can_grow: true,
                 cap: None,
+                remaining: None,
             }) {
                 changes.push((now, n));
             }
@@ -442,6 +489,107 @@ mod tests {
                 .is_none_or(|&(t, _)| t >= Duration::from_secs(2)),
             "{changes:?}"
         );
+    }
+
+    #[test]
+    fn ramps_within_two_seconds_at_the_supervisor_tick() {
+        // The supervisor's 250 ms tick, firing a millisecond early, on a server
+        // that limits each connection to 2 MB/s (lab-throttled-100mib): the
+        // first baseline is taken over [0.25 s, 0.75 s] once steady, and each
+        // doubling is kept after a quarter window past half the settle time.
+        let (c, changes) = simulate_ticks(
+            Controller::new(cfg(), 4, 16),
+            Duration::from_millis(249),
+            Duration::from_secs(10),
+            0.05,
+            |k, _| f64::from(k) * 2.0 * MB,
+        );
+        let counts: Vec<u32> = changes.iter().map(|&(_, n)| n).collect();
+        assert_eq!(counts, [8, 16], "{changes:?}");
+        assert!(changes[0].0 <= Duration::from_millis(800), "{changes:?}");
+        assert!(changes[1].0 <= Duration::from_millis(1300), "{changes:?}");
+        // Both steps paid off in proportion: the host limits each connection,
+        // and the next download from it may start at 16.
+        assert_eq!(c.per_connection_count(), Some(16));
+    }
+
+    #[test]
+    fn a_full_line_is_not_mistaken_for_a_per_connection_limit() {
+        // One connection fills the line after a 1 s TCP ramp; quarter-second
+        // ticks must not take a baseline during the ramp, and nothing is
+        // learned for the host.
+        let ramp = |t: Duration| t.as_secs_f64().min(1.0);
+        let (c, changes) = simulate_ticks(
+            Controller::new(cfg(), 4, 16),
+            Duration::from_millis(249),
+            Duration::from_secs(30),
+            0.05,
+            |_, t| 100.0 * MB * ramp(t),
+        );
+        assert_eq!(c.target(), 4, "{changes:?}");
+        assert!(changes.iter().all(|&(_, n)| n <= 8), "{changes:?}");
+        assert!(
+            changes
+                .first()
+                .is_none_or(|&(t, _)| t >= Duration::from_secs(1)),
+            "{changes:?}"
+        );
+        assert_eq!(c.per_connection_count(), None);
+    }
+
+    #[test]
+    fn a_step_that_pays_off_too_little_teaches_nothing() {
+        // Beyond 4 connections each adds only 40% of a connection's rate: the
+        // step to 8 is kept (it beats the 10% gain), but it is not what a
+        // per-connection limit looks like.
+        let rate = |k: u32| {
+            let k = f64::from(k);
+            if k <= 4.0 { k } else { 4.0 + 0.4 * (k - 4.0) }
+        };
+        let (c, changes) = simulate_ticks(
+            Controller::new(cfg(), 4, 16),
+            Duration::from_millis(249),
+            Duration::from_secs(10),
+            0.0,
+            |k, _| rate(k) * MB,
+        );
+        assert!(c.target() >= 8, "{changes:?}");
+        assert_eq!(c.per_connection_count(), None, "{changes:?}");
+    }
+
+    #[test]
+    fn does_not_probe_when_the_download_ends_before_a_verdict() {
+        // 8 MB/s, 4 MB left at the first baseline: the download ends in about
+        // half a second, before any step could be judged (settle + window).
+        let mut c = Controller::new(cfg(), 4, 16);
+        let total = 10_000_000u64;
+        let mut bytes = 0u64;
+        for i in 1..=20u64 {
+            bytes = (bytes + 2_000_000).min(total);
+            let r = c.tick(Observation {
+                now: Duration::from_millis(i * 250),
+                bytes,
+                active: 4,
+                can_grow: true,
+                cap: None,
+                remaining: Some(total - bytes),
+            });
+            assert_eq!(r, None, "probed at tick {i}");
+        }
+        // With plenty left, the same rate is probed.
+        let mut c = Controller::new(cfg(), 4, 16);
+        let probed = (1..=8u64).any(|i| {
+            c.tick(Observation {
+                now: Duration::from_millis(i * 250),
+                bytes: i * 2_000_000,
+                active: 4,
+                can_grow: true,
+                cap: None,
+                remaining: Some(100_000_000),
+            })
+            .is_some()
+        });
+        assert!(probed);
     }
 
     #[test]
@@ -517,6 +665,7 @@ mod tests {
                 active: c.target(),
                 can_grow: true,
                 cap: Some(5_000_000),
+                remaining: None,
             });
         }
         assert_eq!(c.target(), 4);
@@ -545,6 +694,7 @@ mod tests {
                 active: 2,
                 can_grow: false,
                 cap: None,
+                remaining: None,
             });
             assert_eq!(r, None);
         }
@@ -561,6 +711,7 @@ mod tests {
                 active,
                 can_grow: c.target() <= 2,
                 cap: None,
+                remaining: None,
             }) {
                 changed.push(n);
             }
