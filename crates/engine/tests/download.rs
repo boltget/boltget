@@ -88,7 +88,11 @@ async fn segmented_download_is_byte_identical() {
     assert_eq!(done.info.probe.ranges, RangeSupport::Yes);
     assert_eq!(done.info.initial_connections, 4);
     assert!(done.max_connections > 1, "expected parallel connections");
-    assert!(done.segments >= 8);
+    // Four initial segments, and at least one re-split when a connection
+    // finished early. How many follow depends on timing: on a loaded machine
+    // connections finish closer together and find less worth splitting (an
+    // earlier `>= 8` failed there, on main too).
+    assert!(done.segments > 4, "{} segments", done.segments);
     // The probe used GET with an open range, never HEAD.
     let reqs = srv.requests();
     assert!(reqs.iter().all(|r| r.method == "GET"));
@@ -607,11 +611,17 @@ async fn throttling_mid_download_reduces_connections_and_completes() {
     let srv = TestServer::start().await;
     let dir = tempfile::tempdir().unwrap();
     let engine = Engine::new(cfg()).unwrap();
-    // Requests 4..14 are refused with 503: those workers give their segments
-    // back (fewer connections) and the remaining ones finish the job.
+    // Requests 4..9 are refused with 503: those workers give their segments
+    // back (fewer connections) and the remaining ones finish the job. Fewer
+    // failures than `max_attempts` (10): on a loaded machine every 503 can land
+    // on the last remaining connection, and a lone connection that gets
+    // `max_attempts` consecutive 503s gives up by design (that made this test
+    // fail with 10 failures, on main too).
     let done = get(
         &engine,
-        &srv.url("/data?size=4194304&fail_status=503&fail_from=4&fail_count=10&key=tmid&throttle=8388608"),
+        &srv.url(
+            "/data?size=4194304&fail_status=503&fail_from=4&fail_count=6&key=tmid&throttle=8388608",
+        ),
         dir.path(),
     )
     .await
