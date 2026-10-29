@@ -1,0 +1,86 @@
+---
+title: Using the CLI
+description: Download, pause, resume, refresh links, limit speed, verify checksums and measure your network with boltget.
+---
+
+Every command has a `--help` with the full list of options, and that help is the reference for your build. This page shows the common tasks.
+
+## Download
+
+```sh
+boltget get https://example.com/file.iso
+boltget get https://example.com/file.iso -o D:\Downloads\
+boltget get https://example.com/file.iso -o ubuntu.iso --overwrite
+```
+
+The connection count adapts by default: a download starts with 4 connections and adds more only while they make it faster, up to 16. `--max-connections N` changes that cap, and `-c N` fixes the count instead (1 to 32). When a connection finishes early, it takes over half of the largest remaining part, so all connections finish together.
+
+`--quiet` prints only the final line. `--json` prints line-delimited JSON events instead of the progress display; see [Exit codes and JSON](/docs/cli/scripting/).
+
+## Pause and resume
+
+Every download started with `boltget get` is recorded under a numeric id. Progress is saved only once the bytes are on disk, so it survives Ctrl-C, a killed process and a power cut.
+
+```sh
+boltget list                  # ids, states and progress (also --json)
+boltget resume 7              # continue where it stopped
+boltget resume 7 --restart    # start again from the beginning
+boltget remove 7 --delete-file
+```
+
+Ctrl-C pauses the running download (exit code 130). If the file changed on the server in the meantime, `resume` stops with an error instead of mixing two versions; `--restart` downloads it again.
+
+The download list lives in `%LOCALAPPDATA%\BoltGet` on Windows and `$XDG_DATA_HOME/boltget` on Linux. `--state <dir>` or the `BOLTGET_DATA_DIR` variable choose another directory, and `boltget get --no-state` downloads without recording anything. One `boltget` at a time can use the list; `boltget list` works alongside.
+
+## Give an expired link a new one
+
+Signed download links often expire. When that happens, the download waits as `needs_new_link` with its progress kept. Get a fresh link from the site and pass it on:
+
+```sh
+boltget refresh 7 https://example.com/new-signed-link
+```
+
+BoltGet checks that the new link is the same file (same size, and the same ETag or matching sample bytes) before it writes anything, then continues. A link to a different file is refused with the reason.
+
+## Limit the speed
+
+```sh
+boltget get https://example.com/file.iso --limit 5M    # this download
+boltget config set limit 10M                           # all downloads
+boltget config unset limit
+```
+
+Rates are bytes per second: `500K`, `5M`, `1.5M` or a plain number (K = 1024). `--limit off` removes a download's limit. Limits change without reconnecting.
+
+## Verify a checksum
+
+```sh
+boltget get https://example.com/file.iso --checksum sha256:<hex>
+```
+
+`md5`, `sha1` and `sha512` work too, or just the hex. Digests the server sends (such as `Repr-Digest` or `x-amz-checksum-sha256`) are checked as well unless you pass `--no-server-digest`. The file is hashed while it downloads. On a mismatch the file keeps its `.boltget` name and `boltget` exits with code 9; `resume <id> --restart` downloads it again and `resume <id> --no-checksum` keeps it.
+
+## Proxies, cookies and logins
+
+```sh
+boltget get <url> --proxy socks5://127.0.0.1:1080
+boltget get <url> --cookie-file cookies.txt
+boltget get <url> --cookie session=abc123
+boltget get <url> --user name:password
+boltget get <url> -H "Referer: https://example.com/"
+```
+
+Without `--proxy`, the `http_proxy`, `https_proxy`, `all_proxy` and `no_proxy` environment variables apply, as in curl; `--no-proxy` connects directly. A `cookies.txt` file is in the Netscape format that browser export extensions write, and only the cookies that match each request are sent.
+
+Passwords, `Authorization` headers and `--cookie` values are never saved. Pass them again to `resume`.
+
+## Measure your own network
+
+`boltget bench` runs repeated, interleaved downloads and reports the median, interquartile range, min to max and MiB/s. Files are deleted after each run.
+
+```sh
+boltget bench https://example.com/100mb.bin --runs 5 -c auto,8
+boltget bench --targets bench/targets.toml --json
+```
+
+This is the tool behind the published [benchmarks](/benchmarks/).

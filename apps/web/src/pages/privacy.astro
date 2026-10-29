@@ -1,0 +1,23 @@
+---
+import { getEntry, render } from "astro:content";
+import Base from "../layouts/Base.astro";
+
+const entry = await getEntry("pages", "privacy");
+if (!entry) throw new Error("Missing src/content/pages/privacy.mdx");
+const { Content } = await render(entry);
+---
+
+<Base title={entry.data.title} description={entry.data.description}>
+  <article class="wrap">
+    <div class="prose page">
+      <h1>{entry.data.title}</h1>
+      <Content />
+    </div>
+  </article>
+</Base>
+
+<style>
+  .page {
+    padding-top: clamp(3rem, 8vh, 5rem);
+  }
+</style>

@@ -1,0 +1,257 @@
+---
+import { getEntry, render } from "astro:content";
+import Base from "../layouts/Base.astro";
+import PageIntro from "../components/PageIntro.astro";
+import { t, tDynamic } from "../i18n";
+import { fixed, latestRun, rowsFor, targetsOf, verdict, type SummaryRow } from "../lib/bench";
+import { longDate } from "../lib/format";
+
+const run = latestRun();
+const env = run.environment;
+const date = longDate(run.date);
+
+const notes = await getEntry("pages", "benchmark-notes");
+if (!notes) throw new Error("Missing src/content/pages/benchmark-notes.mdx");
+const { Content: Notes } = await render(notes);
+
+const isLab = (target: string) => target.startsWith("lab-");
+const toolLabel = (r: SummaryRow) =>
+  tDynamic(`bench.tools.${r.tool === "idm" ? "idm" : `boltget-${r.setting}`}`);
+const connections = (r: SummaryRow, target: string) => {
+  if (isLab(target)) return r.serverConnections?.toString() ?? "";
+  if (r.tool === "idm") return t("bench.table.defaultConnections");
+  return r.reportedConnections?.toString() ?? "";
+};
+const seconds = (v: number) => t("bench.table.seconds", { value: fixed(v, 2) });
+const range = (from: number, to: number) =>
+  t("bench.table.rangeValue", { from: fixed(from, 2), to: fixed(to, 2) });
+
+const tables = targetsOf(run).map((target) => ({
+  target,
+  about: tDynamic(`bench.targets.${target}`),
+  rows: rowsFor(run, target),
+  verdict: t(`bench.verdict.${verdict(run, target)}`),
+}));
+
+const setup = [
+  {
+    term: t("bench.setup.machine"),
+    value: t("bench.setup.machineValue", {
+      cpu: env.cpu,
+      cpus: env.logical_cpus,
+      ram: env.ram_gib,
+      disk: `${env.disks.FriendlyName} (${Math.round(env.disks.Size / 1e9)} GB)`,
+    }),
+  },
+  { term: t("bench.setup.os"), value: env.os },
+  {
+    term: t("bench.setup.network"),
+    value: t("bench.setup.networkValue", {
+      nic: env.network.InterfaceDescription,
+      speed: env.network.LinkSpeed,
+    }),
+  },
+  { term: t("bench.setup.idm"), value: t("bench.setup.idmValue", { version: env.idm_registry_version }) },
+  {
+    term: t("bench.setup.boltget"),
+    value: t("bench.setup.boltgetValue", {
+      version: env.boltget_version.replace(/^boltget\s+/, ""),
+      commit: env.boltget_commit,
+    }),
+  },
+];
+
+const resultsDir = `bench/results/${run.id}`;
+const raw = [
+  { href: t("site.repoTree", { path: resultsDir }), label: t("bench.raw.folder"), detail: resultsDir },
+  { href: t("site.repoBlob", { path: "docs/BENCHMARK.md" }), label: t("bench.raw.report"), detail: "docs/BENCHMARK.md" },
+  { href: t("site.repoTree", { path: "bench" }), label: t("bench.raw.harness"), detail: "bench/" },
+];
+---
+
+<Base title={t("bench.title")} description={t("bench.description")}>
+  <div class="wrap">
+    <PageIntro label={t("bench.label", { date })} title={t("bench.title")} lede={t("bench.lede")} />
+
+    <section aria-labelledby="setup">
+      <h2 id="setup">{t("bench.setupHeading")}</h2>
+      <dl class="setup">
+        {
+          setup.map((s) => (
+            <div>
+              <dt>{s.term}</dt>
+              <dd>{s.value}</dd>
+            </div>
+          ))
+        }
+      </dl>
+    </section>
+
+    <section aria-labelledby="results">
+      <h2 id="results">{t("bench.resultsHeading")}</h2>
+      <p class="muted note">{t("bench.resultsNote", { runs: env.runs, warmup: env.warmup })}</p>
+      <div class="tables">
+        {
+          tables.map((table) => (
+            <figure class="result">
+              <div class="table-scroll" tabindex="0" role="region" aria-label={table.target}>
+                <table class="data">
+                  <caption>
+                    <span class="caption">
+                      <span class="target num">{table.target}</span>
+                      <span class="about">{table.about}</span>
+                    </span>
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{t("bench.table.tool")}</th>
+                      <th scope="col" class="r">{t("bench.table.median")}</th>
+                      <th scope="col" class="r">{t("bench.table.iqr")}</th>
+                      <th scope="col" class="r">{t("bench.table.range")}</th>
+                      <th scope="col" class="r">{t("bench.table.throughput")}</th>
+                      <th scope="col" class="r">{t("bench.table.connections")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {table.rows.map((r) => (
+                      <tr class:list={{ bolt: r.tool === "boltget" && r.setting === "auto" }}>
+                        <th scope="row">{toolLabel(r)}</th>
+                        <td class="r strong">{seconds(r.medianS)}</td>
+                        <td class="r">{range(r.q1S, r.q3S)}</td>
+                        <td class="r">{range(r.minS, r.maxS)}</td>
+                        <td class="r">{fixed(r.medianMibS, 1)}</td>
+                        <td class="r">{connections(r, table.target)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <figcaption>{table.verdict}</figcaption>
+            </figure>
+          ))
+        }
+      </div>
+      <p class="muted small">{t("bench.connectionsNote")}</p>
+    </section>
+
+    <section class="prose notes" aria-labelledby="limits">
+      <h2 id="limits">{notes.data.title}</h2>
+      <Notes />
+    </section>
+
+    <section aria-labelledby="raw">
+      <h2 id="raw">{t("bench.raw.heading")}</h2>
+      <p class="muted note">{t("bench.raw.body")}</p>
+      <ul class="raw">
+        {
+          raw.map((r) => (
+            <li>
+              <a href={r.href}>{r.label}</a>
+              <span class="num muted">{r.detail}</span>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+  </div>
+</Base>
+
+<style>
+  section {
+    margin-top: 4rem;
+  }
+  .note {
+    margin-top: 0.75rem;
+  }
+  .small {
+    margin-top: 1.5rem;
+    font-size: 0.875rem;
+    max-width: 48rem;
+  }
+  .setup {
+    margin: 1.5rem 0 0;
+    border-top: 1px solid var(--border);
+  }
+  .setup div {
+    display: grid;
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+    gap: 0.25rem 1.5rem;
+    align-items: baseline;
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  @media (max-width: 36rem) {
+    .setup div {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .setup dt {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+  }
+  .setup dd {
+    margin: 0;
+    font-size: 0.9375rem;
+  }
+  .tables {
+    display: grid;
+    gap: 2rem;
+    margin-top: 1.5rem;
+  }
+  .result {
+    margin: 0;
+  }
+  .result figcaption {
+    margin-top: 0.625rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+  .caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.875rem;
+  }
+  .target {
+    color: var(--accent);
+    font-weight: 400;
+  }
+  .about {
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .strong {
+    color: var(--text);
+  }
+  tr.bolt th,
+  tr.bolt td {
+    background: var(--accent-subtle);
+  }
+  .notes {
+    max-width: 48rem;
+  }
+  .notes h2 {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .raw {
+    display: grid;
+    gap: 0.75rem;
+    margin: 1.25rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .raw li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    align-items: baseline;
+  }
+  .raw .num {
+    font-size: 0.8125rem;
+  }
+</style>

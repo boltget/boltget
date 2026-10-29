@@ -1,0 +1,29 @@
+---
+title: BoltGet documentation
+description: What BoltGet is today, and where to start.
+---
+
+BoltGet is a download manager built for speed. It splits each file across several connections, keeps every connection busy until the last byte, and resumes where it stopped, even after a crash or a power cut.
+
+## What exists today
+
+BoltGet is at **v0.1**: the download engine and the `boltget` command-line tool. It builds from source on Windows and Linux. There is no installer yet.
+
+| Milestone | What it brings |
+|---|---|
+| v0.1 (now) | Engine and CLI: segmented downloads, adaptive connections, crash-safe resume, link refresh, speed limits, checksums, proxies, cookies, `boltget bench` |
+| v0.2 | The Windows desktop app |
+| v0.3 | Browser extension for Chrome, Edge and Firefox |
+| v0.4 | Video and audio downloads |
+| v0.5 | Scheduler, queues and polish |
+| v1.0 | Public launch, signed installer |
+
+The full plan is in the [roadmap](https://github.com/boltget/boltget/blob/main/docs/ROADMAP.md).
+
+## Start here
+
+- [Install from source](/docs/getting-started/): build the CLI and make your first download.
+- [Using the CLI](/docs/cli/): pause and resume, link refresh, limits, checksums, proxies and benchmarks.
+- [Exit codes and JSON](/docs/cli/scripting/): for scripts.
+
+These pages are for people using BoltGet. The design documents for contributors live in the repository's [`docs/` folder](https://github.com/boltget/boltget/tree/main/docs).

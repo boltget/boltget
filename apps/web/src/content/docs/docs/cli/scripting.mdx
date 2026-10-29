@@ -1,0 +1,47 @@
+---
+title: Exit codes and JSON
+description: The exit codes of boltget and its line-delimited JSON events, for scripts.
+---
+
+`boltget get --help` prints both lists for your build; this page explains them.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success: the download completed |
+| 1 | Internal or unexpected error |
+| 2 | Invalid command line |
+| 3 | Network failure after all retries (timeouts, resets, 5xx, 429) |
+| 4 | The request cannot succeed: invalid or unsupported URL, 404, 401/403, TLS certificate errors, too many or insecure redirects |
+| 5 | Local disk problem: no space, permission denied, file system limit, partial file missing |
+| 6 | The file changed on the server, the link stopped working (give it a new one with `boltget refresh`), or `refresh` rejected a link to another file |
+| 7 | The download database is in use by another `boltget` process, or cannot be opened |
+| 8 | No download with that id, or the command does not apply to it (for example resuming a completed download) |
+| 9 | The file does not match its checksum; it is kept as `<name>.boltget` |
+| 130 | Interrupted with Ctrl-C: the download is paused; continue it with `boltget resume <id>` |
+
+## JSON events
+
+With `--json`, `get`, `resume` and `refresh` print one JSON object per line on stdout. Every object has an `event` field:
+
+| Event | When |
+|---|---|
+| `added` | The download got its id |
+| `probed` | The server answered: size, resumability, file name, destination |
+| `resumed` | Continuing from a checkpoint |
+| `state_changed` | Probing, downloading, retrying, verifying, paused, completed, failed, cancelled, corrupt, needs_new_link |
+| `refreshed` | `refresh` accepted the new link, with the evidence |
+| `segments_changed` | A segment was split or reassigned |
+| `progress` | Every 500 ms: bytes, speed, time left, connections, segments |
+| `completed` | Done: path, bytes, time, speed, checksum verified |
+| `paused` | Stopped with Ctrl-C |
+| `failed` | Stopped with an error and its exit code |
+
+The last line is always `completed`, `paused` or `failed`. Sizes are bytes and speeds bytes per second. URLs have their query redacted.
+
+`boltget list --json` prints one JSON array with an object per download (id, state, URL, file name, sizes, checksum and timestamps).
+
+```sh
+boltget get https://example.com/file.iso --json | jq -c 'select(.event == "completed")'
+```

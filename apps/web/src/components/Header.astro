@@ -1,0 +1,95 @@
+---
+import lockup from "../../../../brand/svg/lockup-horizontal-on-dark.svg";
+import { t } from "../i18n";
+
+const path = Astro.url.pathname.replace(/\/$/, "") || "/";
+const links = [
+  { href: "/benchmarks/", label: t("nav.benchmarks"), match: "/benchmarks" },
+  { href: "/compare/idm/", label: t("nav.compare"), match: "/compare" },
+  { href: "/docs/", label: t("nav.docs"), match: "/docs" },
+  { href: "/changelog/", label: t("nav.changelog"), match: "/changelog", wide: true },
+  { href: t("site.repo"), label: t("nav.github"), match: null, wide: true },
+];
+const height = 26;
+const width = Math.round((lockup.width / lockup.height) * height);
+---
+
+<header class="header">
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label={t("nav.home")}>
+      <img src={lockup.src} width={width} height={height} alt="" />
+    </a>
+    <nav aria-label={t("nav.label")}>
+      <ul>
+        {
+          links.map((link) => (
+            <li class:list={{ wide: link.wide }}>
+              <a
+                href={link.href}
+                aria-current={link.match !== null && path.startsWith(link.match) ? "page" : undefined}
+              >
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: var(--header-h);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  }
+  .bar {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .brand {
+    flex: none;
+    display: block;
+    padding-block: 0.5rem;
+  }
+  ul {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  nav a {
+    display: block;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-radius: var(--radius);
+  }
+  nav a:hover {
+    color: var(--text);
+  }
+  nav a[aria-current="page"] {
+    color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+    border-radius: 0;
+  }
+  @media (max-width: 40rem) {
+    .wide {
+      display: none;
+    }
+    nav a {
+      padding-inline: 0.5rem;
+    }
+  }
+</style>

@@ -1,0 +1,6 @@
+Contact: https://github.com/boltget/boltget/security/advisories/new
+Contact: mailto:security@boltget.app
+Expires: 2027-10-28T00:00:00.000Z
+Policy: https://github.com/boltget/boltget/blob/main/SECURITY.md
+Preferred-Languages: en
+Canonical: https://boltget.app/.well-known/security.txt

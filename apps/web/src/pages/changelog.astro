@@ -1,0 +1,23 @@
+---
+import { getCollection, render } from "astro:content";
+import Base from "../layouts/Base.astro";
+import { t } from "../i18n";
+
+const [entry] = await getCollection("changelog");
+if (!entry) throw new Error("CHANGELOG.md was not found at the repository root");
+const { Content } = await render(entry);
+---
+
+<Base title={t("changelog.title")} description={t("changelog.description")}>
+  <article class="wrap">
+    <div class="prose changelog">
+      <Content />
+    </div>
+  </article>
+</Base>
+
+<style>
+  .changelog {
+    padding-top: clamp(3rem, 8vh, 5rem);
+  }
+</style>

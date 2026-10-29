@@ -1,0 +1,49 @@
+---
+title: Install from source
+description: Build the boltget command-line tool with Rust and make your first download.
+---
+
+The v0.1 preview is built from source. It takes a few minutes the first time.
+
+## Requirements
+
+- **Rust**, installed with [rustup](https://rustup.rs). The repository pins the exact toolchain in `rust-toolchain.toml`, and rustup picks it up on its own.
+- **Windows:** Visual Studio Build Tools with the "Desktop development with C++" workload, for the MSVC toolchain.
+- **Linux:** a C compiler (for example `build-essential` on Debian and Ubuntu).
+- **Git**, to clone the repository.
+
+## Build
+
+```sh
+git clone https://github.com/boltget/boltget.git
+cd boltget
+cargo build --release -p boltget-cli
+```
+
+The binary is `target/release/boltget` (`boltget.exe` on Windows). To put it on your `PATH` instead:
+
+```sh
+cargo install --locked --path crates/cli
+```
+
+You can also run it without installing: `cargo run --release -p boltget-cli -- get <url>`.
+
+## First download
+
+```sh
+boltget get https://example.com/file.iso
+```
+
+`boltget` shows a progress bar with the speed, the time left and a map of the segments. Without `-o`, the file goes to the current directory under the name the server gives it. It never overwrites an existing file unless you pass `--overwrite`.
+
+Press **Ctrl-C** to pause. The download keeps its progress and an id:
+
+```sh
+boltget list
+boltget resume 1
+```
+
+## Next
+
+- [Using the CLI](/docs/cli/) covers every command.
+- Run `boltget --help` or `boltget help get` for the full list of options; the help is the reference for your build.

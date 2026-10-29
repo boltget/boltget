@@ -1,0 +1,253 @@
+{
+  "site": {
+    "name": "BoltGet",
+    "description": "A download manager built for speed. Splits every file across many connections and resumes where it stopped, even after a crash.",
+    "skip": "Skip to content",
+    "repo": "https://github.com/boltget/boltget",
+    "repoTree": "https://github.com/boltget/boltget/tree/main/{path}",
+    "repoBlob": "https://github.com/boltget/boltget/blob/main/{path}"
+  },
+  "nav": {
+    "label": "Main",
+    "home": "BoltGet home",
+    "benchmarks": "Benchmarks",
+    "compare": "Compare",
+    "docs": "Docs",
+    "changelog": "Changelog",
+    "github": "GitHub"
+  },
+  "footer": {
+    "license": "GPL-3.0-or-later. No ads, no account, no telemetry.",
+    "source": "Source code",
+    "privacy": "Privacy",
+    "security": "Security",
+    "docs": "Docs",
+    "changelog": "Changelog",
+    "credit": "Built by the BoltGet contributors.",
+    "nav": "Footer"
+  },
+  "home": {
+    "title": "BoltGet: every byte, at full speed",
+    "description": "A download manager built for speed. Splits every file across many connections and keeps each one busy until the last byte.",
+    "label": "Download manager",
+    "headline": "Every byte, at full speed.",
+    "sentence": "Splits every file across many connections and keeps each one busy until the last byte.",
+    "primary": "Try the CLI preview",
+    "secondary": "See the benchmark",
+    "status": "v0.1 is the engine and the command-line tool. The Windows app arrives in v0.2.",
+    "stage": {
+      "title": "The BoltGet arrow lights up row by row, then a progress bar fills in segments that split in two as connections finish. A simulation, not a real download.",
+      "honesty": "Simulated.",
+      "honestyLink": "See real benchmarks",
+      "staticLabel": "One file, six segments, finished together.",
+      "connections": {
+        "one": "{count} connection",
+        "other": "{count} connections"
+      },
+      "progress": "{done} of {total} MiB",
+      "speed": "{value} MiB/s",
+      "done": "Done"
+    },
+    "proof": {
+      "heading": "What it does",
+      "fast": {
+        "title": "Fast",
+        "body": "{lab} MiB/s median on a 1 GiB file over loopback, and {cdn} MiB/s from a public CDN over a home line. Measured on {date}.",
+        "link": "Method and raw data"
+      },
+      "resume": {
+        "title": "Never loses progress",
+        "body": "Progress is saved only once the bytes are on disk. Kill it mid-download and it resumes where it stopped: 1,000 kill-and-resume cycles in testing, every file byte-identical.",
+        "link": "How resume works"
+      },
+      "browser": {
+        "title": "Catches downloads from the browser",
+        "body": "An extension for Chrome, Edge and Firefox hands downloads to BoltGet with their cookies and referrer, so signed links keep working. Arrives in v0.3.",
+        "link": "See the roadmap"
+      }
+    },
+    "features": {
+      "heading": "Built into the engine",
+      "segmentation": {
+        "title": "Dynamic segmentation",
+        "body": "When a connection finishes early, it takes over half of the largest remaining part, so every connection finishes together."
+      },
+      "adaptive": {
+        "title": "Adaptive connections",
+        "body": "Starts with 4 connections and adds more only while they make the download faster. Backs off when a server asks it to."
+      },
+      "refresh": {
+        "title": "Link refresh",
+        "body": "Signed link expired at 97%? Give it a new one. BoltGet checks it is the same file and continues instead of starting over."
+      },
+      "limits": {
+        "title": "Speed limits",
+        "body": "Per download and global, changed without reconnecting."
+      },
+      "checksums": {
+        "title": "Checksums",
+        "body": "SHA-256, SHA-512, SHA-1 or MD5, plus digests the server sends. Hashed while it downloads, so there is no wait at the end."
+      },
+      "network": {
+        "title": "Proxies and cookies",
+        "body": "HTTP, HTTPS and SOCKS5 proxies, browser cookies.txt files matched per request, HTTP Basic auth."
+      }
+    },
+    "cli": {
+      "heading": "Scriptable from the first release",
+      "body": "Documented exit codes and line-delimited JSON for every state change.",
+      "caption": "Commands from the v0.1 command-line tool."
+    },
+    "cta": {
+      "heading": "Build it, run it, measure it.",
+      "body": "The v0.1 preview builds from source with Rust on Windows and Linux. boltget bench measures it on your own network.",
+      "primary": "Try the CLI preview",
+      "secondary": "View on GitHub"
+    }
+  },
+  "bench": {
+    "title": "Benchmarks",
+    "description": "How BoltGet's download times are measured, with dated results, the comparison with IDM and links to the raw data.",
+    "label": "Measured {date}",
+    "lede": "Every number on this page is read from a published run, with the raw data in the repository. Nothing is estimated or rounded in BoltGet's favour. A difference is claimed only when the run-to-run spreads do not overlap.",
+    "setupHeading": "Setup",
+    "resultsHeading": "Results",
+    "resultsNote": "Wall-clock seconds, {runs} measured runs per configuration after {warmup} warm-up run.",
+    "setup": {
+      "machine": "Machine",
+      "machineValue": "{cpu} ({cpus} logical CPUs), {ram} GiB RAM, {disk}",
+      "os": "Operating system",
+      "network": "Network",
+      "networkValue": "{nic}, {speed} link, wired",
+      "idm": "IDM",
+      "idmValue": "{version}, settings as installed",
+      "boltget": "BoltGet",
+      "boltgetValue": "{version}, engine at commit {commit}, release build"
+    },
+    "table": {
+      "caption": "{target}: {about}",
+      "tool": "Configuration",
+      "median": "Median",
+      "iqr": "q1 to q3",
+      "range": "min to max",
+      "throughput": "MiB/s",
+      "connections": "Connections",
+      "seconds": "{value} s",
+      "rangeValue": "{from} to {to} s",
+      "defaultConnections": "8 (default)"
+    },
+    "tools": {
+      "idm": "IDM, default",
+      "boltget-auto": "BoltGet, adaptive",
+      "boltget-8": "BoltGet, 8 connections"
+    },
+    "verdict": {
+      "faster": "Every adaptive BoltGet run was faster than every IDM run.",
+      "slower": "Every IDM run was faster than every adaptive BoltGet run.",
+      "overlap": "The spreads overlap, so no difference is claimed."
+    },
+    "targets": {
+      "cachefly-10mb": "10 MiB from the CacheFly CDN over HTTP",
+      "cachefly-100mb": "100 MiB from the CacheFly CDN over HTTP",
+      "nforce-100mb": "100 MiB from NFOrce in the Netherlands over HTTPS",
+      "lab-throttled-100mib": "100 MiB from a local server that limits every connection to 2 MiB/s",
+      "lab-1gib": "1 GiB from a local server over loopback, no limit"
+    },
+    "connectionsNote": "Connections: for local targets, the most simultaneous connections the server saw; for public targets, BoltGet's own count (IDM's is not visible from outside).",
+    "raw": {
+      "heading": "Raw data",
+      "body": "Every run, including warm-ups, with the environment and the target list used:",
+      "folder": "Results folder",
+      "report": "Full report with method and reading",
+      "harness": "Benchmark harness"
+    }
+  },
+  "compare": {
+    "title": "BoltGet and IDM",
+    "description": "What BoltGet and Internet Download Manager each do today, what BoltGet has measured against IDM, and how IDM concepts map to BoltGet.",
+    "label": "Comparison",
+    "lede": "Internet Download Manager is a mature, capable download manager. This page sets out what each one does and what has been measured, so the facts can speak.",
+    "reviewed": "Last reviewed: {date}, IDM version {idm}.",
+    "statusNote": "BoltGet is at v0.1: the engine and the command-line tool. Rows with a milestone are planned, not shipped.",
+    "unknownNote": "Unknown: we could not confirm it either way. If you know, please open an issue with a source.",
+    "features": {
+      "heading": "Features",
+      "feature": "Feature",
+      "boltget": "BoltGet",
+      "status": "Status",
+      "idm": "IDM",
+      "now": "Available now",
+      "none": "",
+      "groups": {
+        "engine": "Engine",
+        "app": "Desktop app",
+        "browser": "Browser and video",
+        "cli": "Command line",
+        "platform": "Platform"
+      }
+    },
+    "bench": {
+      "heading": "Measured download times",
+      "body": "Both tools at their defaults, medians of {runs} runs on {date}. The benchmark page has the spreads, a fixed 8-connection BoltGet configuration and the raw data.",
+      "target": "Target",
+      "idm": "IDM",
+      "boltget": "BoltGet",
+      "result": "Result",
+      "faster": "BoltGet faster in every run",
+      "slower": "IDM faster in every run",
+      "overlap": "No difference claimed",
+      "link": "Full benchmark"
+    },
+    "moving": {
+      "heading": "Moving from IDM",
+      "body": "How IDM's concepts map to BoltGet, and when each one arrives.",
+      "idm": "In IDM",
+      "boltget": "In BoltGet",
+      "rows": {
+        "connections": {
+          "idm": "Max. connections number",
+          "boltget": "Adaptive by default; -c N fixes the count, --max-connections caps it. Available now."
+        },
+        "refresh": {
+          "idm": "Refresh download address",
+          "boltget": "boltget refresh <id> <new-url>, which checks that the new link is the same file. Available now."
+        },
+        "limiter": {
+          "idm": "Speed limiter",
+          "boltget": "--limit on a download, boltget config set limit for all of them. Available now."
+        },
+        "categories": {
+          "idm": "Categories",
+          "boltget": "Categories with destination folders, in the desktop app (v0.2)."
+        },
+        "queues": {
+          "idm": "Queues and scheduler",
+          "boltget": "Queues in v0.2, time windows and when-done actions in v0.5."
+        },
+        "browser": {
+          "idm": "Browser integration",
+          "boltget": "The BoltGet extension for Chrome, Edge and Firefox (v0.3)."
+        },
+        "import": {
+          "idm": "Your download list and settings",
+          "boltget": "Import is being investigated for v1.0."
+        }
+      }
+    },
+    "license": {
+      "heading": "License",
+      "body": "BoltGet is free and open source under GPL-3.0-or-later. IDM is proprietary software, sold after a trial period."
+    }
+  },
+  "changelog": {
+    "title": "Changelog",
+    "description": "Every notable change to BoltGet, rendered from CHANGELOG.md in the repository."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "This page does not exist.",
+    "heading": "Nothing at this address.",
+    "body": "The page may have moved, or the link may be mistyped.",
+    "home": "Go to the home page"
+  }
+}

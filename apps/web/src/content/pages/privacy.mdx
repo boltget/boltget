@@ -1,0 +1,34 @@
+---
+title: Privacy
+description: What the BoltGet website, command-line tool, app and extension collect. By default, nothing.
+---
+
+BoltGet collects nothing about you by default. This page says exactly what each part does, in plain words. If that ever changes, it changes here first.
+
+## This website
+
+- No cookies, no analytics, no tracking scripts, no advertising.
+- No third-party requests: fonts, images and scripts are served from boltget.app itself.
+- Docs search runs in your browser on a prebuilt index. What you type is not sent anywhere.
+- The site is static files on a hosting provider, which may keep standard request logs (IP address, time, page requested) for security and operations. BoltGet does not use them to identify or track visitors. The provider will be named here when the site launches.
+- Links to GitHub take you to GitHub, which has its own privacy policy.
+
+## The command-line tool (v0.1)
+
+- It connects only to the addresses you give it, the servers they redirect to, and the proxy you configure. It sends no telemetry and checks for no updates.
+- Your download list lives on your own disk: `%LOCALAPPDATA%\BoltGet` on Windows, `$XDG_DATA_HOME/boltget` on Linux. It holds each download's address, file name, progress and the settings you chose.
+- `Authorization` headers, proxy passwords, `--cookie` values and `--user` credentials are never written to disk. For a cookie file, only its path is saved; the file is read again when you resume.
+- Addresses in logs, JSON events and `boltget list` are shown with credentials removed, because signed links carry secrets.
+- Finished files get the Windows Mark of the Web, like browser downloads; the address recorded there has its query string and credentials removed.
+
+## The desktop app and extension (planned)
+
+- **No telemetry.** Crash reports, if they are added, will be opt-in and show you the report before anything is sent.
+- **Update checks** will send only the app's version, operating system and architecture.
+- **The browser extension** will collect no data for BoltGet. Cookies and headers it forwards go only to the BoltGet app on your own computer, over the browser's native messaging, never to a server.
+
+Both will be documented here in full before they are released.
+
+## Questions
+
+Ask in [GitHub Discussions](https://github.com/boltget/boltget/discussions), or see the [security policy](https://github.com/boltget/boltget/blob/main/SECURITY.md) to report a problem privately.

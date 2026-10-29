@@ -1,0 +1,222 @@
+---
+import { getCollection } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import { t, tDynamic } from "../../i18n";
+import { fixed, latestRun, rowOf, targetsOf, verdict } from "../../lib/bench";
+import { longDate } from "../../lib/format";
+import order from "../../data/compare-idm.json";
+
+const run = latestRun();
+// Collections come back sorted by id; keep the order of the data file.
+const position = new Map(order.map((row, i) => [row.id, i]));
+const rows = (await getCollection("compare")).sort(
+  (a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0),
+);
+const groups = ["engine", "app", "browser", "cli", "platform"].map((group) => ({
+  group,
+  label: tDynamic(`compare.features.groups.${group}`),
+  rows: rows.filter((r) => r.data.group === group).map((r) => r.data),
+}));
+const status = (milestone: string) =>
+  milestone === "now" ? t("compare.features.now") : milestone === "none" ? "" : milestone;
+
+const bench = targetsOf(run).map((target) => {
+  const idm = rowOf(run, target, "idm", "default");
+  const bolt = rowOf(run, target, "boltget", "auto");
+  return {
+    target,
+    about: tDynamic(`bench.targets.${target}`),
+    idm: t("bench.table.seconds", { value: fixed(idm.medianS, 2) }),
+    bolt: t("bench.table.seconds", { value: fixed(bolt.medianS, 2) }),
+    verdict: verdict(run, target),
+  };
+});
+
+const moving = ["connections", "refresh", "limiter", "categories", "queues", "browser", "import"].map((key) => ({
+  idm: tDynamic(`compare.moving.rows.${key}.idm`),
+  boltget: tDynamic(`compare.moving.rows.${key}.boltget`),
+}));
+
+// Reviewed together with the latest benchmark run; update both before each minor release.
+const reviewed = t("compare.reviewed", {
+  date: longDate(run.date),
+  idm: run.environment.idm_registry_version
+    .replace(/^v/, "")
+    .replace(/\s*trial$/i, "")
+    .replace(/b(\d+)$/, " build $1"),
+});
+---
+
+<Base title={t("compare.title")} description={t("compare.description")}>
+  <div class="wrap">
+    <PageIntro label={t("compare.label")} title={t("compare.title")} lede={t("compare.lede")}>
+      <p class="reviewed num">{reviewed}</p>
+    </PageIntro>
+
+    <section aria-labelledby="bench">
+      <h2 id="bench">{t("compare.bench.heading")}</h2>
+      <p class="muted note">{t("compare.bench.body", { runs: run.environment.runs, date: longDate(run.date) })}</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-labelledby="bench">
+        <table class="data">
+          <thead>
+            <tr>
+              <th scope="col">{t("compare.bench.target")}</th>
+              <th scope="col" class="r">{t("compare.bench.idm")}</th>
+              <th scope="col" class="r">{t("compare.bench.boltget")}</th>
+              <th scope="col">{t("compare.bench.result")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              bench.map((b) => (
+                <tr>
+                  <th scope="row">
+                    <span class="num target">{b.target}</span>
+                    <span class="about">{b.about}</span>
+                  </th>
+                  <td class="r">{b.idm}</td>
+                  <td class="r strong">{b.bolt}</td>
+                  <td class:list={["verdict", b.verdict]}>{tDynamic(`compare.bench.${b.verdict}`)}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="more"><a href="/benchmarks/">{t("compare.bench.link")}</a></p>
+    </section>
+
+    <section aria-labelledby="features">
+      <h2 id="features">{t("compare.features.heading")}</h2>
+      <p class="muted note">{t("compare.statusNote")}</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-labelledby="features">
+        <table class="data features">
+          <thead>
+            <tr>
+              <th scope="col">{t("compare.features.feature")}</th>
+              <th scope="col">{t("compare.features.boltget")}</th>
+              <th scope="col">{t("compare.features.status")}</th>
+              <th scope="col">{t("compare.features.idm")}</th>
+            </tr>
+          </thead>
+          {
+            groups.map((g) => (
+              <tbody>
+                <tr class="group">
+                  <th scope="colgroup" colspan="4">
+                    {g.label}
+                  </th>
+                </tr>
+                {g.rows.map((r) => (
+                  <tr>
+                    <th scope="row">{r.feature}</th>
+                    <td>{r.boltget}</td>
+                    <td class:list={["status", { now: r.milestone === "now" }]}>{status(r.milestone)}</td>
+                    <td>{r.idm}</td>
+                  </tr>
+                ))}
+              </tbody>
+            ))
+          }
+        </table>
+      </div>
+      <p class="muted small">{t("compare.unknownNote")}</p>
+    </section>
+
+    <section aria-labelledby="moving">
+      <h2 id="moving">{t("compare.moving.heading")}</h2>
+      <p class="muted note">{t("compare.moving.body")}</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-labelledby="moving">
+        <table class="data">
+          <thead>
+            <tr>
+              <th scope="col">{t("compare.moving.idm")}</th>
+              <th scope="col">{t("compare.moving.boltget")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              moving.map((m) => (
+                <tr>
+                  <th scope="row">{m.idm}</th>
+                  <td>{m.boltget}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="license" class="license">
+      <h2 id="license">{t("compare.license.heading")}</h2>
+      <p class="muted note">{t("compare.license.body")}</p>
+    </section>
+  </div>
+</Base>
+
+<style>
+  section {
+    margin-top: 4rem;
+  }
+  .reviewed {
+    margin-top: 1.25rem;
+    font-size: 0.8125rem;
+    color: var(--text-subtle);
+  }
+  .note {
+    margin-top: 0.75rem;
+    margin-bottom: 1.5rem;
+    max-width: 48rem;
+  }
+  .small {
+    margin-top: 1rem;
+    font-size: 0.875rem;
+  }
+  .more {
+    margin-top: 1rem;
+  }
+  .target {
+    display: block;
+    color: var(--accent);
+  }
+  .about {
+    display: block;
+    margin-top: 0.125rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+  .strong {
+    color: var(--text);
+  }
+  .verdict {
+    white-space: nowrap;
+  }
+  .verdict.faster {
+    color: var(--text);
+  }
+  .features tbody th {
+    min-width: 16rem;
+  }
+  .group th {
+    padding-top: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--bg);
+  }
+  .status {
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .status.now {
+    color: var(--accent);
+  }
+  .license {
+    margin-top: 5rem;
+  }
+</style>

@@ -1,0 +1,326 @@
+---
+import Base from "../layouts/Base.astro";
+import HeroStage from "../components/HeroStage.svelte";
+import PixelGlyph from "../components/PixelGlyph.astro";
+import { t, forms, raw } from "../i18n";
+import { fixed, latestRun, rowOf } from "../lib/bench";
+import { longDate } from "../lib/format";
+
+const run = latestRun();
+const lab = rowOf(run, "lab-1gib", "boltget", "auto");
+const cdn = rowOf(run, "cachefly-100mb", "boltget", "auto");
+
+const proof = [
+  {
+    id: "fast",
+    title: t("home.proof.fast.title"),
+    body: t("home.proof.fast.body", {
+      lab: fixed(lab.medianMibS, 1),
+      cdn: fixed(cdn.medianMibS, 1),
+      date: longDate(run.date),
+    }),
+    link: t("home.proof.fast.link"),
+    href: "/benchmarks/",
+    pattern: ["########....", "#####.......", "##########..", "######......"],
+  },
+  {
+    id: "resume",
+    title: t("home.proof.resume.title"),
+    body: t("home.proof.resume.body"),
+    link: t("home.proof.resume.link"),
+    href: "/docs/cli/#pause-and-resume",
+    pattern: ["##### ####..", "##### ####..", "##### ####.."],
+  },
+  {
+    id: "browser",
+    title: t("home.proof.browser.title"),
+    body: t("home.proof.browser.body"),
+    link: t("home.proof.browser.link"),
+    href: t("site.repoBlob", { path: "docs/ROADMAP.md" }),
+    pattern: [
+      "++++++++++++",
+      "+....#.....+",
+      "+....#.....+",
+      "+..#####...+",
+      "+...###....+",
+      "+....#.....+",
+      "++++++++++++",
+    ],
+  },
+];
+
+const features = (["segmentation", "adaptive", "refresh", "limits", "checksums", "network"] as const).map(
+  (key) => ({
+    title: t(`home.features.${key}.title`),
+    body: t(`home.features.${key}.body`),
+  }),
+);
+
+const commands = [
+  "boltget get https://example.com/ubuntu.iso --checksum sha256:<hex>",
+  "boltget list",
+  "boltget resume 7",
+  "boltget get https://example.com/big.zip --limit 5M --json",
+];
+
+const labels = {
+  title: t("home.stage.title"),
+  honesty: t("home.stage.honesty"),
+  honestyLink: t("home.stage.honestyLink"),
+  honestyHref: "/benchmarks/",
+  staticLabel: t("home.stage.staticLabel"),
+  connections: forms("home.stage.connections"),
+  progress: raw("home.stage.progress"),
+  speed: raw("home.stage.speed"),
+  done: t("home.stage.done"),
+};
+---
+
+<Base title={t("home.title")} description={t("home.description")} bareTitle>
+  <noscript slot="head"><style>[data-hero-static]{visibility:visible!important}</style></noscript>
+
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-inner">
+      <p class="label">{t("home.label")}</p>
+      <h1 id="hero-title">{t("home.headline")}</h1>
+      <p class="sentence">{t("home.sentence")}</p>
+      <div class="actions">
+        <a class="button button-primary" href="/docs/getting-started/">{t("home.primary")}</a>
+        <a class="button button-secondary" href="/benchmarks/">{t("home.secondary")}</a>
+      </div>
+      <p class="status">{t("home.status")}</p>
+      <div class="stage-wrap">
+        <HeroStage client:visible labels={labels} />
+      </div>
+    </div>
+  </section>
+
+  <section class="proof" aria-labelledby="proof-title">
+    <div class="wrap">
+      <h2 id="proof-title" class="visually-hidden">{t("home.proof.heading")}</h2>
+      <ul class="proof-grid">
+        {
+          proof.map((p) => (
+            <li class="proof-item">
+              <PixelGlyph pattern={p.pattern} id={p.id} />
+              <h3>{p.title}</h3>
+              <p>{p.body}</p>
+              <a href={p.href}>{p.link}</a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <h2 id="features-title">{t("home.features.heading")}</h2>
+      <ul class="feature-grid">
+        {
+          features.map((f) => (
+            <li>
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="cli" aria-labelledby="cli-title">
+    <div class="wrap cli-inner">
+      <div class="cli-copy">
+        <h2 id="cli-title">{t("home.cli.heading")}</h2>
+        <p class="muted">{t("home.cli.body")}</p>
+      </div>
+      <figure class="terminal">
+        <pre tabindex="0"><code>{commands.map((c) => <span class="line"><span class="prompt" aria-hidden="true">$ </span>{c}{"\n"}</span>)}</code></pre>
+        <figcaption>{t("home.cli.caption")}</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="wrap cta-inner">
+      <h2 id="cta-title">{t("home.cta.heading")}</h2>
+      <p class="muted">{t("home.cta.body")}</p>
+      <div class="actions">
+        <a class="button button-primary" href="/docs/getting-started/">{t("home.cta.primary")}</a>
+        <a class="button button-secondary" href={t("site.repo")}>{t("home.cta.secondary")}</a>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero {
+    position: relative;
+    padding-block: clamp(2.5rem, 7vh, 4.5rem) 2rem;
+    overflow: hidden;
+  }
+  /* The chunk grid of the social art: faint squares fading out from the mark. */
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: conic-gradient(at 20px 20px, transparent 75%, var(--grid-line) 0);
+    background-size: 24px 24px;
+    background-position: center top;
+    mask-image: radial-gradient(ellipse 60% 55% at 50% 62%, #000 0%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 62%, #000 0%, transparent 100%);
+    pointer-events: none;
+  }
+  .hero-inner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  h1 {
+    margin-top: 1.25rem;
+    font-size: clamp(2.5rem, 7vw, 4.75rem);
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+  .sentence {
+    margin-top: 1.25rem;
+    max-width: 34rem;
+    font-size: clamp(1.0625rem, 2vw, 1.25rem);
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+  .status {
+    margin-top: 1rem;
+    font-size: 0.8125rem;
+    color: var(--text-subtle);
+  }
+  .stage-wrap {
+    width: min(100%, 45rem, max(20rem, calc((100svh - 25rem) * 1.55)));
+    margin-top: clamp(2.5rem, 6vh, 4rem);
+  }
+
+  .proof {
+    padding-block: 5rem 2rem;
+  }
+  .proof-grid,
+  .feature-grid {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .proof-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+  .proof-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 2rem 1.75rem;
+    background: var(--bg);
+  }
+  .proof-item :global(.glyph) {
+    margin-bottom: 0.75rem;
+  }
+  .proof-item p {
+    color: var(--text-muted);
+    flex: 1;
+  }
+  .proof-item a {
+    font-size: 0.9375rem;
+  }
+
+  .features {
+    padding-block: 5rem 2rem;
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 2.5rem 2rem;
+    margin-top: 2.5rem;
+  }
+  .feature-grid li {
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border-strong);
+  }
+  .feature-grid p {
+    margin-top: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+  }
+
+  .cli {
+    padding-block: 5rem 2rem;
+  }
+  .cli-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+    gap: 2.5rem;
+    align-items: center;
+  }
+  .cli-copy p {
+    margin-top: 0.75rem;
+  }
+  .terminal {
+    margin: 0;
+    min-width: 0;
+  }
+  .terminal pre {
+    margin: 0;
+    padding: 1.25rem 1.5rem;
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    line-height: 1.9;
+    color: var(--text);
+  }
+  .prompt {
+    color: var(--accent);
+    user-select: none;
+  }
+  .terminal figcaption {
+    margin-top: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--text-subtle);
+  }
+
+  .cta {
+    padding-block: 6rem 1rem;
+  }
+  .cta-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .cta-inner p {
+    margin-top: 0.875rem;
+    max-width: 36rem;
+  }
+
+  @media (max-width: 48rem) {
+    .cli-inner {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 30rem) {
+    .actions {
+      flex-direction: column;
+      align-self: stretch;
+    }
+  }
+</style>

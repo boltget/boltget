@@ -1,0 +1,9 @@
+# Copied from brand/ by scripts/copy-brand.mjs; brand/ is the source.
+/public/favicon.ico
+/public/favicon.svg
+/public/apple-touch-icon.png
+/public/icon-192.png
+/public/icon-512.png
+/public/icon-maskable-512.png
+/public/site.webmanifest
+/public/og-image.png

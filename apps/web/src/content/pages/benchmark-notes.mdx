@@ -1,0 +1,18 @@
+---
+title: What this run does not show
+description: Limits of the published benchmark run.
+---
+
+- **One machine, one line, one afternoon.** Public results depend on the route and the time of day. They show these hosts from this line, not the general case.
+- **Only IDM's defaults.** The plan also calls for IDM at 32 connections; that needs a manual change in IDM's settings and was not run.
+- **No shaped network.** The local server throttles each connection, but added latency, packet loss, server-side connection limits and HTTP/2 are not covered yet.
+- **External timing for IDM.** The time covers everything IDM does between accepting a link and closing the file. There are no throughput curves, CPU or memory figures for either tool.
+- **Five runs.** Enough to see large differences; not enough to rank configurations whose spreads overlap.
+
+## Since this run
+
+The adaptive connection controller was changed after this run, for servers that limit the speed of each connection, where the adaptive default had been slower than a fixed 8 connections. The numbers on this page are the run as published and are not edited; the new measurements are in the [engine specification](https://github.com/boltget/boltget/blob/main/docs/ENGINE.md#open-questions) until the next full run.
+
+## Run it yourself
+
+`boltget bench` runs the same kind of measurement on your own network: repeated, interleaved runs with the median, interquartile range and min to max. The [CLI docs](/docs/cli/#measure-your-own-network) show how.

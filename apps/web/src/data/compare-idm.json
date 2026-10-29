@@ -1,0 +1,35 @@
+[
+  { "id": "segmented", "group": "engine", "feature": "Multi-connection (segmented) HTTP and HTTPS downloads", "boltget": "Yes", "milestone": "now", "idm": "Yes" },
+  { "id": "dynamic", "group": "engine", "feature": "Dynamic segmentation: a connection that finishes early takes over half of the largest remaining part", "boltget": "Yes", "milestone": "now", "idm": "Yes" },
+  { "id": "adaptive", "group": "engine", "feature": "Connection count adapted from measured throughput", "boltget": "Yes: starts at 4, adds connections only while they help", "milestone": "now", "idm": "Unknown" },
+  { "id": "max-connections", "group": "engine", "feature": "Maximum connections per download", "boltget": "Up to 32 (adaptive default caps at 16)", "milestone": "now", "idm": "Up to 32" },
+  { "id": "http2", "group": "engine", "feature": "HTTP/2, one connection per segment", "boltget": "Yes", "milestone": "now", "idm": "Unknown" },
+  { "id": "resume", "group": "engine", "feature": "Resume after pause, crash or reboot", "boltget": "Yes, checkpointed to SQLite", "milestone": "now", "idm": "Yes" },
+  { "id": "crash-safe", "group": "engine", "feature": "Progress recorded only after the data is on disk", "boltget": "Yes", "milestone": "now", "idm": "Unknown" },
+  { "id": "refresh", "group": "engine", "feature": "Continue with a new link after the old one expires", "boltget": "Yes, checked by size and ETag or sample bytes", "milestone": "now", "idm": "Yes" },
+  { "id": "limits", "group": "engine", "feature": "Global and per-download speed limits", "boltget": "Yes", "milestone": "now", "idm": "Yes" },
+  { "id": "checksum", "group": "engine", "feature": "Checksum verification (SHA-256, SHA-512, SHA-1, MD5)", "boltget": "Yes, including digests the server sends", "milestone": "now", "idm": "Unknown" },
+  { "id": "proxies", "group": "engine", "feature": "HTTP, HTTPS and SOCKS5 proxies", "boltget": "Yes", "milestone": "now", "idm": "Yes" },
+  { "id": "ftp", "group": "engine", "feature": "FTP and FTPS", "boltget": "Planned", "milestone": "post-1.0", "idm": "Yes" },
+
+  { "id": "gui", "group": "app", "feature": "Desktop app", "boltget": "Planned (Tauri 2 and Svelte 5)", "milestone": "v0.2", "idm": "Yes" },
+  { "id": "dark", "group": "app", "feature": "Dark theme", "boltget": "Planned: dark first, light too", "milestone": "v0.2", "idm": "No" },
+  { "id": "categories", "group": "app", "feature": "Categories with destination folders", "boltget": "Planned", "milestone": "v0.2", "idm": "Yes" },
+  { "id": "queues", "group": "app", "feature": "Queues with concurrency limits", "boltget": "Planned", "milestone": "v0.2", "idm": "Yes" },
+  { "id": "scheduler", "group": "app", "feature": "Scheduler: time windows, start and stop, shut down when done", "boltget": "Planned", "milestone": "v0.5", "idm": "Yes" },
+  { "id": "languages", "group": "app", "feature": "Interface languages", "boltget": "English", "milestone": "v0.2", "idm": "Many languages" },
+  { "id": "grabber", "group": "app", "feature": "Website grabber (offline copies of sites)", "boltget": "Not planned for 1.0", "milestone": "none", "idm": "Yes" },
+
+  { "id": "extension", "group": "browser", "feature": "Extension for Chrome, Edge and Firefox", "boltget": "Planned (Manifest V3, native messaging)", "milestone": "v0.3", "idm": "Yes" },
+  { "id": "forwarding", "group": "browser", "feature": "Cookie, referrer and header forwarding from the browser", "boltget": "Planned", "milestone": "v0.3", "idm": "Yes" },
+  { "id": "video", "group": "browser", "feature": "Video and stream downloads with a format picker", "boltget": "Planned (yt-dlp and ffmpeg)", "milestone": "v0.4", "idm": "Yes" },
+
+  { "id": "cli", "group": "cli", "feature": "Command-line tool", "boltget": "Yes (boltget)", "milestone": "now", "idm": "Partial (idman.exe switches)" },
+  { "id": "json", "group": "cli", "feature": "JSON output for scripts", "boltget": "Yes (--json)", "milestone": "now", "idm": "No" },
+  { "id": "bench", "group": "cli", "feature": "Built-in benchmark command", "boltget": "Yes (boltget bench)", "milestone": "now", "idm": "No" },
+
+  { "id": "windows", "group": "platform", "feature": "Windows", "boltget": "CLI now; app previews from v0.2", "milestone": "v1.0", "idm": "Yes" },
+  { "id": "other-os", "group": "platform", "feature": "macOS and Linux", "boltget": "The CLI builds on Linux today; apps after 1.0", "milestone": "post-1.0", "idm": "No" },
+  { "id": "signed", "group": "platform", "feature": "Code-signed installer", "boltget": "Planned", "milestone": "v1.0", "idm": "Yes" },
+  { "id": "license", "group": "platform", "feature": "License", "boltget": "GPL-3.0-or-later", "milestone": "none", "idm": "Proprietary, paid after a trial" }
+]

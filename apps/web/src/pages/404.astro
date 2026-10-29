@@ -1,0 +1,22 @@
+---
+import Base from "../layouts/Base.astro";
+import { t } from "../i18n";
+---
+
+<Base title={t("notFound.title")} description={t("notFound.description")}>
+  <div class="wrap missing">
+    <p class="label num">404</p>
+    <h1>{t("notFound.heading")}</h1>
+    <p class="muted">{t("notFound.body")}</p>
+    <a class="button button-primary" href="/">{t("notFound.home")}</a>
+  </div>
+</Base>
+
+<style>
+  .missing {
+    padding-block: clamp(4rem, 14vh, 8rem) 2rem;
+    display: grid;
+    justify-items: start;
+    gap: 1.25rem;
+  }
+</style>
