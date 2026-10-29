@@ -11,9 +11,11 @@ interface Props {
   description: string;
   /** Use the title as is, without the " | BoltGet" suffix. */
   bareTitle?: boolean;
+  /** "field": the header sits on the Home hero's atmosphere instead of paper. */
+  header?: "paper" | "field";
 }
 
-const { title, description, bareTitle = false } = Astro.props;
+const { title, description, bareTitle = false, header = "paper" } = Astro.props;
 const site = t("site.name");
 const fullTitle = bareTitle ? title : `${title} | ${site}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -21,15 +23,15 @@ const ogImage = new URL("/og-image.png", Astro.site);
 ---
 
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="en" dir="ltr" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
-    <meta name="theme-color" content="#0B0B0F" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content={header === "field" ? "#031E18" : "#FFFFFF"} />
+    <meta name="color-scheme" content="light" />
     <link rel="preload" href={geistSemiBold} as="font" type="font/woff2" crossorigin />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -46,10 +48,14 @@ const ogImage = new URL("/og-image.png", Astro.site);
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <slot name="head" />
+    <script is:inline>
+      // Review aid: ?at=<seconds> freezes the demos and skips entrance motion.
+      if (new URLSearchParams(location.search).has("at")) document.documentElement.classList.add("frozen");
+    </script>
   </head>
   <body>
     <a class="skip" href="#main">{t("site.skip")}</a>
-    <Header />
+    <Header variant={header} />
     <main id="main" tabindex="-1">
       <slot />
     </main>
@@ -74,5 +80,12 @@ const ogImage = new URL("/og-image.png", Astro.site);
   }
   main:focus {
     outline: none;
+  }
+  :global(.frozen *),
+  :global(.frozen *::before),
+  :global(.frozen *::after) {
+    animation-delay: -60s !important;
+    animation-play-state: paused !important;
+    transition: none !important;
   }
 </style>

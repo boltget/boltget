@@ -1,0 +1,358 @@
+---
+// "Measured" on Home: BoltGet's median download time for every target of the
+// newest benchmark run (bench/results/, read at build time by lib/bench.ts),
+// replayed at measured speed. Each bar is one file; it fills in exactly its
+// median time, while the figure counts the seconds. Nothing here is estimated:
+// the final figures are the values from summary.csv.
+//
+// Without JavaScript, and under reduced motion, the bars are full and the
+// figures final. The replay starts when the section scrolls into view. The
+// section is the page's night band (docs/WEBSITE.md, Character).
+import { t, tDynamic } from "../../i18n";
+import { fixed, latestRun, rowOf, targetsOf } from "../../lib/bench";
+import { longDate } from "../../lib/format";
+import SectionHead from "./SectionHead.astro";
+import Aurora from "../Aurora.astro";
+
+const run = latestRun();
+const order = ["lab-1gib", "cachefly-100mb", "nforce-100mb", "lab-throttled-100mib", "cachefly-10mb"];
+const targets = [...targetsOf(run)].sort((a, b) => {
+  const ia = order.indexOf(a);
+  const ib = order.indexOf(b);
+  return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+});
+const rows = targets.map((target) => {
+  const r = rowOf(run, target, "boltget", "auto");
+  return {
+    target,
+    label: tDynamic(`home.speed.targets.${target}`),
+    seconds: r.medianS,
+    secondsText: fixed(r.medianS, 2),
+    rate: t("home.speed.rate", { value: fixed(r.medianMibS, 1) }),
+  };
+});
+---
+
+<section class="night" aria-labelledby="speed-title" data-speed>
+  <div class="smoke"><Aurora mode="night" /></div>
+  <div class="band">
+    <div class="wrap">
+      <SectionHead
+        index="02"
+        kicker={t("home.speed.kicker")}
+        heading={t("home.speed.heading")}
+        id="speed-title"
+        note={t("home.speed.note", { run: run.id })}
+        dark
+      >
+        <p class="sub">
+          {t("home.speed.body", { runs: run.environment.runs, date: longDate(run.date) })}
+          <a class="tlink" href="/benchmarks/">{t("home.speed.link")}</a>
+        </p>
+      </SectionHead>
+      <div class="dim" aria-hidden="true">
+        <span class="dl">0 s</span>
+        <span class="dline"></span>
+        <span class="dr">{t("home.speed.dimension")}</span>
+        <span class="dfig">{t("home.speed.dimFigure")}</span>
+      </div>
+      <ul class="runs">
+        {
+          rows.map((r) => (
+            <li data-seconds={r.seconds}>
+              <span class="what">{r.label}</span>
+              <span class="track" aria-hidden="true">
+                <span class="fill" />
+                <span class="head-sq" />
+              </span>
+              <span class="fig">
+                <span class="sec" data-final={r.secondsText}>
+                  {t("home.speed.seconds", { value: r.secondsText })}
+                </span>
+                <span class="rate">{r.rate}</span>
+              </span>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="again"><button type="button" class="replay" hidden>{t("home.speed.replay")}</button></p>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* The night band: the calm aurora on its darkest stops, fading in from the
+     paper and out again over --feather (a smootherstep curve in the shader),
+     full width, never reaching outside the section. */
+  .night {
+    --feather: clamp(10rem, 16vw, 15rem);
+    position: relative;
+    isolation: isolate;
+    margin-top: calc(var(--section-gap) * 0.6);
+    color: #fff;
+  }
+  .smoke {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .band {
+    position: relative;
+    padding-block: calc(var(--feather) * 0.85) var(--feather);
+  }
+  .sub {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.25rem;
+    color: rgb(255 255 255 / 0.82);
+    font-size: var(--type-body);
+  }
+  .sub .tlink {
+    color: #6ee7b7;
+  }
+  .night :focus-visible {
+    outline-color: #6ee7b7;
+  }
+  /* Drafting: a dimension line over the bars. */
+  .dim {
+    display: grid;
+    grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr) 11rem;
+    align-items: center;
+    gap: 0 2rem;
+    margin-top: clamp(2.5rem, 5vw, 3.5rem);
+    padding-bottom: 0.75rem;
+    font: 400 0.6875rem/1 var(--font-mono);
+    color: rgb(255 255 255 / 0.45);
+  }
+  .dline {
+    grid-column: 2;
+    grid-row: 1;
+    height: 9px;
+    border-inline: 1px solid rgb(255 255 255 / 0.3);
+    background: linear-gradient(rgb(255 255 255 / 0.2), rgb(255 255 255 / 0.2)) center / 100% 1px no-repeat;
+  }
+  .dl,
+  .dr {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 0 0.4rem;
+    background: #032a21;
+  }
+  .dl {
+    justify-self: start;
+    margin-left: 0.5rem;
+  }
+  .dr {
+    justify-self: end;
+    margin-right: 0.5rem;
+  }
+  .dfig {
+    grid-column: 3;
+    text-align: right;
+  }
+  .runs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+  }
+  li {
+    --p: 1;
+    display: grid;
+    grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr) 11rem;
+    align-items: center;
+    gap: 0.75rem 2rem;
+    padding-block: 1.4rem;
+    border-top: 1px solid rgb(255 255 255 / 0.1);
+  }
+  li:last-child {
+    border-bottom: 1px solid rgb(255 255 255 / 0.1);
+  }
+  .what {
+    font-size: 0.9375rem;
+    color: rgb(255 255 255 / 0.85);
+  }
+  /* The bar: squares with gaps over one continuous gradient. */
+  .track {
+    --sq: 16px;
+    --pitch: 19px;
+    position: relative;
+    height: var(--sq);
+  }
+  .track::before,
+  .fill {
+    position: absolute;
+    inset: 0;
+    right: auto;
+    width: var(--full, 100%);
+    -webkit-mask: repeating-linear-gradient(90deg, #000 0 var(--sq), transparent var(--sq) var(--pitch));
+    mask: repeating-linear-gradient(90deg, #000 0 var(--sq), transparent var(--sq) var(--pitch));
+  }
+  .track::before {
+    content: "";
+    background: rgb(255 255 255 / 0.07);
+  }
+  .fill {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.22) 0 38%, transparent 38% 88%, rgb(2 44 34 / 0.18) 88%),
+      linear-gradient(90deg, #a7f3d0, #6ee7b7 25%, #34d399 55%, #10b981 80%, #0d9488);
+    clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0);
+  }
+  .head-sq {
+    position: absolute;
+    top: 0;
+    left: var(--x, 0);
+    width: var(--sq);
+    height: var(--sq);
+    background: #ecfdf5;
+    box-shadow: 0 0 12px 1px rgb(110 231 183 / 0.5);
+    opacity: 0;
+  }
+  li.running .head-sq {
+    opacity: 1;
+  }
+  .fig {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.35rem;
+  }
+  .sec {
+    font-size: var(--type-figure);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.045em;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+  }
+  .rate {
+    font: 400 0.8125rem/1 var(--font-mono);
+    color: #6ee7b7;
+    transition: opacity 0.5s var(--ease-out);
+  }
+  li.pending .rate,
+  li.running .rate {
+    opacity: 0;
+  }
+  .again {
+    margin-top: 1.25rem;
+    min-height: 1.5rem;
+    text-align: right;
+  }
+  .replay {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: rgb(255 255 255 / 0.72);
+    font: 600 0.875rem/1.5 var(--font-sans);
+    text-decoration: underline;
+    text-underline-offset: 0.32em;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    cursor: pointer;
+  }
+  .replay:hover {
+    color: #fff;
+  }
+  @media (max-width: 48rem) {
+    .dim {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .dline,
+    .dl,
+    .dr {
+      grid-column: 1;
+    }
+    .dfig {
+      display: none;
+    }
+    li {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.85rem 1rem;
+    }
+    .what {
+      grid-column: 1;
+      grid-row: 1;
+      align-self: end;
+    }
+    .fig {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
+    }
+    .track {
+      grid-column: 1;
+      grid-row: 2;
+      --sq: 8px;
+      --pitch: 10px;
+    }
+  }
+</style>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-speed]")) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) continue;
+    const rows = [...root.querySelectorAll<HTMLLIElement>("li[data-seconds]")].map((li) => ({
+      li,
+      secs: Number(li.dataset.seconds),
+      sec: li.querySelector<HTMLElement>(".sec"),
+      track: li.querySelector<HTMLElement>(".track"),
+      final: li.querySelector<HTMLElement>(".sec")?.dataset.final ?? "",
+      template: li.querySelector<HTMLElement>(".sec")?.textContent?.trim() ?? "",
+    }));
+    const replay = root.querySelector<HTMLButtonElement>(".replay");
+    const longest = Math.max(...rows.map((r) => r.secs));
+    let start = 0;
+    let raf = 0;
+    let played = false;
+
+    const set = (elapsed: number | null) => {
+      for (const r of rows) {
+        const done = elapsed === null || elapsed >= r.secs;
+        const f = elapsed === null ? 1 : Math.min(1, elapsed / r.secs);
+        const cs = r.track ? getComputedStyle(r.track) : null;
+        const pitch = cs ? parseFloat(cs.getPropertyValue("--pitch")) || 19 : 19;
+        const sq = cs ? parseFloat(cs.getPropertyValue("--sq")) || 16 : 16;
+        const width = r.track?.clientWidth ?? 0;
+        const n = Math.max(1, Math.floor((width + pitch - sq) / pitch));
+        const lit = Math.ceil(f * n);
+        r.track?.style.setProperty("--full", `${n * pitch - (pitch - sq)}px`);
+        r.li.style.setProperty("--p", String(lit / n));
+        r.li.style.setProperty("--x", `${Math.max(0, lit - 1) * pitch}px`);
+        r.li.classList.toggle("pending", elapsed !== null && elapsed <= 0);
+        r.li.classList.toggle("running", elapsed !== null && !done && elapsed > 0);
+        if (r.sec) {
+          const v = done ? r.final : (elapsed ?? 0).toFixed(2);
+          r.sec.textContent = r.template.replace(r.final, v);
+        }
+      }
+    };
+
+    const frame = (now: number) => {
+      raf = 0;
+      const elapsed = (now - start) / 1000;
+      set(elapsed);
+      if (elapsed < longest) raf = requestAnimationFrame(frame);
+      else if (replay) replay.hidden = false;
+    };
+    const play = () => {
+      cancelAnimationFrame(raf);
+      if (replay) replay.hidden = true;
+      start = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+
+    set(0);
+    replay?.addEventListener("click", play);
+    new IntersectionObserver(
+      ([e], io) => {
+        if (e?.isIntersecting && !played) {
+          played = true;
+          io.disconnect();
+          play();
+        }
+      },
+      { threshold: 0.45 },
+    ).observe(root.querySelector(".runs") ?? root);
+  }
+</script>

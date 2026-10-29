@@ -1,5 +1,5 @@
-// A deterministic simulation of one segmented download, shared by the design
-// lab demos (/lab/a, /lab/b). It is illustrative, not a measurement: the
+// A deterministic simulation of one segmented download, shared by the home
+// page demos (and the design lab). It is illustrative, not a measurement: the
 // numbers it produces are invented and every demo that shows them says so.
 //
 // What it models, after docs/ENGINE.md:
@@ -61,6 +61,18 @@ export interface SimOptions {
 }
 
 export const STEP = 1 / 120;
+
+/** The run every Home demo shows (the hero app preview, "How it works"). */
+export const DEMO_SIM: SimOptions = {
+  total: 420,
+  start: 4,
+  max: 16,
+  rate: [9, 13],
+  cap: 58,
+  every: 0.6,
+  minSplit: 4,
+  seed: 7,
+};
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;

@@ -1,0 +1,281 @@
+---
+// The atmospheric field behind the Home hero (docs/WEBSITE.md; brand/BRAND.md,
+// Atmosphere and Pixels on the web). A slow emerald-to-teal aurora (WebGL
+// fragment shader, no library) that, towards the bottom, breaks up into square
+// chunks with even gaps that thin out into the white page: the chunks of a
+// file, arriving.
+//
+// The chunks are windows onto one continuous gradient (sampled per pixel, not
+// per square), a shade deeper than the field around them; each has a faint
+// inner light at the top and a soft shadow in the gap below it. Their opacity
+// eases with a per-square threshold, so the dissolve into white is organic
+// rather than a stair-step, and a slow diagonal light sweeps across them.
+//
+// Behind the hero copy the ramp is clamped to its darker stops (marked by
+// [data-aurora-clamp]), so white text stays above 5:1 even when the bright
+// curtain drifts behind it.
+//
+// mode="night" (the night band on Home) and mode="calm" (the footer): the
+// same smoke, slower, without chunks, held on the dark stops so light text on
+// it keeps its contrast, and kept inside its section. "night" fades in from
+// paper and out again over `--feather` at both ends, with a smootherstep
+// curve; "calm" starts under a gentle wave whose edge is feathered over about
+// 44 px, within a top zone of height `--feather`. Alpha is exactly zero at the
+// canvas edges, so no rectangle is ever visible.
+//
+// Without WebGL or JavaScript the CSS gradient on the wrapper shows instead.
+// Under reduced motion one still frame is drawn. The loop pauses while the
+// field is off screen or the tab is hidden.
+interface Props {
+  mode?: "hero" | "calm" | "night";
+}
+const { mode = "hero" } = Astro.props;
+---
+
+<div class:list={["aurora", mode]} data-mode={mode} aria-hidden="true">
+  <canvas></canvas>
+</div>
+
+<style>
+  .aurora {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(80% 60% at 78% 30%, #0f766e 0%, transparent 70%),
+      radial-gradient(60% 50% at 18% 18%, #064e3b 0%, transparent 70%),
+      linear-gradient(180deg, #021c16 0%, #053d31 38%, #0f766e 58%, #a7f3d0 76%, #ffffff 96%);
+  }
+  .aurora.calm,
+  .aurora.night {
+    --fade: linear-gradient(180deg, transparent, rgb(0 0 0 / 0.1) calc(var(--feather, 200px) * 0.3), rgb(0 0 0 / 0.5) calc(var(--feather, 200px) * 0.5), rgb(0 0 0 / 0.9) calc(var(--feather, 200px) * 0.7), #000 var(--feather, 200px));
+    background: linear-gradient(180deg, #046c52 0%, #023428 45%, #031e18 100%);
+    -webkit-mask: var(--fade);
+    mask: var(--fade);
+  }
+  .aurora.night {
+    background: #031e18;
+    -webkit-mask: var(--fade), linear-gradient(0deg, transparent, rgb(0 0 0 / 0.1) calc(var(--feather, 200px) * 0.3), rgb(0 0 0 / 0.5) calc(var(--feather, 200px) * 0.5), rgb(0 0 0 / 0.9) calc(var(--feather, 200px) * 0.7), #000 var(--feather, 200px));
+    -webkit-mask-composite: source-in;
+    mask: var(--fade) intersect, linear-gradient(0deg, transparent, rgb(0 0 0 / 0.1) calc(var(--feather, 200px) * 0.3), rgb(0 0 0 / 0.5) calc(var(--feather, 200px) * 0.5), rgb(0 0 0 / 0.9) calc(var(--feather, 200px) * 0.7), #000 var(--feather, 200px));
+  }
+  /* With WebGL running, the shader draws the vapour edge itself. */
+  .aurora.live {
+    background: none;
+    -webkit-mask: none;
+    mask: none;
+  }
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+  canvas.on {
+    opacity: 1;
+  }
+</style>
+
+<script>
+  const VERT = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+  const FRAG = `precision highp float;
+uniform vec2 uRes;uniform float uTime;uniform float uCell;uniform float uGap;uniform float uClampY;uniform float uClampV;uniform float uMode;uniform float uFeatherTop;uniform float uFeatherBottom;uniform float uBlur;
+float ease(float x){return x*x*x*(x*(x*6.-15.)+10.);}
+float h21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.-2.*f);
+return mix(mix(h21(i),h21(i+vec2(1.,0.)),u.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),u.x),u.y);}
+float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}
+vec3 hex(float r,float g,float b){return vec3(r,g,b)/255.;}
+vec3 ramp(float x){
+  vec3 c0=hex(3.,30.,24.);vec3 c1=hex(2.,52.,40.);vec3 c2=hex(4.,108.,82.);vec3 c3=hex(13.,148.,136.);
+  vec3 c4=hex(52.,211.,175.);vec3 c5=hex(167.,243.,208.);vec3 c6=hex(236.,253.,245.);vec3 c7=vec3(1.);
+  x=clamp(x,0.,1.);
+  if(x<.16)return mix(c0,c1,x/.16);
+  if(x<.32)return mix(c1,c2,(x-.16)/.16);
+  if(x<.46)return mix(c2,c3,(x-.32)/.14);
+  if(x<.60)return mix(c3,c4,(x-.46)/.14);
+  if(x<.74)return mix(c4,c5,(x-.60)/.14);
+  if(x<.88)return mix(c5,c6,(x-.74)/.14);
+  return mix(c6,c7,(x-.88)/.12);
+}
+float field(vec2 px,float t){
+  vec2 uv=px/uRes.y;float y=px.y/uRes.y;
+  vec2 q=vec2(fbm(uv*1.3+vec2(0.,t*.035)),fbm(uv*1.3+vec2(5.2,1.3)-vec2(t*.028,0.)));
+  float n=fbm(uv*1.15+1.9*q+vec2(t*.018,-t*.01));
+  float curtain=exp(-pow((y-.40-.10*sin(uv.x*2.2+t*.12)+.06*q.x)*3.6,2.));
+  return y*.78+(n-.5)*.62+curtain*.28-.04;
+}
+void main(){
+  vec2 px=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y);
+  float y=px.y/uRes.y;float t=uTime;
+  if(uMode>.5){
+    // calm (1, footer) and night (2, band): slow smoke on the dark stops.
+    vec2 q=vec2(px.x,uRes.y-px.y);
+    float v=field(q,t)*(uMode>1.5?.42:.5)+(uMode>1.5?-.02:.02);
+    v=v>.33?.33+(v-.33)*.25:v;
+    vec3 col=ramp(v);
+    float a=1.;
+    if(uMode>1.5){
+      // Night: a long eased fade from paper at both ends (smootherstep).
+      a=ease(clamp(px.y/uFeatherTop,0.,1.))*ease(clamp((uRes.y-px.y)/uFeatherBottom,0.,1.));
+    }else{
+      // Footer: a gentle wave, its edge feathered over uBlur, alpha 0 at the top.
+      float xn=px.x/uRes.x;
+      float w=.5+.3*sin(xn*5.65+.6)+.15*sin(xn*13.2+2.2);
+      float line=uBlur+(uFeatherTop-2.*uBlur)*w;
+      a=ease(clamp((px.y-line)/(2.*uBlur)+.5,0.,1.));
+    }
+    gl_FragColor=vec4(col*a,a);
+    return;
+  }
+  float k=smoothstep(.50,.93,y);
+  vec2 cell=floor(px/uCell);vec2 local=fract(px/uCell);
+  float lim=mix(uClampV,2.,smoothstep(uClampY-uCell*12.,uClampY+uCell*7.,px.y));
+  float raw=field(px,t);
+  float fv=raw>lim?lim+(raw-lim)*.18:raw;
+  vec3 smoothC=ramp(fv);
+  float h=h21(cell);float h2=h21(cell+17.3);
+  float wave=.05*sin(t*.7+h*37.)+.04*sin(t*.31+cell.x*.21);
+  float thr=1.08-k*1.12+wave;
+  float pres=clamp((thr-h)/.2,0.,1.)*(.72+.28*h2);
+  float g=uGap/uCell;float ext=1.-g;
+  vec2 l=local/ext;
+  float inside=step(local.x,ext)*step(local.y,ext);
+  vec3 chunk=mix(ramp(fv-.03),vec3(1.),k*.2);
+  float sweep=exp(-pow((px.x/uRes.x*.55+y*.9-fract(t*.022)*2.4+.5)*5.,2.));
+  float tw=pow(max(0.,sin(t*.8+h*40.)),28.);
+  chunk+=(1.-chunk)*(.16*smoothstep(.6,0.,l.y)+.10*sweep+.18*tw);
+  chunk*=1.-.07*step(.9,l.y);
+  vec3 base=mix(smoothC,vec3(1.),smoothstep(.0,.55,k));
+  float gapBelow=(1.-inside)*step(local.x,ext+g*.5)*step(ext,local.y);
+  vec3 under=mix(base,base*vec3(.86,.9,.89),gapBelow*pres*.7*k);
+  float useChunk=smoothstep(.0,.12,k);
+  vec3 col=mix(smoothC,mix(under,chunk,inside*pres),useChunk);
+  col=mix(col,vec3(1.),smoothstep(.95,1.,y));
+  gl_FragColor=vec4(col,1.);
+}`;
+
+  for (const root of document.querySelectorAll<HTMLElement>(".aurora")) {
+    const canvas = root.querySelector("canvas");
+    const soft = root.dataset.mode === "calm" || root.dataset.mode === "night";
+    const gl = canvas?.getContext("webgl", { antialias: false, alpha: soft, premultipliedAlpha: true });
+    if (!canvas || !gl) continue;
+
+    const shader = (type: number, src: string) => {
+      const s = gl.createShader(type);
+      if (!s) return null;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (gl.getShaderParameter(s, gl.COMPILE_STATUS)) return s;
+      console.warn("aurora:", gl.getShaderInfoLog(s));
+      return null;
+    };
+    const vs = shader(gl.VERTEX_SHADER, VERT);
+    const fs = shader(gl.FRAGMENT_SHADER, FRAG);
+    const prog = gl.createProgram();
+    if (!vs || !fs || !prog) continue;
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) continue;
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, "p");
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const uRes = gl.getUniformLocation(prog, "uRes");
+    const uTime = gl.getUniformLocation(prog, "uTime");
+    const uCell = gl.getUniformLocation(prog, "uCell");
+    const uGap = gl.getUniformLocation(prog, "uGap");
+    const uClampY = gl.getUniformLocation(prog, "uClampY");
+    const uClampV = gl.getUniformLocation(prog, "uClampV");
+    const calm = soft;
+    gl.uniform1f(gl.getUniformLocation(prog, "uMode"), root.dataset.mode === "night" ? 2 : calm ? 1 : 0);
+    const uFeatherTop = gl.getUniformLocation(prog, "uFeatherTop");
+    const uFeatherBottom = gl.getUniformLocation(prog, "uFeatherBottom");
+    const uBlur = gl.getUniformLocation(prog, "uBlur");
+    const copy = root.closest("section")?.querySelector<HTMLElement>("[data-aurora-clamp]");
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const frozen = document.documentElement.classList.contains("frozen");
+    let dpr = 1;
+    const resize = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.round(root.clientWidth * dpr);
+      const h = Math.round(root.clientHeight * dpr);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      gl.viewport(0, 0, w, h);
+      const cssCell = root.clientWidth < 640 ? 10 : 13;
+      gl.uniform2f(uRes, w, h);
+      gl.uniform1f(uCell, Math.round(cssCell * dpr));
+      gl.uniform1f(uGap, Math.max(1, Math.round(2 * dpr)));
+      // --feather may be a clamp(); resolve it by measuring.
+      let feather = 0;
+      if (soft) {
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;height:var(--feather,200px)";
+        root.append(probe);
+        feather = probe.offsetHeight * dpr;
+        probe.remove();
+      }
+      gl.uniform1f(uFeatherTop, soft ? feather : 0);
+      gl.uniform1f(uFeatherBottom, root.dataset.mode === "night" ? feather : 1);
+      gl.uniform1f(uBlur, 22 * dpr);
+      // Behind the copy the ramp is held near 0.31 (#046C52 to #05725A) with a
+      // soft knee; even a bright curtain stays below about 0.37 (#077A65),
+      // where white text is still above 5:1.
+      const below = copy ? copy.getBoundingClientRect().bottom - root.getBoundingClientRect().top : 0;
+      gl.uniform1f(uClampY, below * dpr);
+      gl.uniform1f(uClampV, copy ? 0.31 : 2);
+    };
+
+    let visible = true;
+    let raf = 0;
+    let last = performance.now();
+    let time = 14; // start mid-flow, so the first frame is already composed
+    const draw = () => {
+      gl.uniform1f(uTime, time);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+    const frame = (now: number) => {
+      raf = 0;
+      time += Math.min(0.05, (now - last) / 1000) * (calm ? 0.6 : 1);
+      last = now;
+      draw();
+      schedule();
+    };
+    const schedule = () => {
+      if (raf || frozen || !visible || document.hidden || reduced.matches) return;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+
+    resize();
+    draw();
+    canvas.classList.add("on");
+    if (soft) root.classList.add("live");
+    schedule();
+
+    new ResizeObserver(() => {
+      resize();
+      draw();
+    }).observe(root);
+    new IntersectionObserver(([entry]) => {
+      visible = entry?.isIntersecting ?? true;
+      schedule();
+    }).observe(root);
+    document.addEventListener("visibilitychange", schedule);
+    reduced.addEventListener("change", () => {
+      draw();
+      schedule();
+    });
+  }
+</script>

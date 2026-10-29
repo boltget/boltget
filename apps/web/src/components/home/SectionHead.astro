@@ -1,0 +1,75 @@
+---
+// A section heading in the drafting style (docs/WEBSITE.md, Character): a
+// hairline rule with the section index and kicker on the left and a small
+// monospace annotation on the right, then the headline.
+interface Props {
+  index: string;
+  kicker: string;
+  heading: string;
+  id: string;
+  note?: string;
+  /** On the night band. */
+  dark?: boolean;
+}
+const { index, kicker, heading, id, note, dark = false } = Astro.props;
+---
+
+<header class:list={["sh", { dark }]}>
+  <p class="rule">
+    <span class="k"><span class="i">{index}</span> / {kicker}</span>
+    {note && <span class="note" aria-hidden="true">{note}</span>}
+  </p>
+  <h2 {id} class="statement">{heading}</h2>
+  <slot />
+</header>
+
+<style>
+  .sh {
+    display: grid;
+    gap: clamp(1.25rem, 2.4vw, 1.75rem);
+  }
+  .rule {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--hairline);
+    font: 400 0.75rem/1 var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .k {
+    color: var(--accent);
+  }
+  .i {
+    color: var(--ink);
+  }
+  .note {
+    color: var(--text-subtle);
+    letter-spacing: 0.04em;
+    text-transform: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dark .rule {
+    border-color: rgb(255 255 255 / 0.12);
+  }
+  .dark .k {
+    color: #6ee7b7;
+  }
+  .dark .i {
+    color: #fff;
+  }
+  .dark .note {
+    color: rgb(255 255 255 / 0.5);
+  }
+  .dark .statement {
+    color: #fff;
+  }
+  @media (max-width: 30rem) {
+    .note {
+      display: none;
+    }
+  }
+</style>

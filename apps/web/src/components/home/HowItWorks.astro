@@ -1,0 +1,714 @@
+---
+// "How it works" on Home (docs/WEBSITE.md, Home sections): one file map
+// (lib/chunkmap.ts) that plays a simulated download (lib/sim.ts) through five
+// steps once it is on screen: probe, split, add, steal, verify. A compact step
+// indicator follows along; a step can be chosen by click, tap or arrow keys.
+// Hovering or focusing the scene pauses it. It never reacts to scrolling.
+//
+// Below the map, a small playground: file size and a per-connection server
+// limit change the simulated run, so the visitor can watch the controller add
+// connections (or stop adding them) and the steals that keep every connection
+// busy. Everything here is labelled as a simulation.
+//
+// Without JavaScript the five steps are a plain list. Under reduced motion
+// nothing plays: each step shows its own still frame when chosen.
+import SectionHead from "./SectionHead.astro";
+import { t } from "../../i18n";
+
+const keys = ["probe", "split", "join", "steal", "done"] as const;
+const steps = keys.map((k) => ({
+  key: k,
+  title: t(`home.how.steps.${k}.title`),
+  body: t(`home.how.steps.${k}.body`),
+}));
+const strings = {
+  one: t("home.how.readout.connections.one", { count: "{count}" }),
+  other: t("home.how.readout.connections.other", { count: "{count}" }),
+  received: t("home.how.readout.received", { done: "{done}", total: "{total}" }),
+  verified: t("home.how.readout.verified"),
+  probe: t("home.how.readout.probe", { total: "{total}" }),
+  time: t("home.how.readout.time", { value: "{value}" }),
+  took: t("home.how.took", { who: "{who}", from: "{from}" }),
+  summary: t("home.how.play.summary", { connections: "{connections}", steals: "{steals}", time: "{time}" }),
+  pause: t("home.how.play.pause"),
+  resume: t("home.how.play.resume"),
+};
+/** File sizes the playground offers, MiB. */
+const SIZES = [24, 100, 420, 1024, 2048];
+---
+
+<section class="how wrap" aria-labelledby="how-title" data-how data-strings={JSON.stringify(strings)} data-sizes={JSON.stringify(SIZES)}>
+  <SectionHead index="01" kicker={t("home.how.kicker")} heading={t("home.how.heading")} id="how-title" note={t("home.how.note")} />
+
+  <div class="scene">
+    <ol class="steps" aria-label={t("home.how.stepsLabel")}>
+      {
+        steps.map((s, i) => (
+          <li>
+            <button type="button" class="step" data-step={i} aria-pressed={i === 0 ? "true" : "false"}>
+              <span class="n">{String(i + 1).padStart(2, "0")}</span>
+              <span class="t">{s.title}</span>
+              <span class="bar" aria-hidden="true"><span /></span>
+            </button>
+            <p class="b">{s.body}</p>
+          </li>
+        ))
+      }
+    </ol>
+    <p class="caption" aria-live="polite"></p>
+
+    <figure class="viz" aria-label={t("home.how.label")}>
+      <canvas class="live" aria-hidden="true"></canvas>
+      <div class="ruler" aria-hidden="true"></div>
+      <div class="readout" aria-hidden="true">
+        <span data-r="a"></span>
+        <span data-r="b"></span>
+        <span data-r="c"></span>
+      </div>
+    </figure>
+
+    <form class="play" hidden>
+      <span class="tag">{t("home.how.play.tag")}</span>
+      <label class="size">
+        <span>{t("home.how.play.size")}</span>
+        <input type="range" min="0" max={SIZES.length - 1} step="1" value="2" name="size" />
+        <output name="sizeOut">420 MiB</output>
+      </label>
+      <label class="limit">
+        <input type="checkbox" name="limit" role="switch" />
+        <span class="sw" aria-hidden="true"></span>
+        <span>{t("home.how.play.limit")}</span>
+      </label>
+      <span class="actions">
+        <button type="button" class="tbtn" data-act="toggle">{t("home.how.play.pause")}</button>
+        <button type="button" class="tbtn" data-act="replay">{t("home.how.play.replay")}</button>
+      </span>
+      <output class="summary" name="summary"></output>
+    </form>
+  </div>
+</section>
+
+<style>
+  .how {
+    margin-top: var(--section-gap);
+  }
+  .scene {
+    margin-top: clamp(2rem, 4vw, 3rem);
+  }
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1.25rem;
+  }
+  .step {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: 600 1rem/1.3 var(--font-sans);
+    letter-spacing: -0.01em;
+    text-align: left;
+    cursor: default;
+  }
+  .n {
+    font: 400 0.75rem/1 var(--font-mono);
+    color: var(--accent);
+  }
+  .step .bar {
+    display: none;
+  }
+  .b {
+    margin-top: 0.3rem;
+    max-width: 36rem;
+    color: var(--text-muted);
+  }
+  .caption {
+    display: none;
+  }
+  .viz {
+    display: none;
+    margin: 0;
+  }
+
+  /* With JavaScript: the scene. */
+  :global(.how.js) .steps {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: clamp(0.4rem, 1.2vw, 1rem);
+  }
+  :global(.how.js) .b {
+    display: none;
+  }
+  :global(.how.js) .step {
+    position: relative;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 0.85rem 0 0.25rem;
+    color: var(--text-subtle);
+    font-size: 0.9375rem;
+    cursor: pointer;
+    transition: color 0.3s var(--ease-out);
+  }
+  :global(.how.js) .step .bar {
+    display: block;
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: var(--hairline);
+  }
+  :global(.how.js) .step .bar span {
+    display: block;
+    height: 100%;
+    width: calc(var(--f, 0) * 100%);
+    background: var(--ink);
+  }
+  :global(.how.js) .step:hover,
+  :global(.how.js) .step[aria-pressed="true"] {
+    color: var(--ink);
+  }
+  :global(.how.js) .step:not([aria-pressed="true"]) .n {
+    color: var(--text-subtle);
+  }
+  :global(.how.js) .step.skip {
+    opacity: 0.45;
+  }
+  :global(.how.js) .step:focus-visible {
+    outline-offset: 4px;
+  }
+  :global(.how.js) .caption {
+    display: block;
+    min-height: 3.2em;
+    margin-top: 1.25rem;
+    max-width: 44rem;
+    font-size: clamp(1.0625rem, 1.6vw, 1.3125rem);
+    line-height: 1.45;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+  :global(.how.js) .viz {
+    display: block;
+    margin-top: clamp(1.25rem, 3vw, 2rem);
+  }
+  .live {
+    display: block;
+    width: 100%;
+  }
+  /* Drafting: a byte-offset ruler under the map. */
+  .ruler {
+    position: relative;
+    height: 2.1rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--hairline);
+    font: 400 0.6875rem/1 var(--font-mono);
+    color: var(--text-subtle);
+    font-variant-numeric: tabular-nums;
+  }
+  .ruler :global(span) {
+    position: absolute;
+    top: 0;
+    padding-top: 0.55rem;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  .ruler :global(span)::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 0.35rem;
+    background: #d4d4d8;
+  }
+  .ruler :global(span.first) {
+    transform: none;
+  }
+  .ruler :global(span.first)::before {
+    left: 0;
+  }
+  .ruler :global(span.last) {
+    transform: translateX(-100%);
+  }
+  .ruler :global(span.last)::before {
+    left: auto;
+    right: 0;
+  }
+  .ruler :global(span.hex) {
+    top: 1.15rem;
+    color: #a1a1aa;
+  }
+  .ruler :global(span.hex)::before {
+    display: none;
+  }
+  .readout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 2rem;
+    margin-top: 1.1rem;
+    font: 400 0.875rem/1.4 var(--font-mono);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .readout [data-r="a"] {
+    color: var(--ink);
+  }
+  .readout :global(.ok) {
+    color: var(--accent);
+  }
+  .readout [data-r="c"] {
+    margin-left: auto;
+  }
+
+  /* The playground. */
+  .play {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.9rem 1.75rem;
+    margin-top: 1.75rem;
+    padding: 1rem 1.25rem;
+    border-radius: 16px;
+    background: var(--soft);
+    box-shadow: inset 0 0 0 1px rgb(2 44 34 / 0.05);
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+  .play[hidden] {
+    display: none;
+  }
+  .tag {
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #065f46;
+    font: 400 0.6875rem/1.4 var(--font-mono);
+    letter-spacing: 0.02em;
+  }
+  .size {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .size output {
+    min-width: 4.5rem;
+    font-family: var(--font-mono);
+    color: var(--ink);
+  }
+  input[type="range"] {
+    width: clamp(7rem, 14vw, 11rem);
+    accent-color: #047857;
+  }
+  .limit {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    cursor: pointer;
+  }
+  .limit input {
+    position: absolute;
+    opacity: 0;
+    width: 2.25rem;
+    height: 1.25rem;
+    margin: 0;
+    cursor: pointer;
+  }
+  .sw {
+    position: relative;
+    flex: none;
+    width: 2.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    background: #d4d4d8;
+    transition: background 0.2s;
+  }
+  .sw::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(1.25rem - 4px);
+    height: calc(1.25rem - 4px);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+    transition: transform 0.2s var(--ease-out);
+  }
+  .limit input:checked + .sw {
+    background: #047857;
+  }
+  .limit input:checked + .sw::after {
+    transform: translateX(1rem);
+  }
+  .limit input:focus-visible + .sw {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .actions {
+    display: flex;
+    gap: 1.25rem;
+  }
+  .tbtn {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: 600 0.875rem/1.5 var(--font-sans);
+    text-decoration: underline;
+    text-underline-offset: 0.3em;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    cursor: pointer;
+  }
+  .summary {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 48rem) {
+    :global(.how.js) .step {
+      font-size: 0.8125rem;
+    }
+    .readout [data-r="c"],
+    .summary {
+      margin-left: 0;
+    }
+    .ruler :global(span.mid) {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  import { DEMO_SIM, DownloadSim, type SimOptions } from "../../lib/sim";
+  import { ChunkMap, type MapLayout } from "../../lib/chunkmap";
+
+  interface Strings {
+    one: string;
+    other: string;
+    received: string;
+    verified: string;
+    probe: string;
+    time: string;
+    took: string;
+    summary: string;
+    pause: string;
+    resume: string;
+  }
+  const fill = (m: string, p: Record<string, string | number>) => m.replace(/\{(\w+)\}/g, (_, k: string) => String(p[k] ?? ""));
+
+  const size = (mib: number) => (mib >= 1024 ? `${(mib / 1024).toFixed(mib % 1024 ? 2 : 0)} GiB` : `${Math.round(mib)} MiB`);
+  const hex = (mib: number) => `0x${Math.round(mib * 1024 * 1024).toString(16).toUpperCase().padStart(8, "0")}`;
+
+  /** A run for the playground's settings. */
+  function options(total: number, limited: boolean): SimOptions {
+    return limited
+      ? { ...DEMO_SIM, total, rate: [1.9, 2.1], cap: 400, every: 0.8, minSplit: Math.max(1, total / 400) }
+      : { ...DEMO_SIM, total, every: 0.8, minSplit: Math.max(1, total / 200) };
+  }
+
+  interface Plan {
+    o: SimOptions;
+    /** Sim time each step shows; null when the run never reaches it. */
+    at: (number | null)[];
+    end: number;
+    peak: number;
+    steals: number;
+    steal: { who: number; from: number } | null;
+  }
+
+  function plan(o: SimOptions): Plan {
+    const s = new DownloadSim(o);
+    while (!s.finished) s.step();
+    const split = s.events.find((e) => e.kind === "split");
+    const steal = s.events.find((e) => e.kind === "steal");
+    const firstAdd = split ? split.t : null;
+    return {
+      o,
+      at: [0, Math.min(o.every - 0.05, s.finishedAt * 0.3), firstAdd === null ? null : firstAdd + 0.15, steal ? steal.t + 0.05 : null, s.finishedAt],
+      end: s.finishedAt,
+      peak: s.peakConnections,
+      steals: s.events.filter((e) => e.kind === "steal").length,
+      steal: steal ? { who: steal.conn + 1, from: (steal.from ?? 0) + 1 } : null,
+    };
+  }
+
+  function layoutFor(width: number): MapLayout {
+    return width < 560
+      ? { cols: 24, rows: 4, gap: 3, order: "column", top: 24 }
+      : { cols: 48, rows: 4, gap: 5, order: "column", top: 30 };
+  }
+
+  /** Segment brackets above the map: live parts in ink, finished ones faint. */
+  function brackets(map: ChunkMap, sim: DownloadSim, highlight: number | null) {
+    const ctx = map.canvas.getContext("2d");
+    if (!ctx) return;
+    const y = (map.layout.top ?? 0) - 10;
+    ctx.font = '400 11px "Geist Mono", ui-monospace, monospace';
+    for (const seg of sim.segs) {
+      const a = map.colOf(seg.start, sim.o.total);
+      const b = map.colOf(seg.end - 1e-6, sim.o.total);
+      const x0 = map.colX(a) + 1;
+      const x1 = map.colX(b) + map.cell - 1;
+      if (x1 - x0 < 4) continue;
+      const live = !seg.done || sim.finished;
+      const hot = highlight !== null && seg.conn === highlight && !seg.done;
+      ctx.strokeStyle = hot ? "#047857" : live ? "#0B0B0F" : "#D4D4D8";
+      ctx.globalAlpha = sim.finished ? 0.3 : 1;
+      ctx.lineWidth = hot ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(x0 + 0.5, y + 6);
+      ctx.lineTo(x0 + 0.5, y + 0.5);
+      ctx.lineTo(x1 - 0.5, y + 0.5);
+      ctx.lineTo(x1 - 0.5, y + 6);
+      ctx.stroke();
+      if (live && !sim.finished && x1 - x0 > 24) {
+        ctx.fillStyle = hot ? "#047857" : "#52525B";
+        ctx.fillText(`#${seg.conn + 1}`, x0 + 3, y - 5);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  for (const root of document.querySelectorAll<HTMLElement>("[data-how]")) {
+    const s = JSON.parse(root.dataset.strings ?? "{}") as Strings;
+    const SIZES = JSON.parse(root.dataset.sizes ?? "[420]") as number[];
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>("button.step")];
+    const bodies = [...root.querySelectorAll<HTMLElement>(".steps .b")].map((b) => b.textContent ?? "");
+    const caption = root.querySelector<HTMLElement>(".caption");
+    const live = root.querySelector<HTMLCanvasElement>("canvas.live");
+    const ruler = root.querySelector<HTMLElement>(".ruler");
+    const out = {
+      a: root.querySelector<HTMLElement>('[data-r="a"]'),
+      b: root.querySelector<HTMLElement>('[data-r="b"]'),
+      c: root.querySelector<HTMLElement>('[data-r="c"]'),
+    };
+    const form = root.querySelector<HTMLFormElement>("form.play");
+    const scene = root.querySelector<HTMLElement>(".scene");
+    if (!live || !caption || !form || !scene || !ruler) continue;
+    const sizeIn = form.elements.namedItem("size") as HTMLInputElement;
+    const sizeOut = form.elements.namedItem("sizeOut") as HTMLOutputElement;
+    const limitIn = form.elements.namedItem("limit") as HTMLInputElement;
+    const summary = form.elements.namedItem("summary") as HTMLOutputElement;
+    const toggle = form.querySelector<HTMLButtonElement>('[data-act="toggle"]');
+    const replay = form.querySelector<HTMLButtonElement>('[data-act="replay"]');
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    root.classList.add("js");
+    form.hidden = false;
+    form.addEventListener("submit", (e) => e.preventDefault());
+    if (reduced && toggle) toggle.hidden = true;
+
+    const map = new ChunkMap(live, layoutFor(live.clientWidth));
+    let P = plan(options(SIZES[2] ?? 420, false));
+    let sim = new DownloadSim(P.o);
+    let step = 0;
+    let hold = 1.2; // seconds left to rest on the current step
+    let playing = !reduced;
+    let userPaused = false;
+    let hovering = false;
+    let visible = false;
+    let raf = 0;
+    let last = 0;
+    let doneHold = 0;
+
+    const conns = (n: number) => fill(n === 1 ? s.one : s.other, { count: n });
+
+    const drawRuler = () => {
+      const total = P.o.total;
+      const marks = [0, 0.25, 0.5, 0.75, 1];
+      ruler.innerHTML =
+        marks
+          .map((f, i) => {
+            const cls = i === 0 ? "first" : i === marks.length - 1 ? "last" : "mid";
+            return `<span class="${cls}" style="left:${f * 100}%">${f === 0 ? "0 B" : size(total * f)}</span>`;
+          })
+          .join("") +
+        `<span class="hex first" style="left:0">${hex(0)}</span><span class="hex last" style="left:100%">${hex(total)}</span>`;
+    };
+
+    const setStep = (i: number) => {
+      step = i;
+      buttons.forEach((b, j) => {
+        b.setAttribute("aria-pressed", j === i ? "true" : "false");
+        b.classList.toggle("skip", P.at[j] === null);
+      });
+      caption.textContent = bodies[i] ?? "";
+    };
+
+    const paint = () => {
+      draw();
+      const k = P.at;
+      buttons.forEach((b, j) => {
+        const from = k[j] ?? null;
+        let f = 0;
+        if (from !== null) {
+          const next = k.slice(j + 1).find((v) => v !== null) ?? null;
+          if (sim.t >= from) f = next === null ? 1 : Math.min(1, (sim.t - from) / Math.max(0.01, (next as number) - from));
+          if (j === buttons.length - 1 && sim.finished) f = 1;
+        }
+        b.style.setProperty("--f", String(j < step ? 1 : j === step ? Math.max(f, 0.02) : 0));
+      });
+      if (!out.a || !out.b || !out.c) return;
+      const total = P.o.total;
+      if (step === 0 && sim.t < 0.02) {
+        out.a.textContent = fill(s.probe, { total: size(total) });
+        out.b.textContent = "";
+      } else if (sim.finished) {
+        out.a.textContent = conns(P.peak);
+        out.b.innerHTML = `<span class="ok">✓ ${s.verified}</span>`;
+      } else {
+        out.a.textContent = conns(sim.active);
+        out.b.textContent =
+          step === 3 && P.steal ? fill(s.took, P.steal) : fill(s.received, { done: size(sim.downloaded), total: size(total) });
+      }
+      out.c.textContent = fill(s.time, { value: (sim.finished ? sim.finishedAt : sim.t).toFixed(1) });
+    };
+
+    const draw = () => {
+      map.draw(sim);
+      brackets(map, sim, step === 3 && P.steal ? P.steal.who - 1 : null);
+    };
+
+    /** Shows step `i` from the start of the run up to its moment. */
+    const jump = (i: number) => {
+      const at = P.at[i];
+      if (at === null || at === undefined) return;
+      if (at < sim.t - 1e-6) {
+        sim = new DownloadSim(P.o);
+        map.reset();
+      }
+      while (!sim.finished && sim.t < at) sim.step();
+      setStep(i);
+      hold = 1.6;
+      doneHold = 0;
+      paint();
+      kick();
+    };
+
+    const restart = () => {
+      sim = new DownloadSim(P.o);
+      map.reset();
+      setStep(0);
+      hold = 1.2;
+      doneHold = 0;
+      paint();
+      kick();
+    };
+
+    const apply = () => {
+      const mib = SIZES[Number(sizeIn.value)] ?? 420;
+      sizeOut.value = size(mib);
+      P = plan(options(mib, limitIn.checked));
+      summary.value = fill(s.summary, { connections: P.peak, steals: P.steals, time: P.end.toFixed(1) });
+      drawRuler();
+      if (reduced) {
+        sim = new DownloadSim(P.o);
+        map.reset();
+        jump(P.at[step] === null ? 4 : step);
+      } else {
+        restart();
+      }
+    };
+
+    const running = () => playing && !userPaused && !hovering && visible && !document.hidden;
+
+    const frame = (now: number) => {
+      raf = 0;
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (running()) {
+        if (sim.finished) {
+          doneHold += dt;
+          if (doneHold > 3.5) restart();
+        } else if (hold > 0) {
+          hold -= dt;
+        } else {
+          // Each run lasts about eight seconds of playback, whatever its size.
+          const rate = P.end / Math.min(9, Math.max(5, P.end));
+          const target = sim.t + dt * rate;
+          const next = P.at.findIndex((v, j) => j > step && v !== null);
+          const stop = next >= 0 ? (P.at[next] as number) : Infinity;
+          while (!sim.finished && sim.t < Math.min(target, stop)) sim.step();
+          if (next >= 0 && sim.t >= stop) {
+            setStep(next);
+            hold = next === 4 ? 0 : 1.1;
+          }
+        }
+      }
+      paint();
+      if (running() || map.busy) raf = requestAnimationFrame(frame);
+    };
+    function kick() {
+      if (raf) return;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    }
+
+    buttons.forEach((b, i) => {
+      b.addEventListener("click", () => jump(i));
+      b.addEventListener("keydown", (e) => {
+        const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        let j = i + d;
+        while (j >= 0 && j < buttons.length && P.at[j] === null) j += d;
+        const target = buttons[j];
+        if (!target) return;
+        target.focus();
+        jump(j);
+      });
+    });
+    scene.addEventListener("pointerenter", () => (hovering = true));
+    scene.addEventListener("pointerleave", () => {
+      hovering = false;
+      kick();
+    });
+    scene.addEventListener("focusin", () => (hovering = true));
+    scene.addEventListener("focusout", () => {
+      hovering = false;
+      kick();
+    });
+    sizeIn.addEventListener("input", apply);
+    limitIn.addEventListener("change", apply);
+    replay?.addEventListener("click", () => {
+      userPaused = false;
+      if (toggle) toggle.textContent = s.pause;
+      if (reduced) jump(4);
+      else restart();
+    });
+    toggle?.addEventListener("click", () => {
+      userPaused = !userPaused;
+      toggle.textContent = userPaused ? s.resume : s.pause;
+      kick();
+    });
+
+    new ResizeObserver(() => {
+      const next = layoutFor(live.clientWidth);
+      if (next.cols !== map.layout.cols) {
+        map.layout = next;
+        map.reset();
+      }
+      map.measure();
+      draw();
+    }).observe(live);
+    new IntersectionObserver(
+      ([e]) => {
+        visible = e?.isIntersecting ?? false;
+        kick();
+      },
+      { threshold: 0.35 },
+    ).observe(live);
+    document.addEventListener("visibilitychange", kick);
+
+    map.measure();
+    apply();
+    if (reduced) jump(2);
+  }
+</script>

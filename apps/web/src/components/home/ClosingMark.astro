@@ -1,0 +1,132 @@
+---
+// Closing call to action on Home: the pixel arrow, large, plays the brand's
+// row-by-row signature once when it scrolls into view, then a light passes
+// across it (brand/BRAND.md, Pixels on the web). The mark's own light-theme
+// gradient runs across the whole mark; each pixel has a faint inner light; the mark sits on a very soft
+// emerald shadow. Without JavaScript or under reduced motion it is simply lit.
+import { t } from "../../i18n";
+
+// The mark's geometry (brand/scripts/build.mjs): [firstCol, lastCol] per row.
+const ROWS: [number, number][] = [
+  [3, 5], [3, 5], [3, 5], [3, 5],
+  [0, 8], [1, 7], [2, 6], [3, 5], [4, 4],
+];
+const PITCH = 12;
+const PX = 10;
+const cells = ROWS.flatMap(([a, b], r) => Array.from({ length: b - a + 1 }, (_, i) => ({ r, x: (a + i) * PITCH + 1, y: r * PITCH + 1 })));
+const path = cells.map((c) => `M${c.x} ${c.y}h${PX}v${PX}h-${PX}z`).join("");
+---
+
+<section class="cta wrap" aria-labelledby="cta-title" data-cta>
+  <svg class="mark" viewBox="0 0 108 108" width="216" height="216" role="img" aria-label={t("home.cta.mark")}>
+    <defs>
+      <linearGradient id="cta-g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="108" y2="108">
+        <stop offset="0" stop-color="#34D399" />
+        <stop offset="0.5" stop-color="#10B981" />
+        <stop offset="1" stop-color="#047857" />
+      </linearGradient>
+      <linearGradient id="cta-in" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity="0.32" />
+        <stop offset="0.42" stop-color="#fff" stop-opacity="0.06" />
+        <stop offset="0.88" stop-color="#fff" stop-opacity="0" />
+        <stop offset="0.9" stop-color="#022C22" stop-opacity="0.14" />
+        <stop offset="1" stop-color="#022C22" stop-opacity="0.14" />
+      </linearGradient>
+      <linearGradient id="cta-sweep" gradientUnits="userSpaceOnUse" x1="-40" y1="0" x2="0" y2="40">
+        <stop offset="0" stop-color="#fff" stop-opacity="0" />
+        <stop offset="0.5" stop-color="#fff" stop-opacity="0.55" />
+        <stop offset="1" stop-color="#fff" stop-opacity="0" />
+      </linearGradient>
+      <clipPath id="cta-clip"><path d={path} /></clipPath>
+    </defs>
+    {
+      ROWS.map((_, r) => (
+        <g class="row" style={`--r:${r}`}>
+          {cells
+            .filter((c) => c.r === r)
+            .map((c) => (
+              <>
+                <rect x={c.x} y={c.y} width={PX} height={PX} fill="url(#cta-g)" />
+                <rect x={c.x} y={c.y} width={PX} height={PX} fill="url(#cta-in)" />
+              </>
+            ))}
+        </g>
+      ))
+    }
+    <g clip-path="url(#cta-clip)">
+      <rect class="sweep" x="-40" y="-40" width="80" height="188" fill="url(#cta-sweep)" transform="rotate(0)" />
+    </g>
+  </svg>
+  <h2 id="cta-title" class="statement">{t("home.cta.heading")}</h2>
+  <p class="links">
+    <a class="tlink" href="/docs/getting-started/">{t("home.cta.primary")}</a>
+    <a class="tlink" href="/docs/">{t("home.cta.secondary")}</a>
+  </p>
+</section>
+
+<style>
+  .cta {
+    margin-top: var(--section-gap);
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 2.25rem;
+  }
+  .mark {
+    width: clamp(9rem, 18vw, 13.5rem);
+    height: auto;
+    overflow: visible;
+    filter: drop-shadow(0 18px 28px rgb(4 120 87 / 0.16)) drop-shadow(0 2px 3px rgb(4 120 87 / 0.12));
+  }
+  .sweep {
+    opacity: 0;
+  }
+  :global(.cta.play) .row {
+    animation: arrive 0.9s var(--ease-out) both;
+    animation-delay: calc(var(--r) * 0.12s);
+  }
+  :global(.cta.play) .sweep {
+    animation: sweep 1.6s 1.25s var(--ease-out) both;
+  }
+  :global(.cta.wait) .row {
+    opacity: 0.12;
+  }
+  @keyframes arrive {
+    from {
+      opacity: 0.12;
+    }
+  }
+  @keyframes sweep {
+    from {
+      opacity: 1;
+      transform: translate(-10px, -60px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(150px, 60px);
+    }
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 2rem;
+    font-size: 1.0625rem;
+  }
+</style>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-cta]")) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) continue;
+    root.classList.add("wait");
+    new IntersectionObserver(
+      ([e], io) => {
+        if (!e?.isIntersecting) return;
+        io.disconnect();
+        root.classList.remove("wait");
+        root.classList.add("play");
+      },
+      { threshold: 0.6 },
+    ).observe(root.querySelector(".mark") ?? root);
+  }
+</script>

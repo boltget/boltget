@@ -1,69 +1,157 @@
 ---
+// Site footer, the same on every marketing page: the calm aurora under a
+// gentle wave with a feathered edge (docs/WEBSITE.md, Character), the
+// link columns in light text, and the build facts in mono. The source link here is the site's only
+// mention of the project being open source.
+import Aurora from "./Aurora.astro";
+import mark from "../../../../brand/svg/mark.svg";
 import { t } from "../i18n";
+import { facts } from "../lib/facts";
 
-const links = [
-  { href: "/docs/", label: t("footer.docs") },
-  { href: "/changelog/", label: t("footer.changelog") },
-  { href: "/privacy/", label: t("footer.privacy") },
-  { href: t("site.repoBlob", { path: "SECURITY.md" }), label: t("footer.security") },
-  { href: t("site.repo"), label: t("footer.source") },
+const groups = [
+  {
+    heading: t("footer.product"),
+    links: [
+      { href: "/benchmarks/", label: t("footer.benchmarks") },
+      { href: "/compare/idm/", label: t("footer.compare") },
+      { href: "/changelog/", label: t("footer.changelog") },
+    ],
+  },
+  {
+    heading: t("footer.docs"),
+    links: [
+      { href: "/docs/getting-started/", label: t("footer.install") },
+      { href: "/docs/cli/", label: t("footer.cli") },
+      { href: "/docs/cli/scripting/", label: t("footer.scripting") },
+    ],
+  },
+  {
+    heading: t("footer.project"),
+    links: [
+      { href: t("site.repo"), label: t("footer.source") },
+      { href: t("site.repoBlob", { path: "SECURITY.md" }), label: t("footer.security") },
+      { href: "/privacy/", label: t("footer.privacy") },
+    ],
+  },
 ];
+const factLine = t("footer.facts", { version: facts.version, bench: facts.benchDate, commit: facts.commit });
 ---
 
 <footer class="footer">
-  <div class="wrap row">
+  <div class="field"><Aurora mode="calm" /></div>
+  <div class="wrap grid">
     <div class="about">
-      <p class="license">{t("footer.license")}</p>
-      <p class="credit">{t("footer.credit")}</p>
+      <img src={mark.src} width="30" height="30" alt="" />
+      <p>{t("footer.tagline")}</p>
     </div>
     <nav aria-label={t("footer.nav")}>
-      <ul>
-        {
-          links.map((link) => (
-            <li>
-              <a href={link.href}>{link.label}</a>
-            </li>
-          ))
-        }
-      </ul>
+      {
+        groups.map((g) => (
+          <div>
+            <h2>{g.heading}</h2>
+            <ul>
+              {g.links.map((l) => (
+                <li>
+                  <a href={l.href}>{l.label}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
     </nav>
+  </div>
+  <div class="wrap base">
+    <p>{t("footer.credit")}</p>
+    <p class="facts">{factLine}</p>
   </div>
 </footer>
 
 <style>
   .footer {
-    margin-top: 6rem;
-    border-top: 1px solid var(--border);
-    padding-block: 2.5rem 3rem;
+    --feather: clamp(6rem, 9vw, 8rem);
+    position: relative;
+    isolation: isolate;
+    margin-top: clamp(4rem, 9vw, 7rem);
+    padding-top: var(--feather);
+    color: #fff;
     font-size: 0.875rem;
   }
-  .row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 1.5rem 3rem;
+  .field {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
   }
-  .license {
-    color: var(--text);
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+    gap: 2.5rem 3rem;
+    padding-block: 2.5rem 3rem;
   }
-  .credit {
-    margin-top: 0.25rem;
-    color: var(--text-subtle);
+  .about {
+    display: grid;
+    align-content: start;
+    gap: 1rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2rem;
+  }
+  h2 {
+    font: 400 0.75rem/1 var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #a7f3d0;
   }
   ul {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.5rem;
-    margin: 0;
+    display: grid;
+    gap: 0.6rem;
+    margin: 1.1rem 0 0;
     padding: 0;
     list-style: none;
   }
   a {
-    color: var(--text-muted);
+    color: rgb(255 255 255 / 0.9);
     text-decoration: none;
+    transition: color 0.2s;
   }
   a:hover {
-    color: var(--text);
+    color: #fff;
     text-decoration: underline;
+    text-underline-offset: 0.25em;
+  }
+  a:focus-visible {
+    outline-color: #fff;
+  }
+  .base {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 2rem;
+    padding-block: 1.25rem 2.25rem;
+    border-top: 1px solid rgb(255 255 255 / 0.14);
+    color: rgb(255 255 255 / 0.82);
+    font-size: 0.8125rem;
+  }
+  .facts {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 48rem) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 30rem) {
+    nav {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 </style>

@@ -1,0 +1,721 @@
+---
+// "Built in" on Home: six tiles, each showing its feature in a small live
+// animation instead of a paragraph. Five are in v0.1; the browser extension
+// carries its milestone (docs/ROADMAP.md). The animations are CSS, plus two
+// tiny scripted ones (the speed limiter and the hash), and they run only while
+// the grid is on screen. Their resting state, shown without JavaScript and
+// under reduced motion, is the finished picture.
+import { t } from "../../i18n";
+import SectionHead from "./SectionHead.astro";
+
+const hash = "9f2c41d07be35a8e6c1f0d94a2b7e85c3d61f0a9b4e27c58d13a6f09e2b4c7d1";
+const json = [
+  '{"event":"start","id":7,"connections":4}',
+  '{"event":"progress","id":7,"done":0.31}',
+  '{"event":"connection","id":7,"count":6}',
+  '{"event":"progress","id":7,"done":0.74}',
+  '{"event":"checksum","id":7,"ok":true}',
+  '{"event":"done","id":7,"secs":7.9}',
+];
+const STREAM = 40;
+---
+
+<section class="features wrap" aria-labelledby="features-title" data-bento>
+  <SectionHead index="04" kicker={t("home.features.kicker")} heading={t("home.features.heading")} id="features-title" note={t("home.features.note")} />
+
+  <ul class="grid">
+    <li class="tile wide limit">
+      <div class="art" aria-hidden="true">
+        <div class="stream" data-stream>
+          {Array.from({ length: STREAM }, () => <i />)}
+        </div>
+        <div class="dial">
+          <span class="slider"><span class="knob" data-knob></span></span>
+          <span class="val num" data-rate>4.0 MiB/s</span>
+          <span class="flag num">--limit 4M</span>
+        </div>
+      </div>
+      <h3>{t("home.features.limit.title")}</h3>
+      <p>{t("home.features.limit.body")}</p>
+    </li>
+
+    <li class="tile check">
+      <div class="art" aria-hidden="true">
+        <code class="hash" data-hash={hash}>{hash.slice(0, 32)}<br />{hash.slice(32)}</code>
+        <span class="ok">✓ SHA-256</span>
+      </div>
+      <h3>{t("home.features.checksum.title")}</h3>
+      <p>{t("home.features.checksum.body")}</p>
+    </li>
+
+    <li class="tile refresh">
+      <div class="art" aria-hidden="true">
+        <div class="links">
+          <code class="old">…/atlas.zip?sig=7f3a <b>403</b></code>
+          <code class="new">…/atlas.zip?sig=c41d <b>✓</b></code>
+        </div>
+        <div class="minibar"><span></span></div>
+        <span class="pctl num">97%</span>
+      </div>
+      <h3>{t("home.features.refresh.title")}</h3>
+      <p>{t("home.features.refresh.body")}</p>
+    </li>
+
+    <li class="tile network">
+      <div class="art" aria-hidden="true">
+        <div class="route">
+          <span class="node">boltget</span>
+          <span class="wire"><i></i><i></i><i></i></span>
+          <span class="node strong">socks5</span>
+          <span class="wire"><i></i><i></i><i></i></span>
+          <span class="node">server</span>
+        </div>
+        <span class="cookie num">cookies.txt</span>
+      </div>
+      <h3>{t("home.features.network.title")}</h3>
+      <p>{t("home.features.network.body")}</p>
+    </li>
+
+    <li class="tile json">
+      <div class="art" aria-hidden="true">
+        <div class="log">
+          <div class="roll">
+            {[...json, ...json].map((l) => <code>{l}</code>)}
+          </div>
+        </div>
+        <span class="exit num">exit 0</span>
+      </div>
+      <h3>{t("home.features.json.title")}</h3>
+      <p>{t("home.features.json.body")}</p>
+    </li>
+
+    <li class="tile wide browser">
+      <div class="art" aria-hidden="true">
+        <div class="win">
+          <div class="chrome"><i></i><i></i><i></i><span class="addr">releases.example.com/atlas</span></div>
+          <div class="page">
+            <span class="line w1"></span>
+            <span class="line w2"></span>
+            <span class="dl">atlas-4.2-x64.zip</span>
+            <span class="cursor"></span>
+          </div>
+          <div class="toast"><span class="tq"></span>BoltGet · 4 connections</div>
+        </div>
+      </div>
+      <h3>
+        {t("home.features.browser.title")}
+        <span class="soon">{t("home.features.soon", { milestone: "v0.3" })}</span>
+      </h3>
+      <p>{t("home.features.browser.body")}</p>
+    </li>
+  </ul>
+</section>
+
+<style>
+  .features {
+    margin-top: var(--section-gap);
+  }
+  .head {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .grid {
+    list-style: none;
+    margin: clamp(2.5rem, 5vw, 4rem) 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 1.5rem;
+    border-radius: 20px;
+    background: var(--soft);
+    box-shadow: inset 0 0 0 1px rgb(2 44 34 / 0.04);
+  }
+  .wide {
+    grid-column: span 2;
+  }
+  .art {
+    position: relative;
+    height: 9.5rem;
+    margin-bottom: 1.5rem;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(2 44 34 / 0.05),
+      0 12px 28px -18px rgb(2 44 34 / 0.25);
+    overflow: hidden;
+  }
+  h3 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+    font-size: 1.0625rem;
+    letter-spacing: -0.015em;
+  }
+  .tile p {
+    margin-top: 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+  .soon {
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #065f46;
+    font: 400 0.6875rem/1.4 var(--font-mono);
+    letter-spacing: 0.02em;
+  }
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Animations run only while the grid is on screen. */
+  :global([data-bento]:not(.playing)) .art *,
+  :global([data-bento]:not(.playing)) .art *::before,
+  :global([data-bento]:not(.playing)) .art *::after {
+    animation-play-state: paused !important;
+  }
+
+  /* 1. Speed limit: a stream of squares that slows to the limit. */
+  .stream {
+    position: absolute;
+    left: 1.25rem;
+    right: 1.25rem;
+    top: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(40, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .stream i {
+    aspect-ratio: 1;
+    background: #e9efec;
+  }
+  .stream :global(i.on) {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.25) 0 38%, transparent 38%),
+      linear-gradient(90deg, #6ee7b7, #10b981, #0d9488);
+    background-size:
+      100% 100%,
+      4000% 100%;
+    background-position:
+      0 0,
+      var(--gx, 0%) 0;
+  }
+  .stream :global(i.hd) {
+    background: #06261e;
+  }
+  .dial {
+    position: absolute;
+    left: 1.25rem;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .slider {
+    position: relative;
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #10b981 var(--k, 30%), #e4e4e7 var(--k, 30%));
+  }
+  .knob {
+    position: absolute;
+    top: 50%;
+    left: var(--k, 30%);
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(2 44 34 / 0.15),
+      0 2px 6px rgb(2 44 34 / 0.2);
+    transform: translate(-50%, -50%);
+  }
+  .val {
+    min-width: 6.5rem;
+    font-size: 1.25rem;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+    text-align: right;
+  }
+  .flag {
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+
+  /* 2. Checksum: the digest resolves, then the tick. */
+  .check .art {
+    display: grid;
+    place-content: center;
+    gap: 0.9rem;
+    padding: 1rem;
+  }
+  .hash {
+    font: 400 0.6875rem/1.6 var(--font-mono);
+    color: var(--text-muted);
+    word-break: break-all;
+    text-align: center;
+  }
+  .hash :global(.r) {
+    color: var(--ink);
+  }
+  .ok {
+    justify-self: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #047857;
+    font: 600 0.75rem/1.4 var(--font-sans);
+    animation: pop 6s var(--ease-out) infinite;
+  }
+  @keyframes pop {
+    0%,
+    62% {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    70%,
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* 3. Link refresh: the old link fails at 97%, a new one carries on. */
+  .refresh .art {
+    padding: 1.25rem;
+  }
+  .links {
+    position: relative;
+    height: 1.4rem;
+  }
+  .links code {
+    position: absolute;
+    inset: 0;
+    font: 400 0.75rem/1.4 var(--font-mono);
+    white-space: nowrap;
+  }
+  .old b {
+    color: #b91c1c;
+    font-weight: 400;
+  }
+  .new b {
+    color: #047857;
+    font-weight: 400;
+  }
+  .old {
+    opacity: 0;
+    animation: old 7s var(--ease-out) infinite;
+  }
+  .new {
+    animation: neu 7s var(--ease-out) infinite;
+  }
+  @keyframes old {
+    0%,
+    48% {
+      opacity: 1;
+      transform: none;
+    }
+    56%,
+    100% {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+  }
+  @keyframes neu {
+    0%,
+    52% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    60%,
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .minibar {
+    position: absolute;
+    left: 1.25rem;
+    right: 1.25rem;
+    bottom: 1.6rem;
+    height: 8px;
+    background: #e9efec;
+  }
+  .minibar span {
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #6ee7b7, #10b981 60%, #0d9488);
+    animation: mb 7s linear infinite;
+  }
+  @keyframes mb {
+    0% {
+      width: 70%;
+    }
+    25%,
+    58% {
+      width: 97%;
+      filter: saturate(0.2);
+    }
+    60% {
+      filter: none;
+    }
+    75%,
+    100% {
+      width: 100%;
+    }
+  }
+  .pctl {
+    position: absolute;
+    right: 1.25rem;
+    top: 3.4rem;
+    font-size: 1.5rem;
+    letter-spacing: -0.03em;
+  }
+
+  /* 4. Proxies and cookies: squares travel through the proxy. */
+  .network .art {
+    display: grid;
+    align-content: center;
+    gap: 1.1rem;
+    padding: 1rem;
+  }
+  .route {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .node {
+    flex: none;
+    padding: 0.3rem 0.5rem;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    font: 400 0.6875rem/1.2 var(--font-mono);
+    color: var(--text-muted);
+  }
+  .node.strong {
+    background: #ecfdf5;
+    color: #065f46;
+    box-shadow: none;
+  }
+  .wire {
+    position: relative;
+    flex: 1;
+    height: 6px;
+    background: repeating-linear-gradient(90deg, #e4e4e7 0 2px, transparent 2px 6px) center / 100% 1px no-repeat;
+  }
+  .wire i {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 6px;
+    background: #10b981;
+    opacity: 0;
+    animation: travel 2.4s linear infinite;
+  }
+  .wire i:nth-child(2) {
+    animation-delay: 0.8s;
+  }
+  .wire i:nth-child(3) {
+    animation-delay: 1.6s;
+  }
+  .wire + .node + .wire i {
+    animation-delay: 1.2s;
+  }
+  @keyframes travel {
+    0% {
+      left: 0;
+      opacity: 0;
+    }
+    15%,
+    85% {
+      opacity: 1;
+    }
+    100% {
+      left: calc(100% - 6px);
+      opacity: 0;
+    }
+  }
+  .cookie {
+    justify-self: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: #f4f4f5;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+
+  /* 5. JSON lines, rolling. */
+  .json .art {
+    background: #0c0c10;
+  }
+  .log {
+    position: absolute;
+    inset: 0.9rem 0.9rem 2.4rem;
+    overflow: hidden;
+    -webkit-mask: linear-gradient(180deg, transparent, #000 25%, #000 80%, transparent);
+    mask: linear-gradient(180deg, transparent, #000 25%, #000 80%, transparent);
+  }
+  .roll {
+    display: grid;
+    gap: 0.35rem;
+    animation: roll 9s linear infinite;
+  }
+  .roll code {
+    font: 400 0.625rem/1.3 var(--font-mono);
+    color: #a1a1aa;
+    white-space: nowrap;
+  }
+  @keyframes roll {
+    to {
+      transform: translateY(-50%);
+    }
+  }
+  .exit {
+    position: absolute;
+    left: 0.9rem;
+    bottom: 0.8rem;
+    font-size: 0.6875rem;
+    color: #6ee7b7;
+  }
+
+  /* 6. Browser extension: a click on a link lands in BoltGet. */
+  .browser .art {
+    display: grid;
+    place-items: center;
+    background: linear-gradient(180deg, #f5f7f6, #fff);
+  }
+  .win {
+    position: relative;
+    width: min(26rem, 88%);
+    height: 7.25rem;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(2 44 34 / 0.08),
+      0 10px 24px -14px rgb(2 44 34 / 0.3);
+    overflow: hidden;
+  }
+  .chrome {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 1.6rem;
+    padding: 0 0.6rem;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .chrome i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e4e4e7;
+  }
+  .addr {
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 6px;
+    background: #f4f4f5;
+    font: 400 0.625rem/1.4 var(--font-mono);
+    color: var(--text-subtle);
+  }
+  .page {
+    position: relative;
+    padding: 0.8rem 0.9rem;
+    display: grid;
+    gap: 0.45rem;
+  }
+  .line {
+    height: 6px;
+    border-radius: 3px;
+    background: #f0f2f1;
+  }
+  .w1 {
+    width: 60%;
+  }
+  .w2 {
+    width: 40%;
+  }
+  .dl {
+    justify-self: start;
+    font-size: 0.75rem;
+    color: #047857;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .cursor {
+    position: absolute;
+    left: 7.5rem;
+    top: 2.9rem;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 14px solid var(--ink);
+    transform: rotate(-30deg);
+    animation: cursor 6s var(--ease-out) infinite;
+  }
+  @keyframes cursor {
+    0% {
+      transform: translate(70px, 30px) rotate(-30deg);
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    35% {
+      transform: rotate(-30deg);
+    }
+    40% {
+      transform: rotate(-30deg) scale(0.85);
+    }
+    45%,
+    100% {
+      transform: rotate(-30deg);
+    }
+  }
+  .toast {
+    position: absolute;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
+    background: #0b0b0f;
+    color: #fff;
+    font-size: 0.6875rem;
+    animation: toast 6s var(--ease-out) infinite;
+  }
+  .tq {
+    width: 8px;
+    height: 8px;
+    background: linear-gradient(135deg, #a7f3d0, #34d399 50%, #059669);
+  }
+  @keyframes toast {
+    0%,
+    42% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    50%,
+    88% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .art *,
+    .art *::before,
+    .art *::after {
+      animation: none !important;
+    }
+    .old {
+      opacity: 0;
+    }
+  }
+  @media (max-width: 64rem) {
+    .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 40rem) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .wide {
+      grid-column: auto;
+    }
+    .stream {
+      grid-template-columns: repeat(24, minmax(0, 1fr));
+    }
+    .stream :global(i:nth-child(n + 25)) {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-bento]")) {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const stream = [...root.querySelectorAll<HTMLElement>("[data-stream] i")];
+    const knob = root.querySelector<HTMLElement>("[data-knob]")?.parentElement?.parentElement;
+    const rate = root.querySelector<HTMLElement>("[data-rate]");
+    const hashEl = root.querySelector<HTMLElement>("[data-hash]");
+    const hash = hashEl?.dataset.hash ?? "";
+    const HEX = "0123456789abcdef";
+    let raf = 0;
+    let last = 0;
+    let clock = 0;
+    let visible = false;
+    let pos = 0;
+
+    const drawStream = (visibleCount: number) => {
+      const n = Math.min(stream.length, visibleCount);
+      stream.forEach((sq, i) => {
+        const on = i < n && (i + Math.floor(pos)) % 5 !== 0;
+        sq.classList.toggle("on", on);
+        sq.style.setProperty("--gx", `${(i / Math.max(1, n - 1)) * 100}%`);
+      });
+    };
+    const shown = () => stream.filter((s) => s.offsetParent !== null).length || stream.length;
+
+    const paint = () => {
+      // Speed limit: the knob eases between 12 and 4 MiB/s every 4 s.
+      const phase = (clock % 8) / 8;
+      const k = phase < 0.5 ? Math.min(1, phase / 0.12) : 1 - Math.min(1, (phase - 0.5) / 0.12);
+      const e = k * k * (3 - 2 * k);
+      const mib = 12 - 8 * e;
+      knob?.style.setProperty("--k", `${78 - 52 * e}%`);
+      if (rate) rate.textContent = `${mib.toFixed(1)} MiB/s`;
+      pos += mib * 0.016 * 0.9;
+      drawStream(shown());
+      // Checksum: characters resolve left to right over 3.6 s of a 6 s loop.
+      if (hashEl) {
+        const tt = clock % 6;
+        const solid = Math.min(hash.length, Math.floor((tt / 3.6) * hash.length));
+        let html = "";
+        for (let i = 0; i < hash.length; i++) {
+          if (i === 32) html += "<br>";
+          html += i < solid ? `<span class="r">${hash[i]}</span>` : HEX[(i * 7 + Math.floor(tt * 20)) % 16];
+        }
+        hashEl.innerHTML = html;
+      }
+    };
+
+    const frame = (now: number) => {
+      raf = 0;
+      clock += Math.min(0.1, (now - last) / 1000);
+      last = now;
+      paint();
+      if (visible && !document.hidden) raf = requestAnimationFrame(frame);
+    };
+    const schedule = () => {
+      if (raf || !visible || document.hidden || reduced) return;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+    new IntersectionObserver(([e]) => {
+      visible = e?.isIntersecting ?? false;
+      root.classList.toggle("playing", visible);
+      schedule();
+    }).observe(root);
+    document.addEventListener("visibilitychange", schedule);
+    drawStream(shown());
+  }
+</script>
