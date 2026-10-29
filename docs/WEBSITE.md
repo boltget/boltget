@@ -26,7 +26,7 @@ The repository's design documents (this `docs/` folder) are for contributors. Th
 
 ## Home page
 
-The first version of Home (a centred headline over the giant pixel arrow, a segmented bar below it, then card grids) is built and described under [Implementation status](#implementation-status). The project owner judged it correct but not captivating, so Home is being redesigned. This section is the plan; two prototypes of it live at `/lab/a` and `/lab/b` (see [Design lab](#design-lab)).
+Home was redesigned in October 2026. The owner chose **direction A ("Daylight")** from the two prototypes at `/lab/a` and `/lab/b` (see [Design lab](#design-lab)); it is now built as `/`. This section keeps the research and the plan; what was actually built, and the decisions taken while building it, are in [Home as built](#home-as-built) and [Character](#character). The first Home (a centred headline over the giant pixel arrow) is described under [Superseded: first hero concept](#superseded-first-hero-concept).
 
 ### Research notes
 
@@ -71,14 +71,35 @@ Two directions were prototyped:
 
 ### Home sections after the hero
 
-1. **How it works** (statement): kicker + one 3-line statement in display-weight type: *"It starts with four connections and adds more only while they make the download faster. When one finishes early, it takes over half of the largest part left, so every connection finishes together."* Full build: B's block map plays here, full bleed on ink, as the scene that *shows* the statement (scroll-triggered, one run, then rests).
-2. **Proof**: three big figures in a row, read from `bench/results/` at build time: lab 1 GiB median MiB/s, public CDN median MiB/s, "1,000 restarts" (kill-and-resume test), each with one sentence and one link to the method. Never a number that is not in the data.
-3. **Never loses progress**: a small live crash-and-resume vignette (the terminal: Ctrl-C, `boltget resume 7`, continues at 63%) beside one sentence.
-4. **Built into the engine**: the six engine features as a calm two-column list with hairline separators, no cards, no icons.
-5. **For scripts**: the CLI block (four real commands) on paper, mono, with the exit codes/JSON link.
-6. **Closing**: a single large line *"Build it, run it, measure it."* with two text links, then the footer, where the license line (the one mention of free/open source) lives.
+Superseded by [Home as built](#home-as-built). The plan was a statement paragraph, three proof figures, a terminal vignette, a feature list, a CLI block and a closing line; the owner judged a first build of it "just text". The rule that replaced it: **every section shows, not tells**: a short headline, at most one line of copy, and a visual that does the explaining.
+
+### Home as built
+
+Components are in `apps/web/src/components/home/`; the simulation is `src/lib/sim.ts`, the shared file-map renderer `src/lib/chunkmap.ts`, the atmosphere shader `src/components/Aurora.astro`. Copy is in `src/i18n/en.json` under `home.*`.
+
+1. **Hero.** As in the plan (field, copy, the simulated v0.2 app card `AppDemo.svelte`, hydrated `client:load`), with the file map drawn by `chunkmap.ts` in the pixel style of [brand/BRAND.md, Pixels on the web](../brand/BRAND.md#pixels-on-the-web). The connection list uses one uniform swatch, because the map is no longer coloured per connection. Contrast fix: the shader holds the ramp near 0.31 (`#046C52` to `#05725A`) behind the copy (the element marked `data-aurora-clamp`) with a soft knee and a feathered vertical transition, so the bright curtain can no longer drift behind the sentence; worst case about 5.3:1 for white text (about 4:1 in the prototype).
+2. **01 / How it works** (`HowItWorks.astro`). One file map (48 x 4 squares, 24 x 4 on phones; file order top to bottom, then right, so every part is a horizontal span with a labelled bracket above it) plays the seeded run through five steps when it is on screen: **Probe, Split, Add, Steal, Verify**. A compact step indicator (five buttons, each with a progress hairline) follows along; click, tap or the arrow keys jump to a step; hovering or focusing the scene pauses it. It never reacts to scrolling: a first build was a sticky scroll-driven scene, and the owner found having to keep scrolling tiring. Under the map: a byte-offset ruler (0 B to the file size, hex offsets at both ends) and a readout (connections, received, simulated time). Under reduced motion nothing plays; each step shows its still frame when chosen. Without JavaScript the steps are a plain list.
+3. **Playground** (in the same scene). A file-size slider (24 MiB to 2 GiB) and a switch "Server limits each connection to 2 MiB/s" re-run the simulation: unlimited, the shared line cap makes the controller stop at about 7 connections; limited, it keeps adding up to 16 and the run takes much longer. Each run plays in about eight seconds whatever its size; the summary states peak connections, steals and simulated time. Labelled "Simulation".
+4. **02 / Measured** (`SpeedRuns.astro`), the night band. One row per target of the newest run (BoltGet adaptive, the median from `summary.csv`): a bar of squares that fills in exactly the measured median time (a real-time replay, at most 6.8 s), the seconds counting up in large tabular figures, the MiB/s appearing when the row finishes. A drafting dimension line runs over the bars ("0 s ... whole file"); the source folder is named in the section rule. Dated, links to `/benchmarks`, no comparison with other products on Home. Without JavaScript and under reduced motion the bars are full and the figures final. A Replay link appears afterwards.
+5. **03 / Never loses progress** (`ResumeDemo.astro`). A small download card runs to 64%; the "power cut" flickers and dims it ("Process killed"); the bytes after the last checkpoint (56%) are shown as lost; `boltget resume 7` types itself; it continues from the checkpoint and finishes "Byte-identical" with the digest. Beside it the one real figure: **1,000** kills over 349 downloads in testing, every file byte-identical ([ENGINE.md, Testing strategy](ENGINE.md); [ROADMAP.md](ROADMAP.md)). The card is labelled "Simulated".
+6. **04 / Built in** (`Features.astro`). Six tiles, each with a small live picture instead of a paragraph: speed limit (a slider throttling a stream of squares, `--limit 4M`), checksum (a SHA-256 digest resolving, then the tick), link refresh (a 403 link replaced at 97%), proxies and cookies (squares travelling through a SOCKS5 node), scripting (rolling JSON lines, `exit 0`), browser extension (a click handed to BoltGet) marked **Planned · v0.3**. The others exist in v0.1. The scheduler was left out: six tiles were enough, and a second planned item would dilute the grid. The animations are CSS plus two tiny scripted ones and run only while the grid is visible.
+7. **Closing.** The pixel arrow at 216 px plays its row-by-row signature once on view, then one light sweep passes across it; headline "Build it, run it, measure it." and two underlined links (Try the CLI preview, Read the docs).
+
+Header and footer: the nav is Benchmarks, Docs, Changelog. Compare was left out of the nav (it stays in the footer as "BoltGet and IDM"): three links keep the bar calm, and Home avoids pointing at another product. GitHub, license and star badges are not in the header; the footer's "Open source on GitHub" is the site's only mention of the project being open source. "No ads, no account, no telemetry" and similar lines were removed from the marketing pages (the privacy page still says it).
+
+### Character
+
+Five layers that make the site distinctive without more imagery:
+
+- **Drafting layer.** Each Home section opens with a hairline rule carrying its index and kicker ("01 / HOW IT WORKS") on the left and a small monospace annotation on the right ("fig. 1 · file map, one square per slice", "source: bench/results/(run)"), via `SectionHead.astro`. The file map has a byte-offset ruler with hex offsets; the benchmark bars have a dimension line. Low contrast, at most one annotation per element.
+- **Colour rhythm.** Paper, night, paper, aurora footer. The night band (Measured) and the footer carry the hero's smoke (the `Aurora` shader in its `night` and `calm` modes: slower, no chunks, held on the dark stops), always inside their own section. The night band fades in from paper and out again with a long smootherstep gradient (`--feather`, 160 to 240 px), full width; the footer starts under a gentle wave (two slow sines) whose edge is feathered over about 44 px. Alpha is exactly zero at every canvas edge, so no rectangle shows. Two earlier builds were rejected by the owner: crisp SVG wave edges (too hard), then smoke billowing across the boundary into the paper (read as heavy dark clouds, and showed the canvas's straight top edge at the corners). Without WebGL, a CSS gradient with an eased multi-stop mask stands in.
+- **Material.** A faint film grain over the whole page (an inline SVG `feTurbulence` tile at 3% opacity, fixed, `pointer-events: none`, hidden in print), so flat white reads as paper.
+- **Playground.** See Home as built, item 3.
+- **Facts.** The footer's last line, in mono, is built from the repository at build time (`src/lib/facts.ts`): the workspace version from the root `Cargo.toml`, the date of the newest benchmark run, and the short commit of the build (`GITHUB_SHA` or the host's variable when set, otherwise `git rev-parse`).
 
 ### How the other pages inherit the system
+
+Built so far (basic consistency): every marketing page uses the paper theme (`data-theme="light"`, the `--type-*` scale, `.tlink`, `.statement`), the sticky translucent paper header and the aurora footer, so `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy` and the 404 page match Home; their content was not redesigned. Starlight already uses Geist and the emerald accents and is otherwise unchanged. The plan below remains the target.
 
 - **/benchmarks**: paper theme, a short atmospheric band at the top (the same shader, 40% height, already dissolved), then the figures in the big figure style and the result tables in Geist Mono with hairlines. Each target gets a small static file map showing its median connection count.
 - **/compare/idm**: paper theme, no atmosphere (a factual page), the comparison table with the "Available now"/milestone status as pills, the measured table in mono.
@@ -101,7 +122,7 @@ The budget below still applies. Specific targets: hero shader ≤ 4 KB, demo isl
 
 ### Build order
 
-1. **Decide** between A and B (or the recommended combination) on the lab pages; record the decision here.
+1. **Decide** between A and B on the lab pages: **done, A** (October 2026).
 2. **System**: paper/ink/atmosphere tokens into `brand/scripts/build.mjs` (so they are generated, not hand-written), the type scale and spacing as CSS custom properties, the shared header and footer in the new style, the `tlink` link style.
 3. **Hero**: move the shader and the demo out of `src/lab/` into components, copy into `en.json`, island size work (imperative rendering or a smaller runtime), reduced-motion and no-JS states, visual tests of seeded frames (`?at=` freezes the demo).
 4. **Sections**: statement with the block-map scene, proof figures from bench data, resume vignette, features, CLI, closing.
@@ -114,13 +135,13 @@ The budget below still applies. Specific targets: hero shader ≤ 4 KB, demo isl
 
 ### Superseded: first hero concept
 
-Kept for the record. The first concept put the giant pixel arrow on near-black, lit it row by row, and flowed its pixels into a segmented progress bar under the headline; three proof points, a feature grid and a CLI block followed. It is what `/` still shows today (details under Implementation status).
+Kept for the record. The first concept put the giant pixel arrow on near-black, lit it row by row, and flowed its pixels into a segmented progress bar under the headline; three proof points, a feature grid and a CLI block followed. It was replaced by direction A in October 2026; its components (`HeroStage.svelte`, `PixelGlyph.astro`) were removed and remain in the git history.
 
 ## Implementation status
 
 First version, built during v0.1 (there is no installer yet, only the engine and CLI).
 
-**Built:** `/` (the first hero concept, see [Superseded: first hero concept](#superseded-first-hero-concept); its original spec is in the git history of this file), `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy`, a 404 page, `/.well-known/security.txt`, `robots.txt` and a sitemap, and Starlight docs under `/docs` (overview, install from source, using the CLI, exit codes and JSON).
+**Built:** `/` (direction A, see [Home as built](#home-as-built)), `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy`, a 404 page, `/.well-known/security.txt`, `robots.txt` and a sitemap, and Starlight docs under `/docs` (overview, install from source, using the CLI, exit codes and JSON).
 
 **Design lab:** `/lab/a` and `/lab/b`, prototypes of the redesign (see [Design lab](#design-lab)); noindex and not in the sitemap.
 
@@ -130,11 +151,13 @@ Decisions:
 
 - **Workspace.** A pnpm workspace at the repository root (`apps/*`, `packages/*` and `brand`, one `pnpm-lock.yaml`), Node pinned by `.node-version`. `brand/` is a member so `cd brand && pnpm install` keeps working; it no longer has its own lockfile. Dependency versions are pinned exactly.
 - **Tokens and assets.** No `packages/ui` yet: the site imports `brand/tokens/tokens.css` and the fonts in `brand/fonts` directly, and `apps/web/scripts/copy-brand.mjs` copies the favicons, web manifest and OG image from `brand/` into `public/` before every build (the copies are git-ignored). The tokens move to `packages/ui` when the desktop app needs them too.
-- **Primary button before an installer exists.** It reads "Try the CLI preview" and goes to `/docs/getting-started/` (build from source), with a status line under the buttons: "v0.1 is the engine and the command-line tool. The Windows app arrives in v0.2." It becomes "Download for Windows", linking to `/download`, when the first preview builds are published (v0.2).
-- **Hero layout.** Copy on top, the arrow below it, the bar directly under the arrow, so the pixels fall straight down into the bar. The row-by-row lighting is CSS, so it also plays without JavaScript. When the last row is lit, copies of the 37 pixels fly into 37 slots across the bar and merge into it; the arrow itself stays lit. This movement is the one exception to the brand rule that only opacity animates, because this spec asks for the flow.
-- **Simulation.** 320 MiB, 4 connections at the start and one more every 0.9 s up to 6 (the adaptive start of 4 is real; the rest is illustrative), a split only when at least 16 MiB remain, 10.5 to 15.5 MiB/s per connection with slow variation and a short ramp-up. Seeded (mulberry32) with fixed 1/120 s steps. A finished download holds "Done" for 2.4 s, fades, and the next one starts; the arrow does not replay. The live numbers are `aria-hidden`; the SVG's text alternative says it is a simulation.
-- **JavaScript on Home.** Measured at about 17.8 KB gzipped: the island 3.5 KB, the Svelte client runtime 11.6 KB plus its 0.5 KB Astro renderer, and Astro's inline island loader 2.2 KB. That is over the 15 KB design target. The island already draws imperatively (pooled SVG rects) to keep its own share small; the rest is the Svelte runtime. Astro's link prefetching is off, so the other marketing pages ship no JavaScript.
-- **Marketing pages are dark only.** The docs follow the reader's theme (Starlight's toggle) with the brand's light tokens.
+- **Primary link before an installer exists.** "Try the CLI preview", to `/docs/getting-started/` (build from source), as an underlined text link; the v0.2 app is announced by the hero card's "Preview · v0.2 app" chip and caption. It becomes "Download for Windows", linking to `/download`, when the first preview builds are published (v0.2).
+- **Simulation.** `src/lib/sim.ts` (`DEMO_SIM`: 420 MiB, start 4, add one every 0.6 s while the last addition raised throughput by more than 6%, a wobbling 58 MiB/s line cap, steals on finish), seeded (mulberry32) with fixed 1/120 s steps. The lab's `src/lab/sim.ts` re-exports it. Live numbers are `aria-hidden`; each figure's accessible name says it is a simulation.
+- **Pixels.** `chunkmap.ts` eases squares in on the wall clock, not on simulation time, so a scene held still still finishes its easing; a draw that is not part of a running animation (a still, `?at=`, a resize) settles at once.
+- **JavaScript on Home.** About 33 KB gzipped in total: the Svelte runtime 15.9 KB, the hero island 4.3 KB, `sim.ts` 1.6 KB, `chunkmap.ts` 1.3 KB, the shader 2.5 KB, the How-it-works scene 2.8 KB, and about 3.8 KB of small inline scripts (Measured, resume card, tiles, closing mark, Astro's island loader). That is over the 15 KB design target; the next step is rendering the hero card without Svelte. Only the hero hydrates on load; every other scene is plain script that starts when visible and pauses off screen and in hidden tabs.
+- **JavaScript on the other marketing pages.** The footer's aurora is the shader script (2.5 KB gzipped), so those pages are no longer at 0 KB; it runs only while the footer is on screen. One WebGL context per field (at most three on Home), each paused off screen; under reduced motion each draws one still frame.
+- **Marketing pages use the paper theme.** The docs follow the reader's theme (Starlight's toggle) with the brand's light tokens.
+- **Tokens.** The atmosphere ramp is generated by `brand/scripts/build.mjs` as `--atmosphere-*` (and `atmosphere` in `tokens.json`); the type scale, spacing and paper hairlines are custom properties in `src/styles/global.css`.
 - **Benchmark data.** `/benchmarks`, the Fast proof point and the comparison read the newest `bench/results/<date>-*/` folder (`summary.csv`, `environment.json`, `targets.toml`) at build time, so a new run folder updates the site without code changes. Medians and spreads are shown with 2 decimals and MiB/s with 1, as in [BENCHMARK.md](BENCHMARK.md). A difference is stated only when the min-to-max spreads of IDM's default and BoltGet's adaptive default do not overlap, computed from the data.
 - **Comparison.** The rows are in `apps/web/src/data/compare-idm.json`, derived from [FEATURES.md](FEATURES.md), each marked "Available now" or with its milestone; "Unknown" stands for FEATURES.md's `?`. "Last reviewed" shows the date and IDM version of the benchmark run, so both are reviewed together.
 - **Copy.** Short strings are in `apps/web/src/i18n/en.json` (keyed, whole sentences with named placeholders, plural forms for counts). Long-form copy and data are content collections (`src/content/pages`, `src/content/docs`, `src/data`). `/changelog` renders the root `CHANGELOG.md` through a content collection.
