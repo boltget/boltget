@@ -54,6 +54,20 @@ sha256 = "69527432e04c79b66016e285823a429a79a400b04a892bb8c4b0b56cfa60dde8"
 notes = "Every connection limited to 2 MiB/s by the server: the case segmentation exists for."
 
 [[target]]
+name = "lab-throttled-10mib"
+url = "{lab}/data?size=10485760&seed=103&throttle=2097152"
+size = 10485760
+sha256 = "5331991d1d070d14860702fe4dba5786057aa19328620e09aedc74ba554da753"
+notes = "Small file, every connection limited to 2 MiB/s: ends before a slow controller would add connections."
+
+[[target]]
+name = "lab-10mib"
+url = "{lab}/data?size=10485760&seed=104"
+size = 10485760
+sha256 = "67de184593db6ee507ab3b9bb216e88e3189d187358cb567c96c30a9d8ff440d"
+notes = "Small file on loopback, no limit: start-up cost dominates; extra connections only cost."
+
+[[target]]
 name = "lab-1gib"
 url = "{lab}/data?size=1073741824&seed=102"
 size = 1073741824
