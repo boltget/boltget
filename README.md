@@ -78,7 +78,7 @@ Nothing to install yet. Once releases exist:
 
 ## Repository layout
 
-The repository is a monorepo (pnpm workspaces + a Cargo workspace). The `apps/` and `packages/` directories do not exist yet; this is the planned layout.
+The repository is a monorepo (pnpm workspaces + a Cargo workspace). Of `apps/` and `packages/`, only `apps/web` exists so far; the rest is the planned layout.
 
 ```
 boltget/

@@ -2,8 +2,8 @@
 
 boltget.app is the product's front door: it explains BoltGet in seconds, proves the speed claim, gets the installer onto the user's machine, and hosts the user documentation.
 
-- Code: `apps/web` (planned)
-- Stack: Astro (static output) + Svelte 5 islands, user docs with Astro Starlight in the same project, shared components and tokens from `packages/ui`. Rationale: [TECH-STACK.md, ADR-010](TECH-STACK.md#adr-010-astro-and-starlight-for-the-website-and-docs).
+- Code: `apps/web` (package `@boltget/web`): `pnpm install`, then `pnpm --filter @boltget/web dev` (or `build`, `preview`, `check`). CI: `.github/workflows/web.yml`. What is built so far, and the decisions made while building it, are under [Implementation status](#implementation-status).
+- Stack: Astro (static output) + Svelte 5 islands, user docs with Astro Starlight in the same project, shared components and tokens from `packages/ui` (until `packages/ui` exists, the site imports `brand/tokens/tokens.css` and `brand/fonts` directly). Rationale: [TECH-STACK.md, ADR-010](TECH-STACK.md#adr-010-astro-and-starlight-for-the-website-and-docs).
 - Language: English only, with all copy in the site's string catalog or content collections (no copy scattered through components), so a community translation stays possible later. See [DESIGN-PRINCIPLES.md, Copy and strings](DESIGN-PRINCIPLES.md#copy-and-strings).
 - Live by: v1.0 (a minimal landing page can go up earlier; see [ROADMAP.md](ROADMAP.md)).
 
@@ -37,7 +37,7 @@ The hero shows what BoltGet does, not a stock illustration of speed.
    - A **speed counter** with tabular figures ticks alongside, and a connection count.
 3. **Honesty rule:** this is a simulation of the algorithm, not a real download. The counter is labelled as such in small text ("Simulated. See real benchmarks"), linking to `/benchmarks`. The site never presents invented numbers as measurements.
 
-Copy above it: one headline, one sentence, one primary button ("Download for Windows"), one secondary link ("See the benchmark"). Headline: the tagline, *"Every byte, at full speed."* Sentence, final wording TBD: *"Splits every file across many connections and keeps each one busy until the last byte."* Hero copy follows the voice rules in [brand/BRAND.md](../brand/BRAND.md#8-voice-and-tone): lead with what BoltGet does, no "free" or "open source" in the hero, no comparisons with other products.
+Copy above it: one headline, one sentence, one primary button ("Download for Windows"; "Try the CLI preview" until an installer exists, see [Implementation status](#implementation-status)), one secondary link ("See the benchmark"). Headline: the tagline, *"Every byte, at full speed."* Sentence, final wording TBD: *"Splits every file across many connections and keeps each one busy until the last byte."* Hero copy follows the voice rules in [brand/BRAND.md](../brand/BRAND.md#8-voice-and-tone): lead with what BoltGet does, no "free" or "open source" in the hero, no comparisons with other products.
 
 Behaviour:
 
@@ -48,6 +48,28 @@ Behaviour:
 ### Below the hero
 
 Three proof points, each one sentence plus a small visual: **Fast** (measured throughput from the benchmark, linking to `/benchmarks`, where the comparisons live), **Never loses progress** (crash-and-resume), **Catches downloads from the browser** (the extension). Then a short feature grid, a screenshot of the app in dark theme, and the download button again. The license and GitHub link sit once, low on the page (footer). That is the whole page.
+
+## Implementation status
+
+First version, built during v0.1 (there is no installer yet, only the engine and CLI).
+
+**Built:** `/`, `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy`, a 404 page, `/.well-known/security.txt`, `robots.txt` and a sitemap, and Starlight docs under `/docs` (overview, install from source, using the CLI, exit codes and JSON).
+
+**Not built yet:** `/download` and `/features`; generated per-page OG images (every page uses `brand/social/og-image.png`); Lighthouse CI; security headers (HSTS, CSP), which wait for the host decision; font subsetting (the full Geist WOFF2 files are served, about 120 KB for the three weights); ESLint and Prettier for `apps/web`; the app screenshot on Home (no app until v0.2); the CLI reference generated from clap (the CLI docs pages are written by hand and point to `--help` as the reference).
+
+Decisions:
+
+- **Workspace.** A pnpm workspace at the repository root (`apps/*`, `packages/*` and `brand`, one `pnpm-lock.yaml`), Node pinned by `.node-version`. `brand/` is a member so `cd brand && pnpm install` keeps working; it no longer has its own lockfile. Dependency versions are pinned exactly.
+- **Tokens and assets.** No `packages/ui` yet: the site imports `brand/tokens/tokens.css` and the fonts in `brand/fonts` directly, and `apps/web/scripts/copy-brand.mjs` copies the favicons, web manifest and OG image from `brand/` into `public/` before every build (the copies are git-ignored). The tokens move to `packages/ui` when the desktop app needs them too.
+- **Primary button before an installer exists.** It reads "Try the CLI preview" and goes to `/docs/getting-started/` (build from source), with a status line under the buttons: "v0.1 is the engine and the command-line tool. The Windows app arrives in v0.2." It becomes "Download for Windows", linking to `/download`, when the first preview builds are published (v0.2).
+- **Hero layout.** Copy on top, the arrow below it, the bar directly under the arrow, so the pixels fall straight down into the bar. The row-by-row lighting is CSS, so it also plays without JavaScript. When the last row is lit, copies of the 37 pixels fly into 37 slots across the bar and merge into it; the arrow itself stays lit. This movement is the one exception to the brand rule that only opacity animates, because this spec asks for the flow.
+- **Simulation.** 320 MiB, 4 connections at the start and one more every 0.9 s up to 6 (the adaptive start of 4 is real; the rest is illustrative), a split only when at least 16 MiB remain, 10.5 to 15.5 MiB/s per connection with slow variation and a short ramp-up. Seeded (mulberry32) with fixed 1/120 s steps. A finished download holds "Done" for 2.4 s, fades, and the next one starts; the arrow does not replay. The live numbers are `aria-hidden`; the SVG's text alternative says it is a simulation.
+- **JavaScript on Home.** Measured at about 17.8 KB gzipped: the island 3.5 KB, the Svelte client runtime 11.6 KB plus its 0.5 KB Astro renderer, and Astro's inline island loader 2.2 KB. That is over the 15 KB design target. The island already draws imperatively (pooled SVG rects) to keep its own share small; the rest is the Svelte runtime. Astro's link prefetching is off, so the other marketing pages ship no JavaScript.
+- **Marketing pages are dark only.** The docs follow the reader's theme (Starlight's toggle) with the brand's light tokens.
+- **Benchmark data.** `/benchmarks`, the Fast proof point and the comparison read the newest `bench/results/<date>-*/` folder (`summary.csv`, `environment.json`, `targets.toml`) at build time, so a new run folder updates the site without code changes. Medians and spreads are shown with 2 decimals and MiB/s with 1, as in [BENCHMARK.md](BENCHMARK.md). A difference is stated only when the min-to-max spreads of IDM's default and BoltGet's adaptive default do not overlap, computed from the data.
+- **Comparison.** The rows are in `apps/web/src/data/compare-idm.json`, derived from [FEATURES.md](FEATURES.md), each marked "Available now" or with its milestone; "Unknown" stands for FEATURES.md's `?`. "Last reviewed" shows the date and IDM version of the benchmark run, so both are reviewed together.
+- **Copy.** Short strings are in `apps/web/src/i18n/en.json` (keyed, whole sentences with named placeholders, plural forms for counts). Long-form copy and data are content collections (`src/content/pages`, `src/content/docs`, `src/data`). `/changelog` renders the root `CHANGELOG.md` through a content collection.
+- **security.txt** expires on 2027-10-28 and must be renewed before then.
 
 ## Performance budget
 
