@@ -50,8 +50,8 @@ Exit criteria:
   *Status (2026-10-28):* [BENCHMARK.md](BENCHMARK.md) published with raw data; BoltGet's default was equal to or faster than IDM's default on all 5 targets. Open: issues for the scenarios where the adaptive default is slower than a fixed connection count (per-connection-throttled servers), and the IDM-at-32-connections configuration, which was not run.
 - [x] Default tunables (connection count, `min_split_size`, intervals) set from benchmark data, and ENGINE.md updated with the measured values
   *Status (2026-10-28):* start 4, maximum 16, `min_split_size` 1 MiB, with the measurements in ENGINE.md, open question 1.
-- [ ] Fuzz targets for header parsers run in CI for a fixed time budget without findings
-  *Status (2026-10-28):* seven targets in `fuzz/`, run nightly for 60 s each (`.github/workflows/nightly.yml`); their seed corpus also runs in `cargo test`. To tick once the nightly run has passed on `main`.
+- [x] Fuzz targets for header parsers run in CI for a fixed time budget without findings
+  *Status (2026-10-28):* seven targets in `fuzz/`, run nightly for 60 s each (`.github/workflows/nightly.yml`); their seed corpus also runs in `cargo test`. First green nightly on `main`: 2026-10-29 (run 40842976937).
 
 ## v0.2: Desktop app
 
