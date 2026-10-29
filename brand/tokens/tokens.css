@@ -24,6 +24,14 @@
   --emerald-800: #065F46;
   --emerald-900: #064E3B;
   --emerald-950: #022C22;
+  --atmosphere-deep: #031E18;
+  --atmosphere-emerald-deep: #023428;
+  --atmosphere-emerald: #046C52;
+  --atmosphere-teal: #0D9488;
+  --atmosphere-teal-light: #34D3AF;
+  --atmosphere-mint: #A7F3D0;
+  --atmosphere-mist: #ECFDF5;
+  --atmosphere-paper: #FFFFFF;
   --gradient-mark: linear-gradient(135deg, #A7F3D0 0%, #34D399 50%, #059669 100%);
   --gradient-mark-light: linear-gradient(135deg, #34D399 0%, #10B981 50%, #047857 100%);
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;

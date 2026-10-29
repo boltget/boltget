@@ -215,7 +215,8 @@ square is being written.
 ### Atmosphere (website)
 
 *Extension, October 2026, for the website redesign (docs/WEBSITE.md, Home page).
-Proposed; final once the redesign direction is chosen.*
+Adopted with direction A ("Daylight"). The ramp is generated as `--atmosphere-*`
+tokens by `scripts/build.mjs`.*
 
 The website may use one atmospheric field at the top of a page: a slow, soft
 gradient that reads as weather, not decoration. Its ramp, top to bottom:
@@ -231,13 +232,44 @@ Rules:
 
 - Towards the bottom, the field breaks into **square chunks with even gaps**
   that thin out into the page (the chunk grid of the social art, in colour).
-  The chunks are square, never rounded, and never glow.
+  The chunks are square and never rounded. They may carry the soft light
+  described under *Pixels on the web*, never a neon glow.
 - Teal is allowed **only** inside the atmosphere and as a data series colour
   (file maps, connection colours). It is never an accent, link or button colour.
 - Text on the field is white and sits on the darker stops.
 - The mark keeps its own gradient; it is never recoloured to the atmosphere.
 - **Paper** (white page, ink text, `emerald-700` accent) is a first-class
-  marketing theme alongside the dark default.
+  marketing theme alongside the dark default. The website uses it; one
+  *night* band (`#031E18`, the Deep stop) may break up a long page.
+- The same field, calmer and without chunks, may fill the footer under a
+  wavy top edge. Text on it is white or mint (`#A7F3D0`) and the ramp is held
+  on the darker stops.
+
+### Pixels on the web
+
+*October 2026.* How squares (the mark's pixels, the hero's chunks, file maps
+and progress bars) are rendered on the website, so they read as material
+rather than flat swatches:
+
+- **One continuous gradient across the whole field.** Each square is a window
+  onto a gradient that spans the whole map, bar or mark, never a flat fill per
+  square. File maps run emerald-400 → emerald-500 → emerald-600 → teal →
+  emerald-700 (on night: emerald-200 → teal); the mark always uses its own
+  gradient (`GRAD_LIGHT` on paper, `GRAD_DARK` on dark).
+- **Inner light and depth.** A filled square may carry a faint white light on
+  its top ~40% (at most 25% opacity) and a hairline of deep emerald at its
+  bottom edge (at most 18%). A large mark may sit on a very soft emerald drop
+  shadow (at most 16% opacity, blur ≥ 24 px). No outer glow on the mark.
+- **Arrival.** A square eases in (≈ 0.45 s, ease-out) and carries a brief
+  light that fades in about half a second. The square being written may have
+  a soft 2 px halo (emerald at ≈ 22%, or mint on night).
+- **Organic dissolve.** Where squares thin out into the page, their opacity
+  varies per square and eases around the threshold, so the edge is uneven,
+  not a stair-step. Empty squares on paper vary slightly in tone.
+- **One light sweep** may pass over a large mark after its row-by-row
+  signature, once.
+- Squares stay square with even gaps; pixel-related shapes are never rounded.
+  Under `prefers-reduced-motion` everything shows its settled state.
 
 ## 5. Typography
 

@@ -79,6 +79,15 @@ const THEME = {
   },
 };
 
+/**
+ * Atmosphere (website only, BRAND.md "Atmosphere (website)"): the hero field's
+ * ramp, top to bottom. Teal lives only here and in data series.
+ */
+const ATMOSPHERE = {
+  deep: '#031E18', 'emerald-deep': '#023428', emerald: '#046C52', teal: '#0D9488',
+  'teal-light': '#34D3AF', mint: EMERALD[200], mist: EMERALD[50], paper: NEUTRAL[0],
+};
+
 /** Gradients: stops along the grid diagonal (36,36) -> (144,144). */
 const GRAD_DARK = [[0, EMERALD[200]], [0.5, EMERALD[400]], [1, EMERALD[600]]];
 const GRAD_LIGHT = [[0, EMERALD[400]], [0.5, EMERALD[500]], [1, EMERALD[700]]];
@@ -745,7 +754,7 @@ function buildRasters() {
 /* ------------------------------------------------------------------------ */
 
 function buildTokens() {
-  const tokens = { neutral: NEUTRAL, emerald: EMERALD, semantic: SEMANTIC, theme: THEME, gradient: { mark: GRAD_DARK, markLight: GRAD_LIGHT }, motion: MOTION };
+  const tokens = { neutral: NEUTRAL, emerald: EMERALD, semantic: SEMANTIC, theme: THEME, gradient: { mark: GRAD_DARK, markLight: GRAD_LIGHT }, atmosphere: ATMOSPHERE, motion: MOTION };
   write(out('tokens/tokens.json'), JSON.stringify(tokens, null, 2) + '\n');
   const v = (o, p) => Object.entries(o).map(([k, c]) => `  --${p}-${k}: ${c};`).join('\n');
   const theme = (t) => [
@@ -756,6 +765,7 @@ function buildTokens() {
 :root {
 ${v(NEUTRAL, 'neutral')}
 ${v(EMERALD, 'emerald')}
+${v(ATMOSPHERE, 'atmosphere')}
   --gradient-mark: linear-gradient(135deg, ${GRAD_DARK.map(([o, c]) => `${c} ${o * 100}%`).join(', ')});
   --gradient-mark-light: linear-gradient(135deg, ${GRAD_LIGHT.map(([o, c]) => `${c} ${o * 100}%`).join(', ')});
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
