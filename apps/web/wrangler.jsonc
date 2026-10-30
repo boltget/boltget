@@ -1,0 +1,19 @@
+// boltget.app on Cloudflare Workers, static assets only (no Worker code).
+// Build first (`pnpm --filter @boltget/web build`), then
+// `pnpm --filter @boltget/web run deploy`. See docs/WEBSITE.md, "Hosting".
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "boltget-web",
+  "compatibility_date": "2026-10-30",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "routes": [
+    { "pattern": "boltget.app", "custom_domain": true },
+    { "pattern": "www.boltget.app", "custom_domain": true }
+  ],
+  "workers_dev": true,
+  "preview_urls": false
+}

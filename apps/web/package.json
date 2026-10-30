@@ -10,7 +10,8 @@
     "dev": "node scripts/copy-brand.mjs && astro dev",
     "build": "node scripts/copy-brand.mjs && astro build",
     "preview": "astro preview",
-    "check": "astro check && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
+    "check": "astro check && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@astrojs/sitemap": "3.7.4",
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@astrojs/check": "0.9.12",
     "svelte-check": "4.7.7",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "wrangler": "^4.156.0"
   }
 }
