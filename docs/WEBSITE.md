@@ -215,7 +215,9 @@ CI runs Lighthouse CI on every PR touching `apps/web` against the preview build,
 
 ## Hosting
 
-Cloudflare Pages or Vercel; decide before v1.0. Both serve a static Astro build well, offer preview deployments per PR and custom domains. Current leaning: **Cloudflare Pages**, for generous static bandwidth on the free tier and no need for server functions. The site must remain fully static so the host can be changed without code changes.
+**Decided (2026-10-30): Cloudflare Workers with static assets** (Cloudflare's successor to Pages), free plan. The Worker `boltget-web` has no code: `apps/web/wrangler.jsonc` serves `apps/web/dist` with `404.html` for unknown paths and trailing-slash handling, on the custom domains `boltget.app` and `www.boltget.app` (the `boltget.app` zone and its DNS are on Cloudflare; the domain is registered at name.com). The site stays fully static, so the host can still change without code changes; the Astro Cloudflare adapter is deliberately not used.
+
+Deploy by hand for now: `pnpm --filter @boltget/web build`, then `pnpm --filter @boltget/web run deploy` (Wrangler, signed in to the project's Cloudflare account). Automatic deploys from `main` and per-PR previews come later and need a `CLOUDFLARE_API_TOKEN` secret in GitHub Actions.
 
 Requirements regardless of host:
 

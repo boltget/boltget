@@ -164,7 +164,7 @@ Details: [VIDEO.md](VIDEO.md).
 
 ## ADR-010: Astro and Starlight for the website and docs
 
-**Decision.** `apps/web` is an Astro static site with Svelte islands for interactive pieces (the hero visualization); user documentation is built with Starlight in the same Astro project. Hosted on Cloudflare Pages or Vercel (decided before v1.0, see [WEBSITE.md](WEBSITE.md#hosting)).
+**Decision.** `apps/web` is an Astro static site with Svelte islands for interactive pieces (the hero visualization); user documentation is built with Starlight in the same Astro project. Hosted on Cloudflare Workers static assets (decided 2026-10-30, see [WEBSITE.md](WEBSITE.md#hosting)).
 
 **Why.** Static HTML by default with JavaScript only where an island needs it, which is how we hit the performance budget. Svelte islands let the site reuse `packages/ui` components. Starlight gives search, navigation and good typography for docs with little effort.
 
