@@ -81,6 +81,13 @@ pub struct SplitConfig {
     pub tail_split_size: u64,
     /// See `tail_split_size` (design target 1 s).
     pub tail_eta_secs: f64,
+    /// Write window for file systems that zero-fill (exFAT, FAT32, a share that
+    /// refused sparse files): a worker may only *begin* writing at an offset at
+    /// most this far beyond the lowest incomplete offset, so the file system
+    /// zero-fills the gap in small steps instead of in one long stall. 0
+    /// disables the window (sparse files). See `docs/ENGINE.md`,
+    /// "Preallocation and sparse files".
+    pub write_window: u64,
 }
 
 impl Default for SplitConfig {
@@ -90,6 +97,7 @@ impl Default for SplitConfig {
             min_split_size: 1024 * 1024,
             tail_split_size: 256 * 1024,
             tail_eta_secs: 1.0,
+            write_window: 0,
         }
     }
 }
@@ -314,6 +322,35 @@ impl SegmentTable {
         self.cfg
     }
 
+    /// Sets the write window (0 disables it). Decided once the partial file
+    /// exists and the engine knows whether it is sparse.
+    pub fn set_write_window(&mut self, window: u64) {
+        self.cfg.write_window = window;
+    }
+
+    /// The lowest offset not yet received: the smallest receive cursor of an
+    /// unfinished segment (the total size when everything is received, or
+    /// `u64::MAX` for an unknown size). Every byte below it has been received.
+    pub fn lowest_incomplete(&self) -> u64 {
+        self.entries
+            .iter()
+            .filter(|e| !e.seg.is_received())
+            .map(|e| e.seg.cursor())
+            .min()
+            .unwrap_or_else(|| self.total.unwrap_or(u64::MAX))
+    }
+
+    /// The highest offset at which a worker may begin writing: the lowest
+    /// incomplete offset plus the write window (`u64::MAX` without a window).
+    /// A split point, or the cursor of an unassigned segment handed out, never
+    /// lies beyond it.
+    pub fn window_limit(&self) -> u64 {
+        match self.cfg.write_window {
+            0 => u64::MAX,
+            w => self.lowest_incomplete().saturating_add(w),
+        }
+    }
+
     /// A segment by id.
     pub fn get(&self, idx: u32) -> Option<&Segment> {
         self.entry(idx).map(|e| &e.seg)
@@ -392,12 +429,19 @@ impl SegmentTable {
     /// Finds work for an idle `worker`: an unassigned unfinished segment first,
     /// otherwise a split of the largest remaining active segment. The returned
     /// segment is already assigned to `worker`.
+    ///
+    /// With a write window, an unassigned segment is only handed out if its
+    /// cursor lies within the window. The segment holding the lowest incomplete
+    /// offset always does, so an unowned lowest segment is never starved: the
+    /// download cannot deadlock on the window.
     pub(crate) fn next_work(&mut self, worker: WorkerId) -> Option<Work> {
         self.release(worker);
+        let limit = self.window_limit();
         if let Some(idx) = self
             .entries
             .iter()
             .filter(|e| e.seg.worker.is_none() && !e.seg.is_received())
+            .filter(|e| e.seg.cursor() <= limit)
             .min_by_key(|e| e.seg.start)
             .map(|e| e.seg.idx)
         {
@@ -410,11 +454,14 @@ impl SegmentTable {
     /// The split rule from `docs/ENGINE.md`: pick the active segment with the most
     /// remaining bytes, skip the bytes its owner will receive before reacting
     /// (`ahead`), and split the rest in half (aligned), if each half is at least
-    /// `min_split_size`. Returns the new segment, assigned to `worker`.
+    /// `min_split_size`. With a write window the split point is pulled back to
+    /// the window's limit (see [`Self::split_point`]). Returns the new segment,
+    /// assigned to `worker`.
     pub(crate) fn split_largest(&mut self, worker: WorkerId) -> Option<u32> {
         if !self.splittable {
             return None;
         }
+        let limit = self.window_limit();
         let mut candidates: Vec<(u64, u32)> = self
             .entries
             .iter()
@@ -424,17 +471,36 @@ impl SegmentTable {
             .collect();
         candidates.sort_unstable_by(|a, b| b.cmp(a));
         for (_, idx) in candidates {
-            let e = self.entry(idx).expect("candidate exists");
-            let effective = e.seg.remaining().saturating_sub(e.ahead);
-            if effective < self.split_floor(e) {
+            let Some(mid) = self.entry(idx).and_then(|e| self.split_point(e, limit)) else {
                 continue;
-            }
-            let mid = align_down(e.seg.cursor() + e.ahead + effective / 2, self.cfg.align);
+            };
             if let Some(new) = self.split_at(idx, mid, worker) {
                 return Some(new);
             }
         }
         None
+    }
+
+    /// Where the split rule would split the active entry `e`, if at all: the
+    /// middle of its effective remainder (after `ahead`), aligned down, when
+    /// that remainder is at least [`Self::split_floor`]. A middle beyond `limit`
+    /// (the write window) moves back to `limit`, aligned down, as long as the
+    /// owner still keeps half a split floor beyond its in-flight bytes.
+    fn split_point(&self, e: &Entry, limit: u64) -> Option<u64> {
+        let effective = e.seg.remaining().saturating_sub(e.ahead);
+        let floor = self.split_floor(e);
+        if effective < floor {
+            return None;
+        }
+        let keep_from = e.seg.cursor() + e.ahead;
+        let mut mid = align_down(keep_from + effective / 2, self.cfg.align);
+        if mid > limit {
+            mid = align_down(limit, self.cfg.align);
+            if mid < keep_from.saturating_add(floor / 2) {
+                return None;
+            }
+        }
+        (mid > e.seg.cursor() && mid < e.seg.end).then_some(mid)
     }
 
     /// The smallest effective remainder at which `e` may be split: twice
@@ -455,17 +521,18 @@ impl SegmentTable {
         }
     }
 
-    /// Whether a new worker would find work: an unassigned segment, or an
-    /// active one the split rule would split.
+    /// Whether a new worker would find work: an unassigned segment (within the
+    /// write window), or an active one the split rule would split.
     pub fn can_split(&self) -> bool {
+        let limit = self.window_limit();
         self.entries.iter().any(|e| {
             if e.seg.is_received() {
                 return false;
             }
             if e.seg.worker.is_none() {
-                return true;
+                return e.seg.cursor() <= limit;
             }
-            self.splittable && e.seg.remaining().saturating_sub(e.ahead) >= self.split_floor(e)
+            self.splittable && self.split_point(e, limit).is_some()
         })
     }
 
@@ -473,9 +540,13 @@ impl SegmentTable {
     /// segment `[mid, old_end)` is created and assigned to `worker`.
     ///
     /// Fails (returns `None`) if `mid` is not strictly between the segment's receive
-    /// cursor and its end: bytes already claimed are never given away.
+    /// cursor and its end (bytes already claimed are never given away), or if it
+    /// lies beyond the write window's limit.
     pub(crate) fn split_at(&mut self, idx: u32, mid: u64, worker: WorkerId) -> Option<u32> {
         self.total?;
+        if mid > self.window_limit() {
+            return None;
+        }
         let e = self.entry_mut(idx)?;
         if mid <= e.seg.cursor() || mid >= e.seg.end {
             return None;
@@ -520,11 +591,12 @@ impl SegmentTable {
             return None;
         }
         let align = self.cfg.align;
+        let limit = self.window_limit();
         let e = self.entry_mut(slow_idx)?;
         if e.duplicated {
             return None;
         }
-        let from = align_down(e.seg.cursor() + e.seg.remaining() / 2, align);
+        let from = align_down((e.seg.cursor() + e.seg.remaining() / 2).min(limit), align);
         if from <= e.seg.cursor() || from >= e.seg.end {
             return None;
         }
@@ -734,6 +806,7 @@ mod tests {
             min_split_size: 10,
             tail_split_size: 0,
             tail_eta_secs: 1.0,
+            write_window: 0,
         };
         let mut t = SegmentTable::new_split(100, 1, cfg);
         t.next_work(0);
@@ -809,6 +882,7 @@ mod tests {
             min_split_size: 1000,
             tail_split_size: 100,
             tail_eta_secs: 1.0,
+            write_window: 0,
         };
         let mut t = SegmentTable::new_split(1500, 1, cfg);
         t.next_work(0);
@@ -833,6 +907,7 @@ mod tests {
             min_split_size: 1000,
             tail_split_size: 0,
             tail_eta_secs: 1.0,
+            write_window: 0,
         };
         let mut t = SegmentTable::new_split(3000, 3, cfg);
         for w in 0..3 {
@@ -860,6 +935,7 @@ mod tests {
             min_split_size: 10,
             tail_split_size: 0,
             tail_eta_secs: 1.0,
+            write_window: 0,
         };
         let cp = |idx, start, end, done| SegmentCheckpoint {
             idx,
@@ -919,6 +995,149 @@ mod tests {
         assert!(!t.is_splittable());
         assert_eq!(t.get(0).unwrap().cursor(), 77);
         assert!(SegmentTable::from_checkpoint(None, false, &[cp(0, 100, 0)], cfg).is_err());
+    }
+
+    fn windowed(window: u64) -> SplitConfig {
+        SplitConfig {
+            align: 1,
+            min_split_size: 10,
+            tail_split_size: 0,
+            tail_eta_secs: 1.0,
+            write_window: window,
+        }
+    }
+
+    #[test]
+    fn write_window_keeps_new_work_near_the_lowest_offset() {
+        let mut t = SegmentTable::new_split(1000, 4, windowed(100));
+        assert_eq!(t.window_limit(), 100);
+        assert_eq!(t.next_work(0), Some(Work::Segment { idx: 0 }));
+        // Segment 1 starts at 250, beyond the window: the idle worker gets a
+        // split of segment 0 pulled back to the limit instead of the middle (125).
+        let Some(Work::Segment { idx: first }) = t.next_work(1) else {
+            panic!("expected a split")
+        };
+        assert_eq!(
+            (t.get(first).unwrap().start, t.get(first).unwrap().end),
+            (100, 250)
+        );
+        // [100, 250) cannot be split inside the window; [0, 100) can, in the middle.
+        let Some(Work::Segment { idx: second }) = t.next_work(2) else {
+            panic!("expected a split")
+        };
+        assert_eq!(
+            (t.get(second).unwrap().start, t.get(second).unwrap().end),
+            (50, 100)
+        );
+        // Worker 0 finishes [0, 50): the window moves up to 50 + 100.
+        assert_eq!(t.claim(0, 0, 0, 50), Ok(50));
+        assert_eq!(t.window_limit(), 150);
+        assert!(t.can_split());
+        let Some(Work::Segment { idx: third }) = t.next_work(0) else {
+            panic!("expected a split")
+        };
+        assert_eq!(t.get(third).unwrap().start, 150);
+        t.check_invariants().unwrap();
+        // An idle worker gets nothing while the only split inside the window
+        // would leave the owner less than a minimum split beyond its in-flight
+        // bytes, and work again once the window has moved.
+        let mut t = SegmentTable::new_split(1000, 2, windowed(100));
+        t.next_work(0);
+        t.update_stats(0, 1.0, 95);
+        assert!(!t.can_split());
+        assert_eq!(t.next_work(1), None);
+        assert_eq!(t.claim(0, 0, 0, 100), Ok(100));
+        t.update_stats(0, 1.0, 0);
+        assert!(t.can_split());
+        let Some(Work::Segment { idx: fourth }) = t.next_work(1) else {
+            panic!("expected a split")
+        };
+        assert_eq!(t.get(fourth).unwrap().start, 200);
+        // Without a window the same table hands out the unassigned segment.
+        let mut free = SegmentTable::new_split(1000, 4, windowed(0));
+        free.next_work(0);
+        assert_eq!(free.next_work(1), Some(Work::Segment { idx: 1 }));
+    }
+
+    #[test]
+    fn write_window_never_starves_the_lowest_segment() {
+        let cp = |start, end, done| SegmentCheckpoint {
+            idx: 0,
+            start,
+            end,
+            done,
+        };
+        // A resume with progress scattered far beyond the window.
+        let cps = [cp(0, 100, 10), cp(100, 600, 0), cp(600, 1000, 300)];
+        let mut t = SegmentTable::from_checkpoint(Some(1000), true, &cps, windowed(50)).unwrap();
+        assert_eq!(t.lowest_incomplete(), 10);
+        assert_eq!(t.window_limit(), 60);
+        let mut guard = 0;
+        while !t.is_complete() {
+            guard += 1;
+            assert!(guard < 10_000, "no progress");
+            // Everyone gives up: whoever asks next must get the lowest segment.
+            for w in 0..3 {
+                t.release(w);
+            }
+            let lowest = t.lowest_incomplete();
+            let Some(Work::Segment { idx }) = t.next_work(0) else {
+                panic!("the lowest segment was not handed out")
+            };
+            assert!(t.get(idx).unwrap().cursor() <= lowest + 50);
+            for w in 1..3 {
+                if let Some(Work::Segment { idx }) = t.next_work(w) {
+                    assert!(t.get(idx).unwrap().cursor() <= lowest + 50);
+                }
+            }
+            for w in 0..3 {
+                if let Some(idx) = t.owned_by(w) {
+                    let cursor = t.get(idx).unwrap().cursor();
+                    t.claim(idx, w, cursor, 7).unwrap();
+                }
+            }
+            t.check_invariants().unwrap();
+        }
+        assert_eq!(t.received_total(), 1000);
+    }
+
+    #[test]
+    fn write_window_limits_verification_and_endgame_splits() {
+        let mut t = SegmentTable::new_single(1000, windowed(100));
+        t.set_splittable(true);
+        t.next_work(0);
+        // A split point beyond the window is refused, one inside is accepted.
+        assert_eq!(t.split_at(0, 500, 1), None);
+        assert!(t.split_at(0, 100, 1).is_some());
+        // Endgame pulls its duplicate range back into the window too. (The
+        // window is set after the segments were handed out, as on a table
+        // whose window is decided once the file exists.)
+        let mut t = SegmentTable::new_split(3000, 3, windowed(0));
+        for w in 0..3 {
+            t.next_work(w);
+        }
+        t.set_write_window(300);
+        t.update_stats(0, 1.0, 0);
+        t.update_stats(1, 1000.0, 0);
+        t.update_stats(2, 1000.0, 0);
+        assert_eq!(
+            t.endgame_work(2.0),
+            Some(Work::Duplicate {
+                of: 0,
+                from: 300,
+                to: 1000
+            })
+        );
+        // A slow segment whose whole remainder lies beyond the window gets none.
+        let mut t = SegmentTable::new_split(3000, 3, windowed(0));
+        for w in 0..3 {
+            t.next_work(w);
+        }
+        t.set_write_window(300);
+        t.update_stats(0, 1000.0, 0);
+        t.update_stats(1, 1000.0, 0);
+        t.update_stats(2, 1.0, 0);
+        assert_eq!(t.endgame_work(2.0), None);
     }
 
     mod props {
@@ -983,11 +1202,7 @@ mod tests {
                         m.claimed.push((idx, cursor + accepted));
                     }
                 }
-                Op::Idle { w } => {
-                    if t.owned_by(w).is_none() {
-                        t.next_work(w);
-                    }
-                }
+                Op::Idle { w } => idle(t, w),
                 Op::Fail { w } => t.release(w),
                 Op::Flush => {
                     for (idx, upto) in m.claimed.drain(..) {
@@ -1005,10 +1220,37 @@ mod tests {
                     {
                         let s = t.get(idx).unwrap().clone();
                         let mid = s.cursor() + s.remaining() * u64::from(frac) / 255;
-                        let _ = t.split_at(idx, mid, by);
+                        let limit = t.window_limit();
+                        if let Some(new) = t.split_at(idx, mid, by) {
+                            let start = t.get(new).unwrap().start;
+                            assert!(
+                                start <= limit,
+                                "split at {start} beyond the window ({limit})"
+                            );
+                        }
                     }
                 }
             }
+        }
+
+        /// Worker `w` asks for work if it has none. Whatever it gets must begin
+        /// within the write window as it stood when it asked.
+        fn idle(t: &mut SegmentTable, w: u32) {
+            if t.owned_by(w).is_some() {
+                return;
+            }
+            let limit = t.window_limit();
+            if let Some(Work::Segment { idx }) = t.next_work(w) {
+                let cursor = t.get(idx).unwrap().cursor();
+                assert!(
+                    cursor <= limit,
+                    "work at {cursor} handed out beyond the window ({limit})"
+                );
+            }
+        }
+
+        fn window() -> impl Strategy<Value = u64> {
+            prop_oneof![1 => Just(0u64), 2 => 1u64..20_000]
         }
 
         /// Simulates a crash: keep only what the checkpoint calls durable,
@@ -1054,9 +1296,10 @@ mod tests {
                 k in 1u32..8,
                 align in prop_oneof![Just(1u64), Just(16), Just(64)],
                 min_split in 1u64..2_000,
+                write_window in window(),
                 ops in proptest::collection::vec(op(), 0..300),
             ) {
-                let cfg = SplitConfig { align, min_split_size: min_split, ..SplitConfig::default() };
+                let cfg = SplitConfig { align, min_split_size: min_split, write_window, ..SplitConfig::default() };
                 let mut t = SegmentTable::new_split(total, k, cfg);
                 let mut m = Model {
                     data: vec![0; total as usize],
@@ -1085,9 +1328,7 @@ mod tests {
                     guard += 1;
                     prop_assert!(guard < 100_000, "no progress towards completion");
                     for w in 10..14u32 {
-                        if t.owned_by(w).is_none() {
-                            t.next_work(w);
-                        }
+                        idle(&mut t, w);
                         apply(&mut t, &mut m, &Op::Receive { w, len: 4_096 });
                     }
                     t.check_invariants().map_err(TestCaseError::fail)?;
@@ -1110,12 +1351,13 @@ mod tests {
                 total in 1u64..60_000,
                 k in 1u32..8,
                 min_split in 1u64..2_000,
+                write_window in window(),
                 ops in proptest::collection::vec(
                     prop_oneof![9 => op().prop_map(Some), 1 => Just(None)],
                     0..300,
                 ),
             ) {
-                let cfg = SplitConfig { align: 16, min_split_size: min_split, ..SplitConfig::default() };
+                let cfg = SplitConfig { align: 16, min_split_size: min_split, write_window, ..SplitConfig::default() };
                 let mut t = SegmentTable::new_split(total, k, cfg);
                 let mut m = Model {
                     data: vec![0xAA; total as usize],
@@ -1137,9 +1379,7 @@ mod tests {
                     guard += 1;
                     prop_assert!(guard < 100_000, "no progress towards completion");
                     for w in 10..14u32 {
-                        if t.owned_by(w).is_none() {
-                            t.next_work(w);
-                        }
+                        idle(&mut t, w);
                         apply(&mut t, &mut m, &Op::Receive { w, len: 4_096 });
                     }
                     t.check_invariants().map_err(TestCaseError::fail)?;
@@ -1165,18 +1405,28 @@ mod tests {
                 claimed_frac in 0u8..=255,
                 ahead in 0u64..100_000,
                 min_split in 1u64..50_000,
+                write_window in prop_oneof![Just(0u64), 1u64..400_000],
             ) {
-                let cfg = SplitConfig { align: 64, min_split_size: min_split, ..SplitConfig::default() };
+                let cfg = SplitConfig { align: 64, min_split_size: min_split, write_window, ..SplitConfig::default() };
                 let mut t = SegmentTable::new_split(total, 1, cfg);
                 t.next_work(0);
                 let claim = total * u64::from(claimed_frac) / 255;
                 t.claim(0, 0, 0, claim).unwrap();
                 t.update_stats(0, 1.0, ahead);
                 let before: u64 = t.segments().iter().map(|s| s.end - s.start).sum();
+                let limit = t.window_limit();
                 if let Some(new) = t.split_largest(1) {
                     let s = t.get(new).unwrap();
                     prop_assert!(s.end - s.start >= min_split);
                     prop_assert!(s.start >= claim);
+                    prop_assert!(s.start <= limit, "split at {} beyond the window ({})", s.start, limit);
+                    let effective = (total - claim).saturating_sub(ahead);
+                    let natural = align_down(claim + ahead + effective / 2, 64);
+                    if natural > limit {
+                        // Pulled back to the window: the owner still keeps at least a
+                        // minimum split beyond its in-flight bytes.
+                        prop_assert!(s.start >= claim + ahead + min_split);
+                    }
                 }
                 let after: u64 = t.segments().iter().map(|s| s.end - s.start).sum();
                 prop_assert_eq!(before, after);

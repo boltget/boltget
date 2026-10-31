@@ -494,6 +494,27 @@ fn split_config(cfg: &EngineConfig) -> SplitConfig {
         min_split_size: cfg.min_split_size,
         tail_split_size: cfg.tail_split_size,
         tail_eta_secs: cfg.tail_eta.as_secs_f64(),
+        // Decided once the partial file exists: see `write_window`.
+        write_window: 0,
+    }
+}
+
+/// The write window for a partial file (`docs/ENGINE.md`, "Preallocation and
+/// sparse files"), 0 for none. File systems without sparse files zero-fill
+/// everything between the valid data length and a write beyond it,
+/// synchronously, so a file that could not be made sparse (`SetLen`: exFAT,
+/// FAT32, a share that refused it) or that lives on a FAT file system gets
+/// the window. Sparse files (NTFS, ReFS, Unix) do not need it.
+fn write_window(cfg: &EngineConfig, prealloc: Preallocation, fs: Option<&str>) -> u64 {
+    let fat = fs.is_some_and(|f| {
+        ["exFAT", "FAT32", "FAT"]
+            .iter()
+            .any(|n| f.eq_ignore_ascii_case(n))
+    });
+    if cfg.force_write_window || fat || prealloc == Preallocation::SetLen {
+        cfg.write_window
+    } else {
+        0
     }
 }
 
@@ -632,7 +653,7 @@ async fn setup_fresh(
         let by_size = (n / cfg.min_split_size).max(1);
         u64::from(wanted).min(available).min(by_size) as u32
     };
-    let (table, resumable, k) = match kind {
+    let (mut table, resumable, k) = match kind {
         ProbeKind::Ranged { total } => {
             let k = k_for(total);
             (SegmentTable::new_split(total, k, split_cfg), true, k)
@@ -710,14 +731,23 @@ async fn setup_fresh(
 
     let (file, prealloc) = platform::create_preallocated(&partial, kind.total())
         .map_err(|e| Error::disk(&partial, e))?;
-    if let (Some(size), Some(fs)) = (kind.total(), platform::filesystem_name(&file))
+    let fs = platform::filesystem_name(&file);
+    if let (Some(size), Some(fs)) = (kind.total(), fs.as_deref())
         && size >= 4 * 1024 * 1024 * 1024
         && (fs.eq_ignore_ascii_case("FAT32") || fs.eq_ignore_ascii_case("FAT"))
     {
         drop(file);
         let _ = std::fs::remove_file(&partial);
-        return Err(Error::FileTooLarge { fs, size });
+        return Err(Error::FileTooLarge {
+            fs: fs.to_owned(),
+            size,
+        });
     }
+    let window = write_window(&cfg, prealloc, fs.as_deref());
+    if window > 0 {
+        tracing::debug!(id = %shared.id, window, fs = ?fs, ?prealloc, "write window on");
+    }
+    table.set_write_window(window);
     *shared
         .table
         .lock()
@@ -741,6 +771,7 @@ async fn setup_fresh(
         partial_path: partial.clone(),
         preallocation: prealloc,
         initial_connections: k.max(1),
+        write_window: (window > 0 && total.is_some()).then_some(window),
     };
     let _ = shared.info.set(info.clone());
     shared.emit(EngineEvent::Probed {
@@ -843,6 +874,7 @@ fn prepare_resume(
             partial_path: partial,
             preallocation: Preallocation::SetLen,
             initial_connections: 0,
+            write_window: None,
         };
         let _ = shared.info.set(info.clone());
         return Ok(Resume::Done(Box::new(Completed {
@@ -867,7 +899,7 @@ fn prepare_resume(
         // Nothing to keep: a fresh probe also refreshes the validators.
         return Ok(Resume::Restart(Some(path)));
     }
-    let table =
+    let mut table =
         SegmentTable::from_checkpoint(saved.total_size, true, &saved.segments, split_config(&cfg))
             .map_err(|e| {
                 Error::Database(format!(
@@ -912,6 +944,13 @@ fn prepare_resume(
         Some(_) if platform::is_sparse(&partial) => Preallocation::Sparse,
         Some(_) => Preallocation::SetLen,
     };
+    // The window follows the partial file as it is now (it may have been
+    // moved to another drive between runs). The lowest incomplete segment is
+    // always within it, so a checkpoint with progress scattered far beyond
+    // the window still resumes, in order.
+    let fs = platform::filesystem_name(&file);
+    let window = write_window(&cfg, prealloc, fs.as_deref());
+    table.set_write_window(window);
     let expected = saved.checksum.clone();
     let reservation = reserve(env, &path)?;
     let original = Origin::of(req.ctx.url())?;
@@ -955,6 +994,7 @@ fn prepare_resume(
         partial_path: partial.clone(),
         preallocation: prealloc,
         initial_connections: k.max(1),
+        write_window: (window > 0 && saved.total_size.is_some()).then_some(window),
     };
     shared.downloaded.store(durable, Ordering::Relaxed);
     *shared
@@ -1223,7 +1263,11 @@ async fn execute(
                 }
                 ProbeKind::Full { total } if k >= 2 && total >= 2 * cfg.min_split_size => {
                     // Verify range support on a second connection (it becomes worker 1).
-                    let m = verification_offset(total, cfg.segment_align);
+                    // With a write window, the second connection starts at its limit.
+                    let limit = core.table(|t| t.window_limit())?;
+                    let m = verification_offset(total, cfg.segment_align)
+                        .min(crate::segment::align_down(limit, cfg.segment_align))
+                        .max(1);
                     spawn(&mut workers, Start::Verify { m }, None);
                     extra_on_confirm = k - 2;
                 }

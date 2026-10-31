@@ -155,6 +155,9 @@ pub struct DownloadInfo {
     pub preallocation: Preallocation,
     /// Connections the download started with.
     pub initial_connections: u32,
+    /// The write window in bytes, when the partial file is not sparse and new
+    /// segments are kept close to the lowest incomplete offset (`None`: no window).
+    pub write_window: Option<u64>,
 }
 
 /// Events published on [`Engine::subscribe`](crate::Engine::subscribe).

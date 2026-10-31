@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Downloads to exFAT and FAT32 USB drives and SD cards no longer stall on large files. These file systems cannot skip ahead in a file, so a connection that starts writing far into it makes Windows fill everything before it with zeros first, which could freeze a multi-gigabyte download for minutes. BoltGet now keeps new connections within 64 MiB of the earliest missing byte there, so the file fills from the front and the pause is short. Drives that support sparse files (NTFS, ReFS) are unchanged.
 - `boltget bench`: measures download times on your own network. It runs each URL, or the targets in a TOML file such as `bench/targets.toml`, several times (`--runs`, `--warmup`), compares connection settings in rotating order (`-c auto,8`), checks size and SHA-256, and reports the median, interquartile range, min-max, MiB/s, time to first byte and tail time as a table, line-delimited JSON (`--json`) or CSV (`--csv`). Downloaded files are deleted after each run.
 - A first benchmark against Internet Download Manager, with method, raw data and limitations: `docs/BENCHMARK.md`. The harness (`bench/`) includes a versioned target list, a PowerShell script that drives IDM and BoltGet on the same files, and `boltget-testserver`, a local server for reproducible lab scenarios.
 

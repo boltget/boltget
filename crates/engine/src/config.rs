@@ -108,6 +108,17 @@ pub struct EngineConfig {
     /// after this long instead of `slow_window` (1 s; a starved connection while
     /// others are healthy gets 3 x this).
     pub tail_slow_window: Duration,
+    /// Write window for partial files that are not sparse (exFAT and FAT32 USB
+    /// drives and SD cards, shares that refuse sparse files): a connection may
+    /// only begin writing this far beyond the lowest offset not yet received,
+    /// so the file system zero-fills the gap in small steps instead of in one
+    /// long stall (64 MiB; 0 disables). See `docs/ENGINE.md`, "Preallocation
+    /// and sparse files".
+    pub write_window: u64,
+    /// Applies `write_window` to sparse files too. For tests, which need the
+    /// window without an exFAT drive.
+    #[doc(hidden)]
+    pub force_write_window: bool,
 }
 
 impl Default for EngineConfig {
@@ -154,6 +165,8 @@ impl Default for EngineConfig {
             tail_split_size: 64 * 1024,
             tail_eta: Duration::from_secs(1),
             tail_slow_window: Duration::from_secs(1),
+            write_window: 64 * 1024 * 1024,
+            force_write_window: false,
         }
     }
 }

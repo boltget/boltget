@@ -62,7 +62,9 @@ With --json, stdout carries one JSON object per line. Every object has an
 \"event\" field:
   added             {id, url}
   probed            {id, info: {probe: {final_url, size, ranges, filename, ...},
-                     path, partial_path, preallocation, initial_connections}}
+                     path, partial_path, preallocation, initial_connections,
+                     write_window}}  write_window: bytes, or null when the
+                     partial file is sparse
   resumed           {id, downloaded, total}  continuing from a checkpoint
   state_changed     {id, state, error}  state: probing, downloading, retrying,
                      verifying, paused, completed, failed, cancelled, corrupt,
