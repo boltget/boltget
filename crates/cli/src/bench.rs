@@ -118,6 +118,11 @@ pub(crate) struct BenchArgs {
     /// Connect directly, ignoring proxy environment variables.
     #[arg(long)]
     no_proxy: bool,
+
+    /// Also trust the CA certificates in FILE (PEM or DER), for example the one
+    /// `boltget-testserver --ca-out` writes for HTTPS lab targets. May be repeated.
+    #[arg(long = "ca-cert", value_name = "FILE", value_parser = crate::parse_ca_cert)]
+    ca_certs: Vec<crate::CaCerts>,
 }
 
 /// A connection setting: adaptive, or a fixed count.
@@ -413,8 +418,9 @@ struct RunPlan<'a> {
     round: u32,
 }
 
-fn engine_config(setting: Setting, no_proxy: bool) -> EngineConfig {
+fn engine_config(setting: Setting, no_proxy: bool, roots: &[Vec<u8>]) -> EngineConfig {
     let mut cfg = EngineConfig::default();
+    cfg.extra_root_certificates = roots.to_vec();
     if !no_proxy {
         cfg.proxy = ProxyRules::from_env();
     }
@@ -445,7 +451,13 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
 
 /// Runs one download and measures it. Never returns an error: a failure is a
 /// result too.
-async fn run_once(plan: &RunPlan<'_>, dir: &Path, keep: bool, no_proxy: bool) -> RunRecord {
+async fn run_once(
+    plan: &RunPlan<'_>,
+    dir: &Path,
+    keep: bool,
+    no_proxy: bool,
+    roots: &[Vec<u8>],
+) -> RunRecord {
     let t = plan.target;
     let mut rec = RunRecord {
         event: "run",
@@ -473,7 +485,7 @@ async fn run_once(plan: &RunPlan<'_>, dir: &Path, keep: bool, no_proxy: bool) ->
     };
     let path = dir.join(format!("{}.c{}.bin", t.name, plan.setting));
     let _ = std::fs::remove_file(&path);
-    let engine = match Engine::new(engine_config(plan.setting, no_proxy)) {
+    let engine = match Engine::new(engine_config(plan.setting, no_proxy, roots)) {
         Ok(e) => e,
         Err(e) => return fail(rec, &e),
     };
@@ -794,6 +806,7 @@ pub(crate) async fn run(args: BenchArgs) -> u8 {
         None => None,
     };
 
+    let roots = crate::CaCerts::flatten(&args.ca_certs);
     let mut records: Vec<RunRecord> = Vec::new();
     let mut first_failure = None;
     for target in &targets {
@@ -814,7 +827,7 @@ pub(crate) async fn run(args: BenchArgs) -> u8 {
                     phase,
                     round: round + 1,
                 };
-                let rec = run_once(&plan, &dir, args.keep, args.no_proxy).await;
+                let rec = run_once(&plan, &dir, args.keep, args.no_proxy, &roots).await;
                 if args.json {
                     crate::json::emit(&rec);
                 } else {

@@ -202,6 +202,12 @@ struct RunArgs {
     #[arg(long)]
     no_proxy: bool,
 
+    /// Also trust the CA certificates in FILE (PEM or DER), on top of the
+    /// system's trust store: a company CA, or the one `boltget-testserver
+    /// --ca-out` writes. May be repeated. Not saved: pass it again to `resume`.
+    #[arg(long = "ca-cert", value_name = "FILE", value_parser = parse_ca_cert)]
+    ca_certs: Vec<CaCerts>,
+
     /// Send cookies from a Netscape cookies.txt file (as browser export
     /// extensions, curl and wget write it), matched per URL like a browser does.
     /// Its path is saved and the file is read again on `resume`.
@@ -460,6 +466,24 @@ fn proxy_choice(run: &RunArgs) -> Result<Option<ProxyChoice>> {
         .transpose()
 }
 
+/// The certificates of one `--ca-cert` file (DER).
+#[derive(Debug, Clone)]
+pub(crate) struct CaCerts(Vec<Vec<u8>>);
+
+impl CaCerts {
+    pub(crate) fn flatten(all: &[CaCerts]) -> Vec<Vec<u8>> {
+        all.iter().flat_map(|c| c.0.iter().cloned()).collect()
+    }
+}
+
+/// `--ca-cert FILE`: reads the file now, so a bad path is a usage error.
+pub(crate) fn parse_ca_cert(path: &str) -> std::result::Result<CaCerts, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    boltget_engine::parse_certificates(&bytes)
+        .map(CaCerts)
+        .map_err(|e| format!("{path}: {e}"))
+}
+
 fn engine_config(run: &RunArgs) -> EngineConfig {
     let mut cfg = EngineConfig::default();
     if !run.no_proxy {
@@ -482,6 +506,7 @@ fn engine_config(run: &RunArgs) -> EngineConfig {
     if let Some(n) = run.min_split_size {
         cfg.min_split_size = n.max(1);
     }
+    cfg.extra_root_certificates = CaCerts::flatten(&run.ca_certs);
     cfg
 }
 
