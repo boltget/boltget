@@ -1,18 +1,36 @@
 ---
-title: Install from source
-description: Build the boltget command-line tool with Rust and make your first download.
+title: Install
+description: Download the boltget command-line tool, or build it from source, and make your first download.
 ---
 
-The v0.1 preview is built from source. It takes a few minutes the first time.
+The v0.1 preview is the `boltget` command-line tool. There is no installer yet: download the zip and run it from a folder, or build it from source.
 
-## Requirements
+## Download a release
+
+Get `boltget-<version>-windows-x64.zip` from the [download page](/download/) (a Linux `tar.gz` is there too, as a preview build). Unpack it and run `boltget` from that folder:
+
+```powershell
+tar -xf boltget-0.1.0-windows-x64.zip
+cd boltget-0.1.0-windows-x64
+.\boltget --version
+```
+
+To run it from anywhere, copy `boltget.exe` to a folder on your `PATH`. It needs no other files.
+
+The download page lists the SHA-256 of every file and how to check it, along with the build provenance (`gh attestation verify`). The builds are not code-signed yet, so Windows SmartScreen may warn the first time you run `boltget.exe`; signed builds arrive with v1.0.
+
+## Build from source
+
+It takes a few minutes the first time.
+
+### Requirements
 
 - **Rust**, installed with [rustup](https://rustup.rs). The repository pins the exact toolchain in `rust-toolchain.toml`, and rustup picks it up on its own.
 - **Windows:** Visual Studio Build Tools with the "Desktop development with C++" workload, for the MSVC toolchain.
 - **Linux:** a C compiler (for example `build-essential` on Debian and Ubuntu).
 - **Git**, to clone the repository.
 
-## Build
+### Build
 
 ```sh
 git clone https://github.com/boltget/boltget.git
@@ -26,7 +44,7 @@ The binary is `target/release/boltget` (`boltget.exe` on Windows). To put it on 
 cargo install --locked --path crates/cli
 ```
 
-You can also run it without installing: `cargo run --release -p boltget-cli -- get <url>`.
+You can also run it without installing: `cargo run --release -p boltget-cli -- get <url>`. To rebuild a release exactly, see [BUILDING.md](https://github.com/boltget/boltget/blob/main/docs/BUILDING.md).
 
 ## First download
 

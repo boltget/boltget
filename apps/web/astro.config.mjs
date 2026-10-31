@@ -47,7 +47,7 @@ export default defineConfig({
           label: "Getting started",
           items: [
             { label: "Overview", slug: "docs" },
-            { label: "Install from source", slug: "docs/getting-started" },
+            { label: "Install", slug: "docs/getting-started" },
           ],
         },
         {
