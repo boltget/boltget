@@ -70,7 +70,7 @@ export class ChunkMap {
 
   /** Forget arrival times (a new run, or a rewind). */
   reset(): void {
-    this.arrived.fill(-1);
+    this.arrived.fill(NaN);
     this.lastT = -1;
   }
 
@@ -95,7 +95,7 @@ export class ChunkMap {
       this.canvas.height = h;
       this.canvas.style.height = `${height}px`;
     }
-    if (this.arrived.length !== cols * rows) this.arrived = new Float64Array(cols * rows).fill(-1);
+    if (this.arrived.length !== cols * rows) this.arrived = new Float64Array(cols * rows).fill(NaN);
     return height;
   }
 
@@ -158,7 +158,8 @@ export class ChunkMap {
         let [r, g, b] = ramp(u);
         let alpha: number;
         if (c.f >= 1) {
-          if (this.arrived[i]! < 0) this.arrived[i] = fresh ? now - 10 : now;
+          // NaN marks "not arrived": a settled time can be negative early after load.
+          if (Number.isNaN(this.arrived[i])) this.arrived[i] = fresh ? now - 10 : now;
           const age = now - this.arrived[i]!;
           if (age < 0.9) this.busy = true;
           alpha = 0.35 + 0.65 * easeOut(age / 0.45);
