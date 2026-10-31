@@ -17,11 +17,14 @@ http-body.workspace = true
 http-body-util.workspace = true
 httpdate.workspace = true
 hyper = { workspace = true, features = ["server"] }
-hyper-util.workspace = true
+hyper-util = { workspace = true, features = ["http1", "http2", "server-graceful"] }
 md-5.workspace = true
 percent-encoding.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["signal"] }
+tokio-rustls.workspace = true
 tokio-util.workspace = true
 
 [lints]
