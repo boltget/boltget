@@ -73,3 +73,35 @@ url = "{lab}/data?size=1073741824&seed=102"
 size = 1073741824
 sha256 = "0e724a6864bd4a7cf59f1f2b2d1f6c3e9c9e77167af108d6d6f512584052185b"
 notes = "Loopback, no limit: measures the client's own overhead (CPU, disk writes, finishing the file)."
+
+[[target]]
+name = "lab-latency100-100mib"
+url = "{lab}/data?size=104857600&seed=101&throttle=2097152&latency_ms=100"
+size = 104857600
+sha256 = "69527432e04c79b66016e285823a429a79a400b04a892bb8c4b0b56cfa60dde8"
+notes = "100 ms per round trip (200 ms for a new connection) and 2 MiB/s per connection: a window-limited long path. Every new connection and request costs time."
+
+[[target]]
+name = "lab-connlimit4-100mib"
+url = "{lab}/data?size=104857600&seed=101&throttle=2097152&conn_limit=4"
+size = 104857600
+sha256 = "69527432e04c79b66016e285823a429a79a400b04a892bb8c4b0b56cfa60dde8"
+notes = "2 MiB/s per connection, but the server serves at most 4 connections and answers 503 to others: adaptive concurrency must settle at 4."
+
+# HTTP/2 lab targets: `{lab}/tls/...` redirects to the server's HTTPS listener,
+# which needs `boltget-testserver --port 8090 --tls-port 8443 --ca-out lab-ca.pem`
+# and `boltget bench --ca-cert lab-ca.pem` (see bench/README.md).
+
+[[target]]
+name = "lab-h2-throttled-100mib"
+url = "{lab}/tls/data?size=104857600&seed=101&throttle=2097152"
+size = 104857600
+sha256 = "69527432e04c79b66016e285823a429a79a400b04a892bb8c4b0b56cfa60dde8"
+notes = "HTTPS, HTTP/2 negotiated by ALPN, every connection limited to 2 MiB/s: one connection per worker, as over HTTP/1.1."
+
+[[target]]
+name = "lab-h2-1gib"
+url = "{lab}/tls/data?size=1073741824&seed=102"
+size = 1073741824
+sha256 = "0e724a6864bd4a7cf59f1f2b2d1f6c3e9c9e77167af108d6d6f512584052185b"
+notes = "HTTPS + HTTP/2 on loopback, no limit: the client's TLS and HTTP/2 overhead compared with lab-1gib."

@@ -16,12 +16,21 @@ cargo build --release -p boltget-cli -p boltget-testserver
 # Public targets (5 measured runs and 1 warm-up each, adaptive and 8 connections):
 target/release/boltget bench --targets bench/targets.toml -t cachefly-100mb -c auto,8
 
-# Lab targets need a local test server:
-target/release/boltget-testserver --port 8090
-target/release/boltget bench --targets bench/targets.toml -t 'lab-*' --lab http://127.0.0.1:8090 --csv runs.csv
+# Lab targets need a local test server. --tls-port adds the HTTPS/HTTP/2
+# listener the lab-h2-* targets reach through {lab}/tls/...; --ca-out writes
+# its generated CA, which bench must trust with --ca-cert.
+target/release/boltget-testserver --port 8090 --tls-port 8443 --ca-out lab-ca.pem
+target/release/boltget bench --targets bench/targets.toml -t 'lab-*' --lab http://127.0.0.1:8090 --ca-cert lab-ca.pem --csv runs.csv
 ```
 
 `boltget help bench` documents the options, the statistics and the `--json` format.
+
+Lab shaping is done by the test server at the application layer (query
+parameters, documented in `crates/testserver/src/lib.rs`): `throttle` per
+connection, `latency_ms` per round trip, `conn_limit` connections per server.
+Packet loss is not simulated; it needs the planned second-machine lab with
+`tc netem` (docs/ENGINE.md, "Benchmarks plan"). The `lab-h2-*` targets do not
+work in `idm-compare.ps1`: IDM does not trust the lab CA.
 
 ## Against IDM
 
