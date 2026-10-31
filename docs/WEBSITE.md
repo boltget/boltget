@@ -141,17 +141,17 @@ Kept for the record. The first concept put the giant pixel arrow on near-black, 
 
 First version, built during v0.1 (there is no installer yet, only the engine and CLI).
 
-**Built:** `/` (direction A, see [Home as built](#home-as-built)), `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy`, a 404 page, `/.well-known/security.txt`, `robots.txt` and a sitemap, and Starlight docs under `/docs` (overview, install from source, using the CLI, exit codes and JSON).
+**Built:** `/` (direction A, see [Home as built](#home-as-built)), `/download` (see [Download page](#download-page)), `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy`, a 404 page, `/.well-known/security.txt`, `robots.txt` and a sitemap, and Starlight docs under `/docs` (overview, install, using the CLI, exit codes and JSON).
 
 **Design lab:** `/lab/a` and `/lab/b`, prototypes of the redesign (see [Design lab](#design-lab)); noindex and not in the sitemap.
 
-**Not built yet:** `/download` and `/features`; generated per-page OG images (every page uses `brand/social/og-image.png`); Lighthouse CI; security headers (HSTS, CSP), which wait for the host decision; font subsetting (the full Geist WOFF2 files are served, about 120 KB for the three weights); ESLint and Prettier for `apps/web`; the app screenshot on Home (no app until v0.2); the CLI reference generated from clap (the CLI docs pages are written by hand and point to `--help` as the reference).
+**Not built yet:** `/features`; generated per-page OG images (every page uses `brand/social/og-image.png`); Lighthouse CI; security headers (HSTS, CSP), which wait for the host decision; font subsetting (the full Geist WOFF2 files are served, about 120 KB for the three weights); ESLint and Prettier for `apps/web`; the app screenshot on Home (no app until v0.2); the CLI reference generated from clap (the CLI docs pages are written by hand and point to `--help` as the reference).
 
 Decisions:
 
 - **Workspace.** A pnpm workspace at the repository root (`apps/*`, `packages/*` and `brand`, one `pnpm-lock.yaml`), Node pinned by `.node-version`. `brand/` is a member so `cd brand && pnpm install` keeps working; it no longer has its own lockfile. Dependency versions are pinned exactly.
 - **Tokens and assets.** No `packages/ui` yet: the site imports `brand/tokens/tokens.css` and the fonts in `brand/fonts` directly, and `apps/web/scripts/copy-brand.mjs` copies the favicons, web manifest and OG image from `brand/` into `public/` before every build (the copies are git-ignored). The tokens move to `packages/ui` when the desktop app needs them too.
-- **Primary link before an installer exists.** "Try the CLI preview", to `/docs/getting-started/` (build from source), as an underlined text link; the v0.2 app is announced by the hero card's "Preview · v0.2 app" chip and caption. It becomes "Download for Windows", linking to `/download`, when the first preview builds are published (v0.2).
+- **Primary link before an installer exists.** "Try the CLI preview", as an underlined text link; the v0.2 app is announced by the hero card's "Preview · v0.2 app" chip and caption. Since the v0.1.0 CLI release (October 31, 2026) it links to `/download` (before that, to `/docs/getting-started/`, build from source); the closing section's link and the footer's new "Download" link (Product column) do the same, and the footer's docs link is now "Install". The label becomes "Download for Windows" when the app's first preview builds are published (v0.2). `/download` is not in the header: a fourth link overflowed the bar at 390 px, and three links keep it calm.
 - **Simulation.** `src/lib/sim.ts` (`DEMO_SIM`: 420 MiB, start 4, add one every 0.6 s while the last addition raised throughput by more than 6%, a wobbling 58 MiB/s line cap, steals on finish), seeded (mulberry32) with fixed 1/120 s steps. The lab's `src/lab/sim.ts` re-exports it. Live numbers are `aria-hidden`; each figure's accessible name says it is a simulation.
 - **Pixels.** `chunkmap.ts` eases squares in on the wall clock, not on simulation time, so a scene held still still finishes its easing; a draw that is not part of a running animation (a still, `?at=`, a resize) settles at once.
 - **JavaScript on Home.** About 33 KB gzipped in total: the Svelte runtime 15.9 KB, the hero island 4.3 KB, `sim.ts` 1.6 KB, `chunkmap.ts` 1.3 KB, the shader 2.5 KB, the How-it-works scene 2.8 KB, and about 3.8 KB of small inline scripts (Measured, resume card, tiles, closing mark, Astro's island loader). That is over the 15 KB design target; the next step is rendering the hero card without Svelte. Only the hero hydrates on load; every other scene is plain script that starts when visible and pauses off screen and in hidden tabs.
@@ -183,6 +183,16 @@ Analytics, if ever needed, must be privacy-respecting, cookieless and server-sid
 CI runs Lighthouse CI on every PR touching `apps/web` against the preview build, and fails on budget regressions.
 
 ## Download page
+
+### As built (v0.1)
+
+`apps/web/src/pages/download.astro`, copy under `download.*` in `en.json`, no JavaScript of its own (paper theme, the footer's aurora is the only script).
+
+- **Release data at build time.** `src/lib/releases.ts` lists `/repos/boltget/boltget/releases` (because `/releases/latest` skips pre-releases) and takes the newest release that is not a draft, its assets and the contents of its `SHA256SUMS` (falling back to the `digest` GitHub records per asset). It sends `GITHUB_TOKEN` when set (higher rate limit) and is otherwise unauthenticated. If the API is unreachable, rate-limited or returns an error, the build logs a `[releases]` warning and still succeeds: the page then shows "Download from GitHub" (the releases page), no file list and no checksums, and the commands use `X.Y.Z` placeholders. `BOLTGET_RELEASES_OFFLINE=1` skips the network (offline builds, checking the fallback).
+- **Content.** Label with version, "Preview" for a pre-release, and date; the Windows x64 zip as the one primary button with its file name and size; Linux x64 as a text link marked "preview build"; release notes. Files: platform, file name, size and SHA-256 per asset, plus `SHA256SUMS` and all releases. Verify: `Get-FileHash`, `sha256sum -c`, `gh attestation verify`, the not-signed note (SmartScreen) and a link to [BUILDING.md](BUILDING.md). Quick start in three lines (`tar -xf`, `cd`, `.oltget get <url>`) linking to `/docs/cli/`. What comes next: desktop app v0.2 (in progress), browser extension v0.3, macOS after 1.0, one line saying an installer, winget and the store listings arrive with those releases, and the roadmap link.
+- **Deviations from the plan below.** No OS detection yet: Windows is the only supported platform in v0.1, so the primary button is always Windows and Linux is shown as a secondary link (detection returns with the app installers). No winget command and no store badges, because neither exists. The page reflects the release as of the last build: the site is deployed by hand (`pnpm --filter @boltget/web build`, then `pnpm --filter @boltget/web run deploy`), so **redeploy the site after publishing a release**; the deploy hook below comes with automatic deploys.
+
+### Plan
 
 - Detects the OS from the user agent (and Client Hints where available) and shows the right primary button; always shows all options below.
 - Assets are linked from GitHub Releases (the latest stable release), resolved at build time from the GitHub API and refreshed on each release by a deploy hook, so the page never links to a stale version.
