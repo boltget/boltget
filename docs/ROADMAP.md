@@ -6,8 +6,8 @@ Feature-level detail, with the milestone for each feature, is in [FEATURES.md](F
 
 ```mermaid
 flowchart LR
-  M0["v0.0<br/>Design (now)"] --> M1["v0.1<br/>Engine + CLI<br/>+ benchmark"]
-  M1 --> M2["v0.2<br/>Desktop app"]
+  M0["v0.0<br/>Design"] --> M1["v0.1<br/>Engine + CLI<br/>+ benchmark"]
+  M1 --> M2["v0.2<br/>Desktop app (now)"]
   M2 --> M3["v0.3<br/>Browser extension"]
   M3 --> M4["v0.4<br/>Video"]
   M4 --> M5["v0.5<br/>Scheduler, queues,<br/>polish"]
@@ -15,16 +15,17 @@ flowchart LR
   M6 --> P["post-1.0<br/>macOS, Linux, more"]
 ```
 
-## v0.0: Design (current)
+## v0.0: Design
 
 Goal: a written design that a contributor can build from.
 
 - [x] Vision, features, architecture, engine spec, browser integration, video, tech stack, design principles, website, roadmap, release process
 - [x] License, contributing rules, governance, security policy, code of conduct, issue/PR templates
-- [ ] Brand kit and `brand/BRAND.md` (in progress)
-- [ ] GitHub org `boltget` and repo `boltget/boltget` configured: branch protection on `main`, labels synced, Discussions enabled, private vulnerability reporting enabled
+- [x] Brand kit and `brand/BRAND.md`
+- [x] GitHub org `boltget` and repo `boltget/boltget` configured: branch protection on `main`, labels synced, Discussions enabled, private vulnerability reporting enabled
+  *Status (2026-10-31):* `main` requires a pull request and the `CI ok` check, without force pushes or deletion; administrators are exempt, so maintainers can still commit directly (see [AGENTS.md](../AGENTS.md#git)). Labels from `.github/labels.yml` are applied; GitHub's default labels are kept until open issues are relabelled.
 
-## v0.1: Engine + CLI, with a benchmark against IDM
+## v0.1: Engine + CLI, with a benchmark against IDM (done)
 
 Goal: prove the core claim. A command-line downloader that is at least as fast as IDM and never loses progress.
 
@@ -33,19 +34,19 @@ Scope: `crates/engine`, `crates/cli`, `bench/`. HTTP/1.1 and HTTP/2, dynamic seg
 Exit criteria:
 
 - [x] Cargo workspace, CI on Windows and Linux: `cargo fmt --check`, `cargo clippy -- -D warnings`, tests, `cargo-deny` (licenses, advisories)
-- [ ] Engine implements everything in [ENGINE.md](ENGINE.md) marked for v0.1; deviations are written back into ENGINE.md
-  *Status (2026-10-28):* implemented and documented in ENGINE.md, except the exFAT write window (see below). Gaps recorded in ENGINE.md as later work: pausing on long `Retry-After` and on lost connectivity, Digest auth.
-- [ ] Local test server covering every misbehaviour listed in [ENGINE.md, Testing strategy](ENGINE.md#testing-strategy)
-  *Status (2026-10-28):* every listed misbehaviour except HTTP/2 (the server speaks HTTP/1.1 only; HTTP/2 needs TLS with a test certificate the engine trusts).
+- [x] Engine implements everything in [ENGINE.md](ENGINE.md) marked for v0.1; deviations are written back into ENGINE.md
+  *Status (2026-10-31):* implemented and documented in ENGINE.md, including the exFAT write window. Gaps recorded in ENGINE.md as later work: pausing on long `Retry-After` and on lost connectivity, Digest auth.
+- [x] Local test server covering every misbehaviour listed in [ENGINE.md, Testing strategy](ENGINE.md#testing-strategy)
+  *Status (2026-10-31):* every listed misbehaviour, over HTTP/1.1 and over HTTP/2 with TLS (a CA generated at start-up, trusted by the engine through `extra_root_certificates`, the CLI's `--ca-cert`).
 - [x] Property tests for the segment invariants pass at a high iteration count in CI
   *Status (2026-10-28):* `PROPTEST_CASES=4096` in regular CI, 262,144 in the nightly workflow.
 - [x] Crash/kill-resume harness: at least 1,000 random kill-and-resume cycles across file sizes with byte-identical results, zero failures
   *Status (2026-10-28):* 1,000 kills over 349 downloads, all byte-identical (ENGINE.md, Testing strategy); the nightly workflow repeats 1,000 cycles on Windows and Linux.
-- [ ] Sparse preallocation verified on NTFS (no zero-fill stall when the last segment writes first); exFAT and FAT32 behaviour handled as specified
-  *Status (2026-10-28):* NTFS verified by a unit test, FAT32 4 GiB check in place; the exFAT write window is not implemented (ENGINE.md, open question 4).
+- [x] Sparse preallocation verified on NTFS (no zero-fill stall when the last segment writes first); exFAT and FAT32 behaviour handled as specified
+  *Status (2026-10-31):* NTFS verified by a unit test, FAT32 4 GiB check in place, and a 64 MiB write window on non-sparse files (exFAT, FAT32, shares that refuse sparse files; ENGINE.md, open question 4), tested by forcing it on NTFS. A run on a real exFAT USB drive is part of the file system matrix in ENGINE.md, Testing strategy.
 - [x] `boltget get`, `list`, `pause`/`resume` (standalone), `refresh`, `bench` work; `--json` output is documented and stable enough to script against
-- [ ] Benchmark harness in `bench/`, lab environment scripted, real-world target list versioned
-  *Status (2026-10-28):* harness, `boltget bench`, `bench/idm-compare.ps1` and `bench/targets.toml` exist; the lab is `boltget-testserver` on loopback with per-connection throttling only. Added latency, loss, server-side connection limits and HTTP/2 are not scripted yet.
+- [x] Benchmark harness in `bench/`, lab environment scripted, real-world target list versioned
+  *Status (2026-10-31):* harness, `boltget bench`, `bench/idm-compare.ps1` and `bench/targets.toml` exist; the lab is `boltget-testserver` on loopback with per-connection and per-line throttling, added latency, a server-side connection limit and HTTP/2, each with targets in `bench/targets.toml`. Packet loss cannot be modelled honestly on loopback and moves to the second-machine `tc netem` lab with the v0.5 benchmark re-run.
 - [x] **Benchmark report published** (in the repo, later on the website) comparing BoltGet with IDM per [ENGINE.md, Benchmarks plan](ENGINE.md#benchmarks-plan-vs-idm), with raw data. BoltGet is equal or faster on the majority of scenarios; every scenario where it is slower has an issue explaining why and a plan
   *Status (2026-10-31):* [BENCHMARK.md](BENCHMARK.md) published with raw data; BoltGet's default was equal to or faster than IDM's default on all 5 targets. The scenarios where the adaptive default is slower than a fixed connection count have issues with a plan: [#3](https://github.com/boltget/boltget/issues/3) (fixed) and [#4](https://github.com/boltget/boltget/issues/4) (repeat contact fixed, first contact open). The IDM-at-32-connections configuration ([#5](https://github.com/boltget/boltget/issues/5)) needs a manual change of IDM's settings and moves to the v0.5 benchmark re-run.
 - [x] Default tunables (connection count, `min_split_size`, intervals) set from benchmark data, and ENGINE.md updated with the measured values
@@ -53,7 +54,7 @@ Exit criteria:
 - [x] Fuzz targets for header parsers run in CI for a fixed time budget without findings
   *Status (2026-10-28):* seven targets in `fuzz/`, run nightly for 60 s each (`.github/workflows/nightly.yml`); their seed corpus also runs in `cargo test`. First green nightly on `main`: 2026-10-29 (run 40842976937).
 
-## v0.2: Desktop app
+## v0.2: Desktop app (current)
 
 Goal: a daily-usable Windows app on top of the engine.
 
@@ -117,7 +118,7 @@ Exit criteria:
 - [ ] Settings search; import/export settings as a file
 - [ ] Accessibility pass with NVDA and Narrator on every screen; issues fixed
 - [ ] Performance pass: profile engine and UI under 32 connections at the highest available bandwidth; fix top regressions
-- [ ] Benchmark re-run against IDM, including IDM at its maximum of 32 connections ([#5](https://github.com/boltget/boltget/issues/5)); report updated
+- [ ] Benchmark re-run against IDM on a second-machine lab with added loss (`tc netem`), including IDM at its maximum of 32 connections ([#5](https://github.com/boltget/boltget/issues/5)); report updated
 - [ ] Beta update channel live (signed builds; see [RELEASE.md](RELEASE.md#channels))
 
 ## v1.0: Public launch
