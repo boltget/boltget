@@ -1,0 +1,340 @@
+---
+// /download: the newest published release, resolved from GitHub at build time
+// (src/lib/releases.ts). Without the API the page still builds and links to
+// the releases page. No JavaScript of its own. See docs/WEBSITE.md, Download page.
+import Base from "../layouts/Base.astro";
+import PageIntro from "../components/PageIntro.astro";
+import { t, tDynamic } from "../i18n";
+import { longDate } from "../lib/format";
+import { latestRelease, RELEASES_URL, type Asset } from "../lib/releases";
+
+const release = await latestRelease();
+const windows = release?.assets.find((a) => a.platform === "windows-x64");
+const linux = release?.assets.find((a) => a.platform === "linux-x64");
+
+const size = (bytes: number) => t("download.files.size", { value: (bytes / 1024 / 1024).toFixed(1) });
+const platformLabel = (a: Asset) => (a.platform ? tDynamic(`download.platforms.${a.platform}`) : a.name);
+
+const label = release
+  ? t(release.prerelease ? "download.labelPreview" : "download.label", {
+      version: release.version,
+      date: longDate(release.date),
+    })
+  : t("download.labelFallback");
+
+// File names in the commands: the real ones, or the pattern BUILDING.md uses.
+const winFile = windows?.name ?? "boltget-X.Y.Z-windows-x64.zip";
+const folder = winFile.replace(/\.zip$/, "");
+const verify = [
+  { label: t("download.verify.windows"), code: `(Get-FileHash ${winFile} -Algorithm SHA256).Hash` },
+  { label: t("download.verify.linux"), code: `sha256sum -c SHA256SUMS --ignore-missing` },
+  { label: t("download.verify.provenance"), code: `gh attestation verify ${winFile} --repo boltget/boltget` },
+];
+const start = [`tar -xf ${winFile}`, `cd ${folder}`, `.\\boltget get https://example.com/file.iso`].join("\n");
+
+const next = [
+  { name: t("download.next.app"), when: t("download.next.appWhen") },
+  { name: t("download.next.extension"), when: t("download.next.extensionWhen") },
+  { name: t("download.next.macos"), when: t("download.next.macosWhen") },
+];
+---
+
+<Base title={t("download.title")} description={t("download.description")}>
+  <div class="wrap">
+    <PageIntro label={label} title={t("download.heading")} lede={t("download.lede")}>
+      <div class="get">
+        {
+          windows ? (
+            <>
+              <a class="button button-primary" href={windows.url}>
+                {t("download.primary")}
+              </a>
+              <p class="meta num">{t("download.primaryMeta", { file: windows.name, size: size(windows.size) })}</p>
+            </>
+          ) : (
+            <>
+              <a class="button button-primary" href={release?.url ?? RELEASES_URL}>
+                {t("download.primaryFallback")}
+              </a>
+              <p class="meta">{t("download.fallbackMeta")}</p>
+            </>
+          )
+        }
+      </div>
+      <p class="also">
+        {
+          linux && (
+            <span>
+              <a class="tlink" href={linux.url}>
+                {t("download.linux")}
+              </a>{" "}
+              <span class="muted">{t("download.linuxNote")}</span>
+            </span>
+          )
+        }
+        {
+          release && (
+            <a class="tlink" href={release.url}>
+              {t("download.notes")}
+            </a>
+          )
+        }
+      </p>
+    </PageIntro>
+
+    {
+      release && release.assets.length > 0 && (
+        <section aria-labelledby="files">
+          <h2 id="files">{t("download.files.heading")}</h2>
+          <p class="muted note">{t("download.files.note")}</p>
+          <ul class="files">
+            {release.assets.map((a) => (
+              <li>
+                <div class="file">
+                  <span class="platform">
+                    {platformLabel(a)}
+                    {a.platform === "linux-x64" && <span class="pill">{t("download.previewBuild")}</span>}
+                  </span>
+                  <a class="name num" href={a.url}>
+                    {a.name}
+                  </a>
+                  <span class="size num muted">{size(a.size)}</span>
+                </div>
+                <p class="sha num">
+                  <span class="sha-label">{t("download.files.sha")}</span>
+                  <span class="hash">{a.sha256 ?? t("download.files.unknown")}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p class="links">
+            {release.sums && (
+              <a class="num" href={release.sums.url}>
+                {t("download.files.sums")}
+              </a>
+            )}
+            <a href={RELEASES_URL}>{t("download.files.all")}</a>
+          </p>
+        </section>
+      )
+    }
+
+    <section aria-labelledby="verify">
+      <h2 id="verify">{t("download.verify.heading")}</h2>
+      <p class="muted note">{t("download.verify.body")}</p>
+      <div class="commands">
+        {
+          verify.map((v) => (
+            <div>
+              <p class="cmd-label">{v.label}</p>
+              <pre tabindex="0"><code>{v.code}</code></pre>
+            </div>
+          ))
+        }
+      </div>
+      <p class="aside">
+        <strong>{t("download.verify.unsigned")}</strong>{" "}
+        {t("download.verify.unsignedBody")}
+      </p>
+      <p class="aside">
+        {t("download.verify.sourceLead")}{" "}
+        <a href={t("site.repoBlob", { path: "docs/BUILDING.md" })}>{t("download.verify.sourceLink")}</a>
+      </p>
+    </section>
+
+    <section aria-labelledby="start">
+      <h2 id="start">{t("download.start.heading")}</h2>
+      <p class="muted note">{t("download.start.body")}</p>
+      <pre class="start" tabindex="0"><code>{start}</code></pre>
+      <p class="more"><a href="/docs/cli/">{t("download.start.more")}</a></p>
+    </section>
+
+    <section aria-labelledby="next">
+      <h2 id="next">{t("download.next.heading")}</h2>
+      <dl class="next">
+        {
+          next.map((n) => (
+            <div>
+              <dt>{n.name}</dt>
+              <dd class="num">{n.when}</dd>
+            </div>
+          ))
+        }
+      </dl>
+      <p class="muted note">
+        {t("download.next.stores")}{" "}
+        <a href={t("site.repoBlob", { path: "docs/ROADMAP.md" })}>{t("download.next.roadmap")}</a>
+      </p>
+    </section>
+  </div>
+</Base>
+
+<style>
+  section {
+    margin-top: 4rem;
+    max-width: 52rem;
+  }
+  .note {
+    margin-top: 0.75rem;
+  }
+  .get {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+    margin-top: 2rem;
+  }
+  .meta {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+  .also {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.75rem;
+    margin-top: 1.25rem;
+    font-size: 0.9375rem;
+  }
+  .also .muted {
+    font-size: 0.875rem;
+  }
+
+  .files {
+    margin: 1.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--border);
+  }
+  .files li {
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .file {
+    display: grid;
+    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) auto;
+    gap: 0.25rem 1.5rem;
+    align-items: baseline;
+  }
+  .platform {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+  .pill {
+    padding: 0.125rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .name {
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+  }
+  .size {
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+  .sha {
+    display: grid;
+    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+    gap: 0.25rem 1.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .sha-label,
+  .cmd-label {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+  }
+  .hash {
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin-top: 1rem;
+    font-size: 0.875rem;
+  }
+  @media (max-width: 40rem) {
+    .file {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .platform {
+      grid-column: 1 / -1;
+    }
+    .sha {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .commands {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+  }
+  pre {
+    margin: 0.5rem 0 0;
+    padding: 0.875rem 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: var(--soft);
+    color: var(--ink);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+  }
+  pre code {
+    font-size: inherit;
+  }
+  .start {
+    margin-top: 1.25rem;
+  }
+  .aside {
+    margin-top: 1.25rem;
+    font-size: 0.9375rem;
+    color: var(--text-muted);
+  }
+  .aside strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .more {
+    margin-top: 1rem;
+    font-size: 0.9375rem;
+  }
+
+  .next {
+    margin: 1.5rem 0 0;
+    border-top: 1px solid var(--border);
+  }
+  .next div {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.25rem 1.5rem;
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .next dt {
+    font-weight: 600;
+  }
+  .next dd {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+</style>

@@ -20,11 +20,12 @@
     "nav": "Footer",
     "tagline": "Every byte, at full speed.",
     "product": "Product",
+    "download": "Download",
     "benchmarks": "Benchmarks",
     "compare": "BoltGet and IDM",
     "changelog": "Changelog",
     "docs": "Docs",
-    "install": "Install from source",
+    "install": "Install",
     "cli": "Using the CLI",
     "scripting": "Exit codes and JSON",
     "project": "Project",
@@ -343,6 +344,63 @@
     "license": {
       "heading": "License",
       "body": "BoltGet is free and open source under GPL-3.0-or-later. IDM is proprietary software, sold after a trial period."
+    }
+  },
+  "download": {
+    "title": "Download",
+    "description": "Download the BoltGet command-line downloader for Windows, with SHA-256 checksums and build provenance for every file.",
+    "heading": "Download BoltGet",
+    "label": "v{version} · {date}",
+    "labelPreview": "v{version} · Preview · {date}",
+    "labelFallback": "Latest release",
+    "lede": "The command-line downloader, ready today. The desktop app follows in v0.2.",
+    "primary": "Download for Windows",
+    "primaryMeta": "{file} · {size}",
+    "primaryFallback": "Download from GitHub",
+    "fallbackMeta": "The newest files and their checksums are on the release page.",
+    "linux": "Linux x64",
+    "linuxNote": "preview build",
+    "notes": "Release notes",
+    "platforms": {
+      "windows-x64": "Windows x64",
+      "linux-x64": "Linux x64"
+    },
+    "previewBuild": "Preview build",
+    "files": {
+      "heading": "Files",
+      "note": "Each SHA-256 comes from the release's SHA256SUMS file.",
+      "size": "{value} MiB",
+      "sha": "SHA-256",
+      "unknown": "not published",
+      "sums": "SHA256SUMS",
+      "all": "All releases"
+    },
+    "verify": {
+      "heading": "Verify",
+      "body": "Check the file's SHA-256, then that GitHub built it from this repository.",
+      "windows": "Windows, PowerShell",
+      "linux": "Linux",
+      "provenance": "Build provenance, GitHub CLI",
+      "unsigned": "Not code-signed yet.",
+      "unsignedBody": "Windows SmartScreen may warn the first time you run boltget.exe. Signed builds arrive with v1.0.",
+      "sourceLead": "Prefer to build it yourself?",
+      "sourceLink": "Building from source"
+    },
+    "start": {
+      "heading": "Quick start",
+      "body": "Unpack the zip, then download something.",
+      "more": "Every command, in Using the CLI"
+    },
+    "next": {
+      "heading": "What comes next",
+      "app": "Desktop app",
+      "appWhen": "v0.2, in progress",
+      "extension": "Browser extension",
+      "extensionWhen": "v0.3",
+      "macos": "macOS",
+      "macosWhen": "After 1.0",
+      "stores": "An installer, winget and the extension stores arrive with those releases.",
+      "roadmap": "Read the roadmap"
     }
   },
   "changelog": {
