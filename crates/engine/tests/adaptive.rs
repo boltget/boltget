@@ -171,6 +171,47 @@ async fn throttling_sets_a_ceiling_for_the_host() {
     assert!(done.max_connections <= 4, "max {}", done.max_connections);
 }
 
+#[tokio::test]
+async fn settles_at_a_server_connection_limit() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = adaptive_cfg(2);
+    c.backoff_base = Duration::from_millis(50);
+    let engine = Engine::new(c).unwrap();
+    let size = 16 * MIB;
+    // 1 MiB/s per connection, so more connections pay off, but the server
+    // serves at most 4 at a time and answers `503` on any other.
+    let url = srv.url(&format!(
+        "/data?size={size}&throttle=1048576&conn_limit=4&key=limit4"
+    ));
+    let done = get_with(&engine, request(&url, dir.path())).await.unwrap();
+    assert_content(&done, 1, size);
+    // It climbed into the limit (2 -> 4 pays off, the probe above is refused) ...
+    assert!(srv.refused_requests() > 0, "never hit the limit");
+    // ... and learned it: the next file from the host stays at or below 4.
+    let refused = srv.refused_requests();
+    let url = srv.url(&format!(
+        "/data?size={size}&seed=2&throttle=1048576&conn_limit=4&key=limit4b"
+    ));
+    let t0 = Instant::now();
+    let next = get_with(&engine, request(&url, dir.path())).await.unwrap();
+    assert_content(&next, 2, size);
+    assert!(
+        next.info.initial_connections <= 4,
+        "started with {}",
+        next.info.initial_connections
+    );
+    assert!(next.max_connections <= 4, "max {}", next.max_connections);
+    // At most a stray refusal while a closed connection's slot is freed.
+    assert!(
+        srv.refused_requests() - refused <= 2,
+        "{} refused",
+        srv.refused_requests() - refused
+    );
+    // Four connections at 1 MiB/s need about 4 s; this only catches a hang.
+    assert!(t0.elapsed() < Duration::from_secs(30), "{:?}", t0.elapsed());
+}
+
 async fn slow_tail(tail: u64) -> f64 {
     let srv = TestServer::start().await;
     let dir = tempfile::tempdir().expect("temp dir");
