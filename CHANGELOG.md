@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-31
+
+The first release: the download engine and the `boltget` command-line downloader for Windows (a Linux build is included as a preview). There is no desktop app yet. The binaries are not code-signed until v1.0; how to verify them is in `docs/BUILDING.md`.
+
 ### Changed
 
 - Faster on servers that limit the speed of each connection: the adaptive connection count reaches 16 connections in about 1.3 s (it took about 6 s before). On a local server limited to 2 MiB/s per connection, a 100 MiB download now takes 4.3 s instead of 6.8 s (8 fixed connections: 6.6 s; 16 fixed: 4.0 s). BoltGet also remembers such a server for 24 hours, and the next download from it starts with the number of connections that paid off: a 10 MiB file from that server then takes 1.0 s instead of 1.4 s. Servers that do not reward more connections, and those that answer `429`/`503`, are handled as before.
@@ -39,4 +43,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project policies: GPL-3.0-or-later license, contributing guide, governance, support, security policy and code of conduct.
 - GitHub configuration: issue forms, pull request template, code owners, Dependabot, label taxonomy, and workflows for PR title and documentation link checks.
 
-[Unreleased]: https://github.com/boltget/boltget/commits/main
+[Unreleased]: https://github.com/boltget/boltget/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/boltget/boltget/releases/tag/v0.1.0

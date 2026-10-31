@@ -63,13 +63,13 @@ The full feature matrix, with milestones and comparisons, is in [docs/FEATURES.m
 
 ## Status
 
-**Pre-alpha.** Work on the first milestone, v0.1 (the Rust engine and CLI, with a published benchmark), is under way. There is no installer or desktop app yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Pre-alpha.** v0.1, the Rust engine and the `boltget` command-line downloader with a [published benchmark](docs/BENCHMARK.md), is released. Work on v0.2, the desktop app, is under way. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
-To try the CLI from source: `cargo run --release -p boltget-cli -- get <url>`.
+## Install
 
-## Install (planned)
+**Now:** the command-line downloader. Download `boltget-<version>-windows-x64.zip` from [GitHub Releases](https://github.com/boltget/boltget/releases), unzip it and run `boltget get <url>`. The v0.x builds are not code-signed yet; [docs/BUILDING.md](docs/BUILDING.md) shows how to verify a download or build from source (`cargo run --release -p boltget-cli -- get <url>`).
 
-Nothing to install yet. Once releases exist:
+**Planned:**
 
 - **Windows (v1):** signed installer from [GitHub Releases](https://github.com/boltget/boltget/releases) and [boltget.app/download](https://boltget.app/download). We also plan to publish to winget.
 - **Browser extension:** Chrome Web Store, Microsoft Edge Add-ons, Firefox Add-ons.

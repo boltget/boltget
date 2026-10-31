@@ -6,7 +6,7 @@ Instructions for AI coding agents (and a quick reference for humans) working in 
 
 BoltGet is a free, open-source (GPL-3.0-or-later) download manager that aims to match and beat IDM. Windows first, macOS and Linux later. Everything (code, UI, docs) is in English.
 
-Current stage: v0.1, the Rust engine and CLI. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Current stage: v0.1 (Rust engine and CLI) is released; next is v0.2, the desktop app. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Layout
 
