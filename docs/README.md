@@ -26,6 +26,7 @@ Design documents for BoltGet. They define what we are building and how; code tha
 | Document | Covers |
 |---|---|
 | [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) | Restraint, density, motion, themes, accessibility, keyboard, copy and strings |
+| [APP-DESIGN.md](APP-DESIGN.md) | The desktop app screen by screen: window, add flow, details, tray, notifications, settings, visual system, native Windows behaviour |
 | [WEBSITE.md](WEBSITE.md) | boltget.app structure, hero concept, performance budget, OG images, hosting |
 | [../brand/BRAND.md](../brand/BRAND.md) | Visual identity: icon, colors, typography, tokens |
 

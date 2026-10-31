@@ -276,12 +276,12 @@ rather than flat swatches:
 | Role | Typeface | Notes |
 |---|---|---|
 | Everything | **Geist** (SIL OFL 1.1, by Vercel) | Weights 400 / 500 / 600. Avoid 700+ in UI |
-| Numbers, sizes, speeds, URLs, hashes, labels | **Geist Mono** | Tabular by nature, so download stats don't jitter |
+| Numbers, sizes, speeds, URLs, hashes, labels | **Geist Mono** | Tabular by nature, so download stats don't jitter. In the desktop app's dense lists, numbers use Geist with tabular figures (`tnum`) instead, and Mono is kept for URLs, hashes, headers and logs ([APP-DESIGN.md](../docs/APP-DESIGN.md)) |
 
 The fonts are in `fonts/` (woff2 plus `OFL.txt`). They also come from the `geist`
 npm package or Google Fonts.
 
-Suggested scale. Headlines get tighter tracking as they grow:
+Suggested scale for the web and print. Headlines get tighter tracking as they grow. The desktop app uses its own compact scale (13 / 12 / 15 px), defined in [APP-DESIGN.md](../docs/APP-DESIGN.md#visual-system):
 
 | Style | Size / line height | Weight | Tracking |
 |---|---|---|---|
@@ -335,7 +335,7 @@ Rules:
 - **Don't round the pixels.** Square corners are part of the identity. (Rounded pixels were explored and rejected.)
 - **Don't use yellow,** for the mark, accents or warnings. (Rejected direction; warnings use orange.)
 - **Don't replace the arrow with a letter "B" monogram.** (Rejected direction.)
-- Don't add glow, neon, bevels, drop shadows, outlines or 3D.
+- Don't add glow, neon, bevels, drop shadows, outlines or 3D to the mark or its pixels. (App UI that floats, such as menus and dialogs, uses the elevation tokens in [APP-DESIGN.md](../docs/APP-DESIGN.md#visual-system).)
 - Don't rotate the arrow. It always points down.
 - Don't recolour the gradient, reverse it, or put other hues in it.
 - Don't rearrange, add or remove pixels, or close the gaps on the canonical mark. Only the official small-size files are gapless.

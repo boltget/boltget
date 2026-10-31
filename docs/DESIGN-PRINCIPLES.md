@@ -1,6 +1,6 @@
 # Design principles
 
-How BoltGet looks, moves, reads and behaves, in the desktop app, the extension and on boltget.app. Visual tokens (colors, type scale, spacing, radii, the icon grid) are defined in [brand/BRAND.md](../brand/BRAND.md); this document is about how to use them and the product decisions behind them.
+How BoltGet looks, moves, reads and behaves, in the desktop app, the extension and on boltget.app. Visual tokens (colors, type scale, spacing, radii, the icon grid) are defined in [brand/BRAND.md](../brand/BRAND.md); this document is about how to use them and the product decisions behind them. How these principles apply to the desktop app, screen by screen, is in [APP-DESIGN.md](APP-DESIGN.md).
 
 The ethos in one line: **simple, but makes you say wow.** The wow comes from restraint, great typography and motion that explains the product, never from decoration.
 
@@ -8,8 +8,8 @@ The ethos in one line: **simple, but makes you say wow.** The wow comes from res
 
 - **One primary action per view.** In the main window it is "Add download". In the add sheet it is "Download". Everything else is secondary or behind a disclosure.
 - **Defaults that are right for 90% of people.** Settings exist for the other 10%, grouped and searchable, never in the first-run flow. Every new setting needs a reason it cannot be a good default.
-- **No chrome for its own sake.** No toolbar of twenty icons, no status bar repeating what the list shows, no splash screen longer than the app needs to start.
-- **Color is information.** The brand gradient is reserved for the BoltGet mark, the active-download indicator and the primary button. Status colors (paused, error, done) are used only on status, never decoratively.
+- **No chrome for its own sake.** No toolbar of twenty icons, no status bar repeating what the list shows, no splash screen.
+- **Color is information.** The brand gradient is reserved for the BoltGet mark and the active-download indicator; the primary button is solid emerald. Status colors (paused, error, done) are used only on status, never decoratively.
 - **Say less.** If a label needs a tooltip to be understood, rewrite the label.
 
 ## 2. Information density done right
@@ -29,15 +29,14 @@ Motion is how BoltGet shows what the engine is doing. It is never ambient decora
 
 **Signature motion:** the animated pixel arrow, rows lighting up top to bottom like chunks arriving (see [brand/BRAND.md](../brand/BRAND.md)). It appears in exactly these places:
 
-- App launch / splash (once, short).
+- The empty state of the main list (a single play, not a loop). There is no launch splash: the app opens with real content.
 - Tray icon while at least one download is active. Static when idle.
 - The website hero.
-- Empty state of the main list (static or a single play, not a loop).
 
 **Product motion rules:**
 
 - **Explain state changes.** A segment splitting in two animates as one bar dividing; a completed download settles into the "done" state; a failed one gets a single, brief color emphasis (no shaking, no bouncing).
-- **Durations:** design targets 120–200 ms for small UI transitions (hover, press, toggles), 200–320 ms for layout changes (sheets, panes). Nothing over 400 ms except the one-time splash.
+- **Durations:** hover-in and press feedback are instant, hover-out 100 ms; design targets 100–200 ms for other small transitions (toggles, menus), 200–320 ms for layout changes (sheets, panes). Nothing over 400 ms.
 - **Easing:** ease-out for entering, ease-in for leaving, no springy overshoot on data.
 - **Progress is continuous, not jumpy.** Progress bars interpolate between updates (the UI receives updates a few times per second, see [ARCHITECTURE.md](ARCHITECTURE.md#1-ui-to-backend-tauri)); speed numbers are smoothed so they are readable.
 - **No infinite loops** except where something is genuinely, continuously happening (an active download's indicator).
@@ -92,7 +91,7 @@ Everything can be done without a mouse. Default shortcuts (all remappable later)
 - **Ask once, at the right moment.** Permissions (extension host access, sidecar install) are requested when the user first needs them, with one sentence of why.
 - **Errors say what happened and what to do,** in plain words: "The link expired. Get a fresh link from the site and drop it here to resume (73% is kept)." Not "HTTP 403".
 - **Notifications are earned:** one per completed download (configurable), one per failure that needs action. No promotional notifications, ever.
-- **Respect the system:** native file dialogs, native notifications, OS accent color for focus rings where it fits the palette, standard window controls.
+- **Respect the system:** native file dialogs, native notifications, native context and tray menus, standard window controls. Focus rings stay emerald (one accent); system colors take over in high contrast mode.
 
 ## Copy and strings
 
