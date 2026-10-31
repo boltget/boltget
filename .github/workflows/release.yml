@@ -1,0 +1,141 @@
+# Release: builds the standalone CLI for a pushed `v*` tag and attaches it to a
+# draft GitHub Release with SHA256SUMS and build provenance. A maintainer
+# reviews the draft and publishes it. Signing comes with v1.0 (docs/RELEASE.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag is on main and matches Cargo.toml
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          cargo_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "$version" != "$cargo_version" ]; then
+            echo "Tag $TAG does not match workspace version $cargo_version" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Tag $TAG does not point to a commit on main" >&2
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: guard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: windows-x64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          cargo build --locked --release -p boltget-cli --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        env:
+          NAME: boltget-${{ needs.guard.outputs.version }}-${{ matrix.asset }}
+        run: |
+          mkdir -p "dist/$NAME"
+          cp LICENSE README.md CHANGELOG.md "dist/$NAME/"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/boltget.exe" "dist/$NAME/"
+            (cd dist && 7z a -tzip "$NAME.zip" "$NAME" > /dev/null)
+          else
+            cp "target/${{ matrix.target }}/release/boltget" "dist/$NAME/"
+            tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+          fi
+          rm -rf "dist/$NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: draft release
+    needs: [guard, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+      - name: Release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^\[.*\]: / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          prerelease=""
+          case "$VERSION" in 0.*|*-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" dist/* --draft $prerelease \
+            --title "BoltGet $VERSION" --notes-file notes.md --verify-tag

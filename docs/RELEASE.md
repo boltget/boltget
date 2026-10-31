@@ -1,6 +1,6 @@
 # Release process
 
-How BoltGet is versioned, built, signed, published and updated. Nothing here is automated yet; this is the design the CI workflows will implement (v0.1 for the CLI, v0.2 for app previews, v1.0 for signed, auto-updating releases).
+How BoltGet is versioned, built, signed, published and updated. This is the design the CI workflows implement step by step: v0.1 for the CLI (in place, see below), v0.2 for app previews, v1.0 for signed, auto-updating releases.
 
 ## Versioning
 
@@ -34,7 +34,7 @@ Workflows (planned):
 | `ci.yml` | every push and PR | Rust: fmt, clippy `-D warnings`, tests (Windows + Linux), `cargo-deny`. JS: Prettier, ESLint, `svelte-check`, Vitest, extension build. Website: build + Lighthouse CI on PRs touching `apps/web`. |
 | `pr-title.yml` | PR opened/edited | Validates the PR title as a Conventional Commit (exists now) |
 | `docs.yml` | changes to Markdown | Link check with lychee (exists now) |
-| `release.yml` | tag `v*` pushed by a maintainer | Builds, signs, publishes. See below. |
+| `release.yml` | tag `v*` pushed by a maintainer | Builds, signs, publishes. See below. Since v0.1 it builds the CLI only (see the note below the steps). |
 | `nightly.yml` | schedule | Long-running suites: libFuzzer on the engine's parsers, kill-and-resume at 1,000 cycles, property tests at a high case count (exists now). Unsigned builds from `main` are added with the desktop app |
 
 ### Release workflow steps
@@ -52,6 +52,8 @@ Workflows (planned):
 7. **Smoke test:** a job installs the drafted installer on a clean Windows runner, launches the app headless (`--self-test`), runs a CLI download against a test server, then uninstalls and checks cleanup.
 8. **Promote:** a maintainer reviews the draft and publishes it. Publishing triggers the website deploy, which regenerates `/update/{channel}/latest.json` and the download page.
 9. **Stores and winget:** extension packages are uploaded to the three stores (manually at first, via store APIs later); a winget manifest PR is opened (for example with a winget-releaser action).
+
+> **Implementation note (v0.1):** `release.yml` implements the CLI part of these steps. Guard: the tag matches the workspace version in `Cargo.toml`, points to a commit on `main` and has a section in `CHANGELOG.md` (green CI is checked by the maintainer before tagging). Build: `boltget-<version>-windows-x64.zip` and, because the engine already builds on Linux, `boltget-<version>-linux-x64.tar.gz`, each with the binary, `LICENSE`, `README.md` and `CHANGELOG.md`, built with `--locked` and `SOURCE_DATE_EPOCH`. Then `SHA256SUMS`, build provenance attestations and a draft GitHub Release (marked pre-release for `0.x` and pre-release tags) with the changelog section as notes. Not yet: signing (v1.0), SBOMs, the smoke test job and the website deploy on publish. How to rebuild a release and verify downloads is in [BUILDING.md](BUILDING.md).
 
 ## Code signing
 
