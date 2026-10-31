@@ -5,7 +5,7 @@
 // closing mark.
 import Base from "../layouts/Base.astro";
 import Aurora from "../components/Aurora.astro";
-import AppDemo from "../components/home/AppDemo.svelte";
+import AppDemo from "../components/home/AppDemo.astro";
 import HowItWorks from "../components/home/HowItWorks.astro";
 import SpeedRuns from "../components/home/SpeedRuns.astro";
 import ResumeDemo from "../components/home/ResumeDemo.astro";
@@ -75,7 +75,7 @@ const demo = {
       </div>
     </div>
     <div class="wrap stage">
-      <AppDemo client:load s={demo} />
+      <AppDemo s={demo} />
     </div>
   </section>
 
