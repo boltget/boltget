@@ -46,8 +46,8 @@ Exit criteria:
 - [x] `boltget get`, `list`, `pause`/`resume` (standalone), `refresh`, `bench` work; `--json` output is documented and stable enough to script against
 - [ ] Benchmark harness in `bench/`, lab environment scripted, real-world target list versioned
   *Status (2026-10-28):* harness, `boltget bench`, `bench/idm-compare.ps1` and `bench/targets.toml` exist; the lab is `boltget-testserver` on loopback with per-connection throttling only. Added latency, loss, server-side connection limits and HTTP/2 are not scripted yet.
-- [ ] **Benchmark report published** (in the repo, later on the website) comparing BoltGet with IDM per [ENGINE.md, Benchmarks plan](ENGINE.md#benchmarks-plan-vs-idm), with raw data. BoltGet is equal or faster on the majority of scenarios; every scenario where it is slower has an issue explaining why and a plan
-  *Status (2026-10-28):* [BENCHMARK.md](BENCHMARK.md) published with raw data; BoltGet's default was equal to or faster than IDM's default on all 5 targets. Open: issues for the scenarios where the adaptive default is slower than a fixed connection count (per-connection-throttled servers), and the IDM-at-32-connections configuration, which was not run.
+- [x] **Benchmark report published** (in the repo, later on the website) comparing BoltGet with IDM per [ENGINE.md, Benchmarks plan](ENGINE.md#benchmarks-plan-vs-idm), with raw data. BoltGet is equal or faster on the majority of scenarios; every scenario where it is slower has an issue explaining why and a plan
+  *Status (2026-10-31):* [BENCHMARK.md](BENCHMARK.md) published with raw data; BoltGet's default was equal to or faster than IDM's default on all 5 targets. The scenarios where the adaptive default is slower than a fixed connection count have issues with a plan: [#3](https://github.com/boltget/boltget/issues/3) (fixed) and [#4](https://github.com/boltget/boltget/issues/4) (repeat contact fixed, first contact open). The IDM-at-32-connections configuration ([#5](https://github.com/boltget/boltget/issues/5)) needs a manual change of IDM's settings and moves to the v0.5 benchmark re-run.
 - [x] Default tunables (connection count, `min_split_size`, intervals) set from benchmark data, and ENGINE.md updated with the measured values
   *Status (2026-10-28):* start 4, maximum 16, `min_split_size` 1 MiB, with the measurements in ENGINE.md, open question 1.
 - [x] Fuzz targets for header parsers run in CI for a fixed time budget without findings
@@ -117,7 +117,7 @@ Exit criteria:
 - [ ] Settings search; import/export settings as a file
 - [ ] Accessibility pass with NVDA and Narrator on every screen; issues fixed
 - [ ] Performance pass: profile engine and UI under 32 connections at the highest available bandwidth; fix top regressions
-- [ ] Benchmark re-run against IDM; report updated
+- [ ] Benchmark re-run against IDM, including IDM at its maximum of 32 connections ([#5](https://github.com/boltget/boltget/issues/5)); report updated
 - [ ] Beta update channel live (signed builds; see [RELEASE.md](RELEASE.md#channels))
 
 ## v1.0: Public launch
