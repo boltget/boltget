@@ -104,6 +104,11 @@ pub struct EngineConfig {
     pub tail_split_size: u64,
     /// See `tail_split_size` (1 s).
     pub tail_eta: Duration,
+    /// Extra trusted root certificates (DER), on top of the operating system's
+    /// trust store (which stays in use): a company's internal CA, or a local
+    /// test server's. Empty by default. [`parse_certificates`] reads them from
+    /// PEM or DER files.
+    pub extra_root_certificates: Vec<Vec<u8>>,
     /// A slow connection that is the last one still transferring is reconnected
     /// after this long instead of `slow_window` (1 s; a starved connection while
     /// others are healthy gets 3 x this).
@@ -167,6 +172,7 @@ impl Default for EngineConfig {
             tail_slow_window: Duration::from_secs(1),
             write_window: 64 * 1024 * 1024,
             force_write_window: false,
+            extra_root_certificates: Vec::new(),
         }
     }
 }
@@ -186,6 +192,28 @@ impl EngineConfig {
         self.speed_limit = self.speed_limit.filter(|r| *r > 0);
         self
     }
+}
+
+/// Reads certificates for [`EngineConfig::extra_root_certificates`]: every
+/// `CERTIFICATE` block of a PEM file, or a single DER certificate. Returns them
+/// as DER; an input with no certificate is an error.
+pub fn parse_certificates(bytes: &[u8]) -> crate::Result<Vec<Vec<u8>>> {
+    use rustls::pki_types::CertificateDer;
+    use rustls::pki_types::pem::PemObject;
+    // DER is an ASN.1 SEQUENCE (0x30); PEM is text.
+    if bytes.first() == Some(&0x30) {
+        return Ok(vec![bytes.to_vec()]);
+    }
+    let certs = CertificateDer::pem_slice_iter(bytes)
+        .map(|c| c.map(|c| c.to_vec()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| crate::Error::Tls(format!("reading certificates: {e}")))?;
+    if certs.is_empty() {
+        return Err(crate::Error::Tls(
+            "no certificate found (expected PEM `BEGIN CERTIFICATE` blocks or DER)".into(),
+        ));
+    }
+    Ok(certs)
 }
 
 /// Persistent user settings, stored in the database's `setting` table one row

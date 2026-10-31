@@ -51,7 +51,7 @@ pub mod segment;
 mod store;
 mod writer;
 
-pub use config::{EngineConfig, Settings};
+pub use config::{EngineConfig, Settings, parse_certificates};
 pub use cookies::{Cookie, CookieJar};
 pub use engine::{
     AddRequest, ConflictPolicy, Destination, DownloadHandle, Engine, LimitScope, Removed,

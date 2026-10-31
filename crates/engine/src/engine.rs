@@ -413,7 +413,7 @@ impl Engine {
 
     fn build(config: EngineConfig, store: Option<Store>, next_id: u64) -> Result<Self> {
         let cfg = Arc::new(config.normalized());
-        let tls = http::tls_config()?;
+        let tls = http::tls_config(&cfg.extra_root_certificates)?;
         let limits = Limits::new(cfg.max_per_host, cfg.max_total);
         let (events, _) = broadcast::channel(1024);
         Ok(Self {

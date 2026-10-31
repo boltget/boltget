@@ -34,16 +34,29 @@ use crate::proxy::{self, Proxy, ProxyChoice, ProxyKind};
 use crate::request::{RequestContext, redact_url};
 
 /// Builds the shared rustls configuration: `ring` provider, OS trust store via
-/// `rustls-platform-verifier`, ALPN `h2` + `http/1.1`, session resumption on.
-pub(crate) fn tls_config() -> Result<Arc<ClientConfig>> {
-    use rustls_platform_verifier::BuilderVerifierExt;
+/// `rustls-platform-verifier` (plus `extra_roots`, DER, if any), ALPN `h2` +
+/// `http/1.1`, session resumption on.
+pub(crate) fn tls_config(extra_roots: &[Vec<u8>]) -> Result<Arc<ClientConfig>> {
+    use rustls::pki_types::CertificateDer;
+    use rustls_platform_verifier::{BuilderVerifierExt, Verifier};
     let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let mut cfg = ClientConfig::builder_with_provider(provider)
+    let builder = ClientConfig::builder_with_provider(provider.clone())
         .with_safe_default_protocol_versions()
-        .map_err(|e| Error::Tls(e.to_string()))?
-        .with_platform_verifier()
-        .map_err(|e| Error::Tls(e.to_string()))?
-        .with_no_client_auth();
+        .map_err(|e| Error::Tls(e.to_string()))?;
+    let builder = if extra_roots.is_empty() {
+        builder
+            .with_platform_verifier()
+            .map_err(|e| Error::Tls(e.to_string()))?
+    } else {
+        // The platform verifier stays the base; the extra roots only add trust.
+        let roots = extra_roots.iter().map(|c| CertificateDer::from(c.clone()));
+        let verifier = Verifier::new_with_extra_roots(roots, provider)
+            .map_err(|e| Error::Tls(format!("extra root certificates: {e}")))?;
+        builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(verifier))
+    };
+    let mut cfg = builder.with_no_client_auth();
     cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     // Resumption (tickets + session ids) is on by default in rustls; it lets the
     // second..n-th worker to the same host skip the full handshake.
@@ -719,7 +732,7 @@ mod tests {
     #[test]
     fn authorization_dropped_cross_origin() {
         let cfg = Arc::new(EngineConfig::default());
-        let c = Connector::new(tls_config().unwrap(), cfg, ProxyChoice::Default);
+        let c = Connector::new(tls_config(&[]).unwrap(), cfg, ProxyChoice::Default);
         let mut ctx = HeaderMap::new();
         ctx.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer x"));
         let a = Origin::of(&Url::parse("https://a.example/").unwrap()).unwrap();
