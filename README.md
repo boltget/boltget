@@ -54,7 +54,7 @@ The Rust engine and the `boltget` command-line tool: `get`, `list`, `pause`, `re
 
 ### Coming
 
-- **Desktop app.** Tauri 2 and Svelte 5. Dark-first, keyboard-first, small and fast.
+- **Desktop app.** Tauri 2 and Svelte 5. Light and dark themes, keyboard-first, small and fast.
 - **Browser extension.** Chrome, Edge and Firefox (Manifest V3). Catches downloads and forwards cookies, referrer and headers through native messaging, with no local web server. [Details](docs/BROWSER-INTEGRATION.md)
 - **Video and audio.** yt-dlp and ffmpeg, installed on demand and kept up to date, with a clean format picker. [Details](docs/VIDEO.md)
 - **Queues and scheduling.** Categories, queues and time windows.

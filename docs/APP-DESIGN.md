@@ -171,6 +171,15 @@ The full reports, with sources, are kept outside the repository. This document r
     - Pause, resume and remove update the row optimistically within 50 ms.
     - The window is visible with real data in under 400 ms on a warm start.
 
+### Direction: Daylight
+
+34. **The light theme is designed first.** Three directions were prototyped on 2026-10-31 with the same layout and live data: Ink (the brand's near-black), Daylight (light, like the website and its hero card) and Mica (Windows 11 tinted chrome). The owner chose **Daylight**:
+    - The app looks like the website's hero card, so the first screenshot matches the marketing.
+    - Windows ships in light mode by default.
+    - The tokens come from `brand/tokens/tokens.css`, light theme. The chrome (title bar and sidebar) is `#F6F6F7`, the content area white, hairlines `rgb(9 9 11 / 8%)`, and the accent `#047857` with white text. Progress fills use the light gradient (`#34D399` → `#047857`).
+    - Dark (Ink) remains a full theme. The app follows the system setting and is reviewed in both themes. Light is the reference for screenshots, and it is designed and polished first.
+    - Mica is not used in v0.2.
+
 ## Resolved conflicts in the design documents
 
 The research found nine places where the existing documents disagreed or did not fit a desktop app. All were resolved as follows, and the documents concerned were updated:
@@ -191,7 +200,6 @@ The research found nine places where the existing documents disagreed or did not
 
 These decisions are settled with the clickable prototype, before the app is built:
 
-- **Visual direction.** Dark ink (the brand's home), light "daylight" (matching the website and its hero card), or Windows-native with Mica chrome. All three follow the same layout and rules above. The app will ship both themes and follow the system; the question is which one is designed first and shown in screenshots.
 - **Auto-start on paste.** Should `Ctrl+V` in the window start the download at once, with an undoable preview row (Downie and browsers), or open the sheet with Download focused (one `Enter`)? The default above is the sheet; auto-start is the alternative to test.
 - **A table layout for IDM users,** or one row model only. Rows ship in v0.2; a table is added later if users ask.
 - **Segments in the row.** Should the progress bar of an active row hint at gaps (a 1 px mini map), or should segments appear only in the details pane?

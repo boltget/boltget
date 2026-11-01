@@ -43,11 +43,11 @@ Motion is how BoltGet shows what the engine is doing. It is never ambient decora
 - **`prefers-reduced-motion`:** all non-essential motion is removed; state changes become instant cross-fades or no animation. The tray icon shows a static "active" variant instead of animating. This is tested, not assumed.
 - **Performance:** animate only `transform` and `opacity`; nothing that forces layout on every frame. The segment map draws on a canvas or with transforms, not by resizing DOM elements 60 times a second.
 
-## 4. Dark-first, with a real light theme
+## 4. Two real themes, light designed first
 
-- Dark is the default because the brand is built on near-black `#0B0B0F`, and because a download manager often sits open next to other work.
-- Light theme is a first-class theme, designed and reviewed, not an inverted dark theme. Gradient and status colors are tuned per theme for contrast.
-- "System" follows the OS setting and is the default *setting*; when the OS gives no preference, dark wins.
+- The brand is built on near-black `#0B0B0F`, but the desktop app is designed light first ("Daylight", like the website; see [APP-DESIGN.md](APP-DESIGN.md#direction-daylight)): Windows ships light by default, and the app's screenshots should match the website.
+- Dark is a first-class theme too, designed and reviewed, not an inverted light theme. Gradient and status colors are tuned per theme for contrast.
+- "System" follows the OS setting and is the default *setting*; when the OS gives no preference, light wins.
 - All colors come from tokens in `packages/ui` (generated from [brand/BRAND.md](../brand/BRAND.md)). No hard-coded colors in components.
 
 ## 5. Accessibility

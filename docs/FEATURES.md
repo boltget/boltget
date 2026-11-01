@@ -44,7 +44,7 @@ This document lists every planned BoltGet feature, the milestone that targets it
 | Feature | BoltGet | Milestone | IDM | FDM | Motrix | aria2 |
 |---|---|---|---|---|---|---|
 | GUI | Yes (Tauri 2 + Svelte 5) | v0.2 | Yes (Win32) | Yes | Yes (Electron) | No (third-party GUIs) |
-| Dark theme | Yes, dark-first, plus light | v0.2 | No | ? | Yes | n/a |
+| Light and dark themes | Yes, both designed (light first) | v0.2 | No | ? | Yes | n/a |
 | Keyboard-first operation, command palette | Yes | v0.2 | Partial | ? | ? | n/a |
 | Live segment visualization | Yes | v0.2 | Yes | ? | No | n/a |
 | Categories (by file type, with destination folders) | Yes | v0.2 | Yes | Yes | No | n/a |

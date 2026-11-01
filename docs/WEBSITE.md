@@ -221,7 +221,7 @@ CI runs Lighthouse CI on every PR touching `apps/web` against the preview build,
 - Mounted at `/docs`. Sidebar sections: Getting started, Browser extension, Downloads and queues, Video, CLI, Settings reference, Troubleshooting, FAQ.
 - The CLI reference is generated from the CLI's `--help` output / clap definitions at build time so it cannot drift.
 - Search via Starlight's built-in static search (Pagefind), loaded only when the user opens search.
-- Themed with BoltGet tokens from `packages/ui` (dark-first, matching the app).
+- Themed with BoltGet tokens from `packages/ui` (matching the app).
 
 ## Hosting
 
