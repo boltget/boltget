@@ -37,6 +37,9 @@ jobs:
             --no-progress
             --cache
             --max-cache-age 1d
+            --max-retries 4
+            --retry-wait-time 5
+            --timeout 30
             --exclude-path node_modules
             --exclude-path LICENSE
             './**/*.md'
