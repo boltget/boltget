@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import catalog from "./en.json";
-import { createTranslator, t } from "./index";
+import { createTranslator, isPlainMessageKey, t } from "./index";
 
 describe("t()", () => {
   it("looks up a plain message", () => {
@@ -38,6 +38,15 @@ describe("t()", () => {
     expect(t("no.such.key")).toBe("no.such.key");
     // @ts-expect-error: a message without placeholders takes no parameters.
     expect(t("titlebar.add", { count: 1 })).toBe("Add download");
+  });
+});
+
+describe("isPlainMessageKey()", () => {
+  it("accepts keys of messages without placeholders only", () => {
+    expect(isPlainMessageKey("error.network")).toBe(true);
+    expect(isPlainMessageKey("empty.shortcut")).toBe(false);
+    expect(isPlainMessageKey("view.count")).toBe(false);
+    expect(isPlainMessageKey("error.no_such_key")).toBe(false);
   });
 });
 

@@ -28,6 +28,7 @@ const LOCALE = "en";
 const plurals = new Intl.PluralRules(LOCALE);
 const numbers = new Intl.NumberFormat(LOCALE);
 const PLACEHOLDER = /\{(\w+)\}/g;
+const PLACEHOLDER_TEST = /\{\w+\}/;
 
 /** Builds a `t()` for a catalog; the app uses the default one below. */
 export function createTranslator(messages: Catalog) {
@@ -54,3 +55,12 @@ export function createTranslator(messages: Catalog) {
 
 /** Looks up a message by key and fills in its placeholders. */
 export const t = createTranslator(catalog);
+
+/**
+ * Whether `key` is a message without placeholders: for keys that arrive at
+ * run time, such as the error keys the backend sends.
+ */
+export function isPlainMessageKey(key: string): key is PlainMessageKey {
+  const entry = (catalog as Catalog)[key];
+  return typeof entry === "string" && !PLACEHOLDER_TEST.test(entry);
+}
