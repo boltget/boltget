@@ -1,0 +1,84 @@
+/* The app's non-colour tokens: type, spacing, radii, elevation, motion and the
+   shell's fixed dimensions (docs/APP-DESIGN.md, "Visual system"). Colours are
+   generated into ../tokens/theme.css. */
+:root {
+  /* Type. 13 px for rows and controls, 12 px secondary, 15 px pane titles;
+     larger sizes only for empty states and settings headers (#25). */
+  --font-sans: "Geist", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-caption: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-15: 15px;
+  --text-20: 20px;
+  --leading-12: 16px;
+  --leading-13: 18px;
+  --leading-15: 20px;
+  --leading-20: 28px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-title: 600;
+  /* Secondary 12 px text is 500 on dark so it holds its weight (#25). */
+  --weight-secondary: 400;
+  --tracking-20: -0.01em;
+
+  /* Spacing: a 4 px grid. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Radii (#26): chunks (progress fill, file map, the mark) stay square. */
+  --radius-chunk: 0;
+  --radius-control: 4px;
+  --radius-floating: 8px;
+  --radius-window: 8px;
+
+  /* Elevation (#22): only floating surfaces get a shadow. */
+  --elevation-floating:
+    0 0 0 1px var(--color-hairline), 0 2px 6px var(--color-shadow), 0 12px 32px var(--color-shadow);
+
+  /* Motion (#24, #27). Hover in and press are instant; small changes 100 to
+     150 ms; panes and sheets 200 to 250 ms; leaving takes two thirds. */
+  --duration-hover-out: 100ms;
+  --duration-small: 120ms;
+  --duration-small-exit: 80ms;
+  --duration-pane: 220ms;
+  --duration-pane-exit: 150ms;
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.33, 0, 0.67, 1);
+  --ease-data: linear;
+
+  /* Shell dimensions. */
+  --titlebar-height: 44px;
+  --caption-button-width: 46px;
+  --sidebar-width: 224px;
+  --sidebar-rail-width: 52px;
+  --control-height: 28px;
+  --control-height-lg: 32px;
+  --focus-ring: 2px solid var(--color-focus);
+  --focus-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --weight-secondary: 500;
+  }
+}
+:root[data-theme="dark"] {
+  --weight-secondary: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-hover-out: 0ms;
+    --duration-small: 0ms;
+    --duration-small-exit: 0ms;
+    --duration-pane: 0ms;
+    --duration-pane-exit: 0ms;
+  }
+}

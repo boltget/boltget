@@ -1,0 +1,32 @@
+{
+  "app.name": "BoltGet",
+  "titlebar.search": "Search downloads",
+  "titlebar.add": "Add download",
+  "caption.minimize": "Minimize",
+  "caption.maximize": "Maximize",
+  "caption.restore": "Restore down",
+  "caption.close": "Close",
+  "shortcut.search": "Ctrl+K",
+  "shortcut.paste": "Ctrl+V",
+  "sidebar.label": "Library",
+  "sidebar.views": "Views",
+  "sidebar.categories": "Categories",
+  "sidebar.settings": "Settings",
+  "view.all": "All downloads",
+  "view.active": "Active",
+  "view.completed": "Completed",
+  "view.scheduled": "Scheduled",
+  "view.count": {
+    "one": "{count} download",
+    "other": "{count} downloads"
+  },
+  "category.video": "Video",
+  "category.music": "Music",
+  "category.archives": "Archives",
+  "category.programs": "Programs",
+  "category.documents": "Documents",
+  "category.other": "Other",
+  "empty.title": "Paste a link or drop one here.",
+  "empty.shortcut": "Press {shortcut} to paste a link",
+  "error.window": "The window could not be updated. Restart BoltGet if it looks wrong."
+}

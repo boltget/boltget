@@ -1,0 +1,7 @@
+/* Everything an app needs from @boltget/ui, in order: brand primitives, the
+   semantic colours built on them, the non-colour scale, fonts, base styles. */
+@import "../tokens/brand.css";
+@import "../tokens/theme.css";
+@import "./scale.css";
+@import "./fonts.css";
+@import "./base.css";

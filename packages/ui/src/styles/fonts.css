@@ -1,0 +1,38 @@
+/* Geist and Geist Mono (SIL OFL 1.1, brand/fonts/OFL.txt), served from brand/
+   so there is one copy of each file. `block` because the files are bundled with
+   the app: they load in milliseconds, and a fallback flash would be worse. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../../../brand/fonts/Geist-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url("../../../../brand/fonts/Geist-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url("../../../../brand/fonts/Geist-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../../../brand/fonts/GeistMono-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url("../../../../brand/fonts/GeistMono-Medium.woff2") format("woff2");
+}
