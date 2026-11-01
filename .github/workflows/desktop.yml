@@ -1,6 +1,6 @@
-# Desktop app (apps/desktop) and its UI package (packages/ui): token and
-# message freshness, svelte-check, ESLint, Prettier, Vitest, and a release
-# build of the app on Windows, the platform it ships on first (ADR-016).
+# Desktop app (apps/desktop) and its UI package (packages/ui): token, message
+# and IPC binding freshness, svelte-check, ESLint, Prettier, Vitest, and a
+# release build of the app on Windows, the platform it ships on first (ADR-016).
 # Rust formatting, clippy and cargo-deny for the app's crate run in ci.yml
 # with the rest of the workspace.
 name: Desktop
@@ -99,6 +99,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.3
         with:
           key: desktop-release
+
+      # src/lib/bindings.ts is generated from the Rust commands and types
+      # (tauri-specta); this fails if it was not regenerated and committed.
+      - name: Check generated IPC bindings
+        run: pnpm --filter @boltget/desktop bindings:check
 
       - name: Build the app (release, no installer)
         run: pnpm --filter @boltget/desktop tauri build --no-bundle -- --locked
