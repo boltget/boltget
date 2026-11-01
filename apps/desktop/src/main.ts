@@ -1,6 +1,8 @@
 import "@boltget/ui/styles.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
+import { commands } from "./lib/bindings";
+import { downloads } from "./lib/engine";
 import { markWindowShown } from "./lib/lifecycle";
 import { appInfo, showMainWindow } from "./lib/native";
 import { enableThemeToggle, parseThemeSetting, startTheme } from "./lib/theme";
@@ -25,13 +27,24 @@ function within(ms: number, work: Promise<unknown>): Promise<unknown> {
 // fonts loaded (they are bundled, so this takes milliseconds) and laid out.
 // There is no splash screen (APP-DESIGN #28, #30).
 async function boot(): Promise<void> {
+  // The engine streams in while the window gets ready; the first snapshot
+  // comes from local state, so it is there by the first frame or soon after.
+  void downloads.connect();
+  document.addEventListener("visibilitychange", () => {
+    void downloads.setVisible(document.visibilityState === "visible");
+  });
   const info = await appInfo();
   await startTheme(parseThemeSetting(info.devTheme));
   await within(500, document.fonts.ready);
   await nextFrame();
   await showMainWindow();
   markWindowShown();
-  if (info.debug) enableThemeToggle();
+  if (info.debug) {
+    enableThemeToggle();
+    // Debug builds: the store and the generated commands, for the devtools
+    // console (`__boltget.commands.addDownload({ url })`).
+    Object.assign(window, { __boltget: { downloads, commands } });
+  }
 }
 
 void boot();
