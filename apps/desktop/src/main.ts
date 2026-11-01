@@ -29,10 +29,11 @@ function within(ms: number, work: Promise<unknown>): Promise<unknown> {
 async function boot(): Promise<void> {
   // The engine streams in while the window gets ready; the first snapshot
   // comes from local state, so it is there by the first frame or soon after.
-  void downloads.connect();
-  document.addEventListener("visibilitychange", () => {
-    void downloads.setVisible(document.visibilityState === "visible");
-  });
+  const reportVisibility = () => void downloads.setVisible(document.visibilityState === "visible");
+  // A reloaded page starts visible without an event, while the backend may
+  // still remember the old page as hidden (it then sends no batches): say so.
+  void downloads.connect().then(reportVisibility);
+  document.addEventListener("visibilitychange", reportVisibility);
   const info = await appInfo();
   await startTheme(parseThemeSetting(info.devTheme));
   await within(500, document.fonts.ready);
