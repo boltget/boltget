@@ -8,6 +8,9 @@
   },
   "scripts": {
     "build:web": "pnpm --filter @boltget/web build",
-    "dev:web": "pnpm --filter @boltget/web dev"
+    "dev:web": "pnpm --filter @boltget/web dev",
+    "dev:desktop": "pnpm --filter @boltget/desktop tauri dev",
+    "build:desktop": "pnpm --filter @boltget/desktop tauri build --no-bundle",
+    "check:desktop": "pnpm --filter @boltget/ui --filter @boltget/desktop run check && pnpm --filter @boltget/ui --filter @boltget/desktop run lint && pnpm --filter @boltget/ui --filter @boltget/desktop run test"
   }
 }

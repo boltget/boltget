@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window: window controls for the custom title bar, and events. No filesystem, shell or HTTP access from the page (docs/ARCHITECTURE.md, Security).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
+}

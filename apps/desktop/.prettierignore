@@ -1,0 +1,3 @@
+dist/
+# Rust side: formatted by rustfmt; gen/ is written by tauri-build.
+src-tauri/

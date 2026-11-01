@@ -1,0 +1,39 @@
+{
+  "name": "@boltget/desktop",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The BoltGet desktop app: Tauri 2 shell, Svelte 5 UI.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc -p tsconfig.node.json",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@boltget/ui": "workspace:*",
+    "@tauri-apps/api": "2.12.4",
+    "svelte": "5.57.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "24.19.2",
+    "eslint": "10.14.0",
+    "eslint-plugin-svelte": "3.23.1",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "prettier-plugin-svelte": "4.1.1",
+    "svelte-check": "4.7.7",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

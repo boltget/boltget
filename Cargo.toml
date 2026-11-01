@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/engine", "crates/cli", "crates/testserver"]
+members = ["crates/engine", "crates/cli", "crates/testserver", "apps/desktop/src-tauri"]
 # Fuzz targets: their own workspace, built with nightly by cargo-fuzz
 # (docs/ENGINE.md, "Testing strategy").
 exclude = ["fuzz"]

@@ -40,6 +40,10 @@ jobs:
           filters: |
             rust:
               - "crates/**"
+              # The desktop app's crate is a workspace member; its build
+              # script reads the generated theme colours.
+              - "apps/desktop/src-tauri/**"
+              - "packages/ui/src/tokens/theme.json"
               # The engine's unit tests run the fuzz seed corpus.
               - "fuzz/**"
               - "Cargo.toml"
@@ -83,6 +87,16 @@ jobs:
           toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@v2.9.3
+      # The desktop app (Tauri) links WebKitGTK and GTK on Linux. It is built
+      # and linted here too, so its non-Windows code paths stay compiling
+      # (docs/TECH-STACK.md, ADR-003).
+      - name: Install Tauri system libraries
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev librsvg2-dev libxdo-dev
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test

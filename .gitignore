@@ -8,3 +8,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Written by tauri-build on every build (capability schemas).
+apps/desktop/src-tauri/gen/

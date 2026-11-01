@@ -1,0 +1,115 @@
+//! Commands the UI invokes (docs/ARCHITECTURE.md, "UI to backend").
+//!
+//! Errors reach the UI as [`UiError`]: a string catalog key, never prose.
+
+use serde::{Deserialize, Serialize};
+use tauri::{Manager, WebviewWindow, window::Color};
+
+use crate::{WindowShown, platform};
+
+/// An error the UI shows by looking up `key` in the string catalog.
+#[derive(Debug, Serialize)]
+pub(crate) struct UiError {
+    key: &'static str,
+}
+
+impl UiError {
+    const WINDOW: Self = Self {
+        key: "error.window",
+    };
+}
+
+/// What the About screen and bug reports need to know about this build.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AppInfo {
+    version: &'static str,
+    debug: bool,
+    /// Debug builds only: `BOLTGET_DEV_THEME=light|dark` forces a theme, so
+    /// both themes can be reviewed and captured without changing Windows.
+    dev_theme: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) fn app_info() -> AppInfo {
+    let debug = cfg!(debug_assertions);
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        debug,
+        dev_theme: debug
+            .then(|| std::env::var("BOLTGET_DEV_THEME").ok())
+            .flatten(),
+    }
+}
+
+/// Called by the UI once its first frame is ready: only now is the window
+/// shown, already at its restored size and in the right colours.
+#[tauri::command]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn show_main_window(window: WebviewWindow) -> Result<(), UiError> {
+    if window.state::<WindowShown>().mark() {
+        window.show().map_err(|_| UiError::WINDOW)?;
+        let _ = window.set_focus();
+    }
+    Ok(())
+}
+
+/// Brings the main window to the front: a second launch, or the fallback.
+pub(crate) fn reveal(window: &WebviewWindow) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+/// The resolved theme of the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ThemeName {
+    Light,
+    Dark,
+}
+
+/// Native colours that follow the page's theme: the background behind the
+/// page and the system-drawn window border.
+#[tauri::command]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn set_window_chrome(
+    window: WebviewWindow,
+    theme: ThemeName,
+    background: [u8; 3],
+    border: [u8; 3],
+) -> Result<(), UiError> {
+    let [r, g, b] = background;
+    window
+        .set_background_color(Some(Color(r, g, b, 255)))
+        .map_err(|_| UiError::WINDOW)?;
+    platform::set_chrome(&window, theme == ThemeName::Dark, border);
+    Ok(())
+}
+
+/// Where the maximize caption button is, in CSS pixels, measured from the
+/// window's top-right corner (the title bar is anchored there).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub(crate) struct CaptionRect {
+    pub(crate) right: f64,
+    pub(crate) top: f64,
+    pub(crate) width: f64,
+    pub(crate) height: f64,
+}
+
+/// The UI reports the maximize button's place; on Windows a native window
+/// over it gives the system the hit test it needs for snap layouts.
+#[tauri::command]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn set_caption_layout(window: WebviewWindow, maximize: CaptionRect) {
+    platform::set_caption_layout(&window, maximize);
+}
