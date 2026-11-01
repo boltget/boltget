@@ -36,6 +36,9 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             engine::get_settings,
             engine::update_settings,
             engine::download_segments,
+            engine::download_details,
+            engine::open_download,
+            engine::show_download_in_folder,
             engine::set_focused_download,
             engine::set_ui_visible,
         ])

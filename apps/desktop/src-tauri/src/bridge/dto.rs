@@ -370,6 +370,59 @@ impl From<&engine::ProbeResult> for ProbePreview {
     }
 }
 
+/// What the details pane shows beyond the row: the checksum, the links the
+/// download has used and where its partial file is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DownloadDetails {
+    pub(crate) id: DownloadId,
+    /// The in-progress file, while the download is not completed.
+    pub(crate) partial_path: Option<String>,
+    /// The expected checksum and, once checked, the actual digest.
+    pub(crate) checksum: Option<ChecksumInfo>,
+    /// The links the download has used, oldest first, redacted.
+    pub(crate) sources: Vec<LinkSource>,
+}
+
+/// A checksum the download is verified against.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChecksumInfo {
+    /// `md5`, `sha1`, `sha256` or `sha512`.
+    pub(crate) algorithm: String,
+    /// The expected digest, lowercase hex.
+    pub(crate) expected: String,
+    /// What the file hashed to once verified (lowercase hex).
+    pub(crate) actual: Option<String>,
+    /// Where the expected digest came from: `null` when the user gave it,
+    /// otherwise the response header the server sent it in.
+    pub(crate) header: Option<String>,
+}
+
+impl From<&engine::ChecksumStatus> for ChecksumInfo {
+    fn from(c: &engine::ChecksumStatus) -> Self {
+        Self {
+            algorithm: c.expected.algo.as_str().to_owned(),
+            expected: c.expected.hex.clone(),
+            actual: c.actual.clone(),
+            header: match &c.source {
+                engine::ChecksumSource::User => None,
+                engine::ChecksumSource::Server(h) => Some(h.clone()),
+            },
+        }
+    }
+}
+
+/// A link a download has used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LinkSource {
+    /// Redacted (no query string or credentials).
+    pub(crate) url: String,
+    /// `primary` (as added) or `refreshed` (given later).
+    pub(crate) role: String,
+}
+
 /// A download to start.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

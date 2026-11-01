@@ -66,6 +66,9 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
     updateSettings: vi.fn((s) => ok({ speedLimit: s.speedLimit ?? null })),
     setFocusedDownload: vi.fn(() => Promise.resolve()),
     setUiVisible: vi.fn(() => Promise.resolve()),
+    downloadDetails: vi.fn((id) => ok({ id, partialPath: null, checksum: null, sources: [] })),
+    openDownload: vi.fn(() => ok(null)),
+    showDownloadInFolder: vi.fn(() => ok(null)),
     ...overrides,
   };
   const api: EngineApi = {

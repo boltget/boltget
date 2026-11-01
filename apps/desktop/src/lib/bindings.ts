@@ -66,6 +66,18 @@ export const commands = {
 	/**  The file map of a running download, now (`null` if it is not running). */
 	downloadSegments: (id: DownloadId) => typedError<SegmentSpan[] | null, UiError>(__TAURI_INVOKE("download_segments", { id })),
 	/**
+	 *  What the details pane shows beyond the row: checksum, links used and the
+	 *  partial file.
+	 */
+	downloadDetails: (id: DownloadId) => typedError<DownloadDetails, UiError>(__TAURI_INVOKE("download_details", { id })),
+	/**  Opens a completed download with the program Windows associates with it. */
+	openDownload: (id: DownloadId) => typedError<null, UiError>(__TAURI_INVOKE("open_download", { id })),
+	/**
+	 *  Shows a download in its folder: the file selected once it exists (the
+	 *  partial file while it is not completed), otherwise the folder itself.
+	 */
+	showDownloadInFolder: (id: DownloadId) => typedError<null, UiError>(__TAURI_INVOKE("show_download_in_folder", { id })),
+	/**
 	 *  Which download's file map streams with its progress (the one in the
 	 *  details pane); `null` for none.
 	 */
@@ -130,6 +142,35 @@ export type CaptionRect = {
 	top: number | null,
 	width: number | null,
 	height: number | null,
+};
+
+/**  A checksum the download is verified against. */
+export type ChecksumInfo = {
+	/**  `md5`, `sha1`, `sha256` or `sha512`. */
+	algorithm: string,
+	/**  The expected digest, lowercase hex. */
+	expected: string,
+	/**  What the file hashed to once verified (lowercase hex). */
+	actual: string | null,
+	/**
+	 *  Where the expected digest came from: `null` when the user gave it,
+	 *  otherwise the response header the server sent it in.
+	 */
+	header: string | null,
+};
+
+/**
+ *  What the details pane shows beyond the row: the checksum, the links the
+ *  download has used and where its partial file is.
+ */
+export type DownloadDetails = {
+	id: DownloadId,
+	/**  The in-progress file, while the download is not completed. */
+	partialPath: string | null,
+	/**  The expected checksum and, once checked, the actual digest. */
+	checksum: ChecksumInfo | null,
+	/**  The links the download has used, oldest first, redacted. */
+	sources: LinkSource[],
 };
 
 /**  Why a download stopped: a catalog key plus an English diagnostic. */
@@ -232,6 +273,14 @@ export type LimitScope =
 { kind: "global" } | 
 /**  One download. */
 { kind: "download"; id: DownloadId };
+
+/**  A link a download has used. */
+export type LinkSource = {
+	/**  Redacted (no query string or credentials). */
+	url: string,
+	/**  `primary` (as added) or `refreshed` (given later). */
+	role: string,
+};
 
 /**  What a link points at, for the add sheet's preview. */
 export type ProbePreview = {

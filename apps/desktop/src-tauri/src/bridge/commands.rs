@@ -10,8 +10,9 @@ use tauri::{AppHandle, Manager, State};
 
 use super::Bridge;
 use super::dto::{
-    AddDownload, AppSettings, DownloadId, DownloadRow, DownloadState, EngineMessage, EngineStatus,
-    LimitScope, ProbePreview, SegmentSpan,
+    AddDownload, AppSettings, ChecksumInfo, DownloadDetails, DownloadId, DownloadRow,
+    DownloadState, EngineMessage, EngineStatus, LimitScope, LinkSource, ProbePreview, SegmentSpan,
+    path_string,
 };
 use super::hub::new_row;
 use crate::error::UiError;
@@ -244,6 +245,91 @@ pub(crate) fn download_segments(
     Ok(progress
         .first()
         .map(|p| p.segments.iter().map(SegmentSpan::from).collect()))
+}
+
+/// What the details pane shows beyond the row: checksum, links used and the
+/// partial file.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn download_details(
+    bridge: State<'_, Bridge>,
+    id: DownloadId,
+) -> Result<DownloadDetails, UiError> {
+    let engine = bridge.engine()?;
+    let summary = summary(engine, id).await?;
+    let sources = engine
+        .sources(id.into())
+        .await?
+        .into_iter()
+        .map(|(url, role)| LinkSource { url, role })
+        .collect();
+    Ok(DownloadDetails {
+        id,
+        partial_path: summary.partial_path.as_deref().map(path_string),
+        checksum: summary.checksum.as_ref().map(ChecksumInfo::from),
+        sources,
+    })
+}
+
+/// Opens a completed download with the program Windows associates with it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn open_download(
+    bridge: State<'_, Bridge>,
+    id: DownloadId,
+) -> Result<(), UiError> {
+    let summary = summary(bridge.engine()?, id).await?;
+    if summary.state != boltget_engine::State::Completed {
+        return Err(UiError::key("error.invalid_state"));
+    }
+    let path = summary
+        .path
+        .filter(|p| p.is_file())
+        .ok_or_else(|| UiError::key("error.file_missing"))?;
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|e| UiError::with_message("error.open_failed", e.to_string()))
+}
+
+/// Shows a download in its folder: the file selected once it exists (the
+/// partial file while it is not completed), otherwise the folder itself.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn show_download_in_folder(
+    bridge: State<'_, Bridge>,
+    id: DownloadId,
+) -> Result<(), UiError> {
+    let summary = summary(bridge.engine()?, id).await?;
+    let file = [summary.path.as_deref(), summary.partial_path.as_deref()]
+        .into_iter()
+        .flatten()
+        .find(|p| p.is_file());
+    let result = if let Some(file) = file {
+        tauri_plugin_opener::reveal_item_in_dir(file)
+    } else {
+        let folder = summary
+            .path
+            .as_deref()
+            .and_then(Path::parent)
+            .filter(|d| d.is_dir())
+            .ok_or_else(|| UiError::key("error.file_missing"))?;
+        tauri_plugin_opener::open_path(folder, None::<&str>)
+    };
+    result.map_err(|e| UiError::with_message("error.open_failed", e.to_string()))
+}
+
+/// One download as the database has it; the page only ever names an id, so
+/// it can open and reveal nothing but downloads (docs/ARCHITECTURE.md,
+/// Security).
+async fn summary(
+    engine: &boltget_engine::Engine,
+    id: DownloadId,
+) -> Result<boltget_engine::DownloadSummary, UiError> {
+    engine
+        .list()
+        .await?
+        .into_iter()
+        .find(|s| DownloadId::from(s.id) == id)
+        .ok_or_else(|| UiError::key("error.unknown_download"))
 }
 
 /// Which download's file map streams with its progress (the one in the

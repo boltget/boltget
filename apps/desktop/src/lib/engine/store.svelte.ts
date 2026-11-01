@@ -10,6 +10,7 @@
 import type {
   AddDownload,
   AppSettings,
+  DownloadDetails,
   DownloadError,
   DownloadEvent,
   DownloadId,
@@ -44,6 +45,9 @@ export interface EngineApi {
     | "updateSettings"
     | "setFocusedDownload"
     | "setUiVisible"
+    | "downloadDetails"
+    | "openDownload"
+    | "showDownloadInFolder"
   >;
 }
 
@@ -292,6 +296,25 @@ export class DownloadStore {
   async updateSettings(settings: AppSettings): Promise<Result<AppSettings>> {
     const result = await this.#api.commands.updateSettings(settings);
     if (!this.#failed(result)) this.settings = result.data;
+    return result;
+  }
+
+  /** The checksum, links and partial file of a download, for the details pane. */
+  async details(id: DownloadId): Promise<Result<DownloadDetails>> {
+    return this.#api.commands.downloadDetails(id);
+  }
+
+  /** Opens a completed download with its program. */
+  async open(id: DownloadId): Promise<Result<null>> {
+    const result = await this.#api.commands.openDownload(id);
+    this.#failed(result);
+    return result;
+  }
+
+  /** Shows a download's file (or its folder) in Explorer. */
+  async showInFolder(id: DownloadId): Promise<Result<null>> {
+    const result = await this.#api.commands.showDownloadInFolder(id);
+    this.#failed(result);
     return result;
   }
 
