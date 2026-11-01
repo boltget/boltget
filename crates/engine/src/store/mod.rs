@@ -80,6 +80,8 @@ pub(crate) struct Opened {
     pub(crate) ceilings: records::HostCounts,
     /// Learned per-host start counts.
     pub(crate) starts: records::HostCounts,
+    /// Downloads a previous process left running, now paused.
+    pub(crate) recovered: Vec<crate::events::DownloadId>,
 }
 
 fn open_connection(path: &Path, read_only: bool) -> Result<Connection> {
@@ -142,9 +144,9 @@ impl Store {
         let settings = records::load_settings(&conn)?;
         let ceilings = records::load_host_counts(&conn, records::SETTING_HOST_CEILINGS)?;
         let starts = records::load_host_counts(&conn, records::SETTING_HOST_STARTS)?;
-        if recovered > 0 {
+        if !recovered.is_empty() {
             tracing::info!(
-                recovered,
+                recovered = recovered.len(),
                 "downloads interrupted by a previous run are paused"
             );
         }
@@ -173,6 +175,7 @@ impl Store {
             settings,
             ceilings,
             starts,
+            recovered,
         })
     }
 
@@ -330,6 +333,7 @@ mod tests {
         let o = Store::open(dir.path()).unwrap();
         // Ids are never reused, even after a delete.
         assert_eq!(o.next_id, 3);
+        assert_eq!(o.recovered, vec![DownloadId(1)]);
         let list = o.store.call(|c| records::list(c)).await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].state, State::Paused);

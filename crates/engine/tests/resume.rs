@@ -269,6 +269,7 @@ async fn interrupted_download_is_recovered_after_reopen() {
         State::Paused,
         "recovered as paused"
     );
+    assert_eq!(engine.recovered(), &[id], "and reported as interrupted");
     // Ids are persistent: the next download gets a new one.
     let other = add(&engine, &srv.url("/data?size=1000&seed=5"), dir.path());
     assert_eq!(other.id(), DownloadId(id.0 + 1));

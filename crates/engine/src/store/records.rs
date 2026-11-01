@@ -161,6 +161,9 @@ pub struct DownloadSummary {
     pub downloaded: u64,
     /// Whether the server supports resuming (byte ranges).
     pub resumable: bool,
+    /// The download's own speed limit in bytes per second (`None`: only the
+    /// global limit applies).
+    pub speed_limit: Option<u64>,
     /// The error, for failed downloads.
     pub error: Option<SavedError>,
     /// The expected checksum and, once checked, the actual digest.
@@ -315,14 +318,20 @@ pub(crate) fn mark_completed(
     Ok(())
 }
 
-/// Downloads left `probing`/`downloading`/`retrying` by a process that died are
-/// paused: their checkpoint is valid (it never claims more than was durable).
-pub(crate) fn recover_interrupted(conn: &Connection) -> Result<usize> {
-    Ok(conn.execute(
+/// Downloads left `probing`/`downloading`/`retrying`/`verifying` by a process
+/// that died are paused: their checkpoint is valid (it never claims more than
+/// was durable). Returns their ids, oldest first.
+pub(crate) fn recover_interrupted(conn: &Connection) -> Result<Vec<DownloadId>> {
+    let mut stmt = conn.prepare(
         "UPDATE download SET state = 'paused', updated_at = ?1
-         WHERE state IN ('probing', 'downloading', 'retrying', 'verifying')",
-        [now_ms()],
-    )?)
+         WHERE state IN ('probing', 'downloading', 'retrying', 'verifying')
+         RETURNING id",
+    )?;
+    let mut ids = stmt
+        .query_map([now_ms()], |r| Ok(DownloadId(uint(r.get(0)?))))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    ids.sort_unstable();
+    Ok(ids)
 }
 
 /// The next unused id. `AUTOINCREMENT` keeps the high-water mark in
@@ -451,6 +460,7 @@ fn summary(r: &Row<'_>) -> rusqlite::Result<DownloadSummary> {
         total: r.get::<_, Option<i64>>("total_size")?.map(uint),
         downloaded: uint(r.get("downloaded")?),
         resumable: r.get("resumable")?,
+        speed_limit: r.get::<_, Option<i64>>("speed_limit_bps")?.map(uint),
         error,
         checksum: checksum_of(r)?.map(|(expected, source)| ChecksumStatus {
             expected,

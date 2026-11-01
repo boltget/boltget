@@ -697,6 +697,8 @@ pub enum EngineEvent {
 
 > **Implementation notes (v0.1 phase 3):** added `Engine::refresh_link(id, RequestContext) -> RefreshOutcome { id, evidence, final_url }`, `Engine::sources(id)`, `Engine::set_limit(LimitScope::{Global, Download(id)}, Option<u64>)`, `Engine::limit(scope)`, `Engine::settings()` and `Engine::peek_settings(dir)` (`Settings { speed_limit }`); `AddRequest::{speed_limit, checksum, server_digest}`; `ResumeOptions::{speed_limit, checksum, proxy, cookie_file, cookies}`; `RequestContext::{with_proxy, with_cookie_file, with_cookies, cookie, add_cookie}`; `Completed::verified`; `DownloadSummary::checksum`; `EngineConfig::{speed_limit, proxy, adaptive, adapt_*, host_ceiling_ttl, tail_split_size, tail_eta, tail_slow_window}`; `parse_rate`, `basic_auth`, `Checksum`, `HashAlgo`, `ChecksumSource`, `Proxy`, `ProxyChoice`, `ProxyRules`, `NoProxy`, `Cookie`, `CookieJar`. New states `Verifying`, `Corrupt`, `NeedsNewLink`; new errors `ChecksumMismatch` (`Integrity`), `LinkExpired` (`LinkExpired`), `RefreshRejected` (`ResourceChanged`), `ProxyAuth` (`Permanent`).
 
+> **Implementation notes (v0.2):** `Engine::recovered() -> &[DownloadId]` lists the downloads `Engine::open` found interrupted (left running by a process that died) and marked paused, so a front end can continue them (the desktop app does; see [ARCHITECTURE.md, Recovery on start](ARCHITECTURE.md#recovery-on-start)). `DownloadSummary::speed_limit` reports a download's own limit.
+
 The CLI maps directly onto this API:
 
 ```

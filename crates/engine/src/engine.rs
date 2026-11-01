@@ -336,6 +336,7 @@ struct Inner {
     downloads: Mutex<HashMap<DownloadId, Arc<Shared>>>,
     root: CancellationToken,
     store: Option<Store>,
+    recovered: Vec<DownloadId>,
 }
 
 /// The download engine. Cheap to clone; all clones share state.
@@ -378,7 +379,7 @@ impl Engine {
     /// Creates an in-memory engine: no database, downloads do not survive the
     /// process. Construction does not need a Tokio runtime; adding downloads does.
     pub fn new(config: EngineConfig) -> Result<Self> {
-        Self::build(config, None, 1)
+        Self::build(config, None, 1, Vec::new())
     }
 
     /// Opens the engine with its database in `data_dir` (created if needed):
@@ -392,7 +393,7 @@ impl Engine {
         if opened.settings.speed_limit.is_some() {
             config.speed_limit = opened.settings.speed_limit;
         }
-        let engine = Self::build(config, Some(opened.store), opened.next_id)?;
+        let engine = Self::build(config, Some(opened.store), opened.next_id, opened.recovered)?;
         engine.inner.env.limits.ceilings.load(opened.ceilings);
         engine.inner.env.limits.starts.load(opened.starts);
         Ok(engine)
@@ -411,7 +412,12 @@ impl Engine {
         Store::peek_settings(data_dir.as_ref())
     }
 
-    fn build(config: EngineConfig, store: Option<Store>, next_id: u64) -> Result<Self> {
+    fn build(
+        config: EngineConfig,
+        store: Option<Store>,
+        next_id: u64,
+        recovered: Vec<DownloadId>,
+    ) -> Result<Self> {
         let cfg = Arc::new(config.normalized());
         let tls = http::tls_config(&cfg.extra_root_certificates)?;
         let limits = Limits::new(cfg.max_per_host, cfg.max_total);
@@ -431,6 +437,7 @@ impl Engine {
                 downloads: Mutex::new(HashMap::new()),
                 root: CancellationToken::new(),
                 store,
+                recovered,
             }),
         })
     }
@@ -438,6 +445,14 @@ impl Engine {
     /// The effective configuration.
     pub fn config(&self) -> &EngineConfig {
         &self.inner.cfg
+    }
+
+    /// The downloads that a previous process left running (it was killed, or
+    /// the machine lost power) and that [`Engine::open`] marked paused, in id
+    /// order. A front end that promises to continue interrupted work resumes
+    /// these; downloads the user paused are not among them.
+    pub fn recovered(&self) -> &[DownloadId] {
+        &self.inner.recovered
     }
 
     /// The data directory, for an engine with a database.
