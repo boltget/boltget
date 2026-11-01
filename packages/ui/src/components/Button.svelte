@@ -8,10 +8,12 @@
   import type { HTMLButtonAttributes } from "svelte/elements";
 
   interface Props extends HTMLButtonAttributes {
-    variant?: "primary" | "secondary" | "ghost";
+    variant?: "primary" | "secondary" | "ghost" | "danger";
     size?: "md" | "lg";
     icon?: Snippet;
     children: Snippet;
+    /** The button element, for focusing it. */
+    ref?: HTMLButtonElement;
   }
 
   let {
@@ -20,11 +22,12 @@
     icon,
     children,
     type = "button",
+    ref = $bindable(),
     ...rest
   }: Props = $props();
 </script>
 
-<button class="button {variant} {size}" {type} {...rest}>
+<button bind:this={ref} class="button {variant} {size}" {type} {...rest}>
   {#if icon}<span class="icon" aria-hidden="true">{@render icon()}</span>{/if}
   <span class="label">{@render children()}</span>
 </button>
@@ -88,6 +91,17 @@
     background: var(--color-accent-press);
   }
   .primary::after {
+    display: none;
+  }
+
+  .danger {
+    background: var(--color-danger);
+    color: var(--color-on-danger);
+  }
+  .danger:hover:not(:disabled) {
+    background: var(--color-danger-hover);
+  }
+  .danger::after {
     display: none;
   }
 

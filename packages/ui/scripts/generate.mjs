@@ -98,6 +98,33 @@ const semantic = {
   "mark-0": ["mark.light.0", "mark.dark.0"],
   "mark-1": ["mark.light.1", "mark.dark.1"],
   "mark-2": ["mark.light.2", "mark.dark.2"],
+  // Progress (#23, #26): a quiet track; the fill is the mark's gradient while
+  // a download runs, neutral grey once it stops.
+  "progress-track": [alpha("neutral.950", 0.07), alpha("neutral.0", 0.08)],
+  "progress-idle": ["neutral.400", "neutral.600"],
+  // The details pane's file map (BRAND.md, "Pixels on the web"): a pale,
+  // faintly green ground, squares along the emerald ramp, and the square a
+  // connection is writing in deep ink (mint on dark).
+  "map-empty": [alpha("emerald.900", 0.07), alpha("neutral.0", 0.07)],
+  "map-0": ["emerald.400", "emerald.200"],
+  "map-1": ["emerald.500", "emerald.300"],
+  "map-2": ["emerald.600", "emerald.400"],
+  "map-3": ["emerald.700", "emerald.500"],
+  "map-head": ["emerald.950", "emerald.100"],
+  "map-light": ["neutral.0", "neutral.0"],
+  "map-depth": ["emerald.950", "neutral.950"],
+  // Small tooltips drawn by the page (the file map's byte ranges).
+  tooltip: ["neutral.900", "neutral.100"],
+  "on-tooltip": ["neutral.50", "neutral.950"],
+  // The one destructive button (deleting files from disk) and the scrim
+  // behind the dialog that confirms it.
+  danger: ["status.error.light", "status.error.light"],
+  "danger-hover": [
+    mix("status.error.light", "neutral.950", 0.88),
+    mix("status.error.light", "neutral.950", 0.88),
+  ],
+  "on-danger": ["neutral.0", "neutral.0"],
+  scrim: [alpha("neutral.950", 0.24), alpha("neutral.950", 0.56)],
   // Shadow colour for floating surfaces (elevation tokens in scale.css).
   shadow: [alpha("neutral.950", 0.12), alpha("neutral.950", 0.48)],
 };

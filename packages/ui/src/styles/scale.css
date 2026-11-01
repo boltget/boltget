@@ -52,12 +52,22 @@
   --ease-enter: cubic-bezier(0, 0, 0, 1);
   --ease-exit: cubic-bezier(0.33, 0, 0.67, 1);
   --ease-data: linear;
+  /* Data-driven motion spans one engine tick (ARCHITECTURE.md, 250 ms). */
+  --duration-tick: 250ms;
+  /* The active progress fill: the mark's gradient (BRAND.md, Gradient). */
+  --gradient-progress: linear-gradient(
+    90deg,
+    var(--color-mark-0),
+    var(--color-mark-1) 55%,
+    var(--color-mark-2)
+  );
 
   /* Shell dimensions. */
   --titlebar-height: 44px;
   --caption-button-width: 46px;
   --sidebar-width: 224px;
   --sidebar-rail-width: 52px;
+  --pane-width: 360px;
   --control-height: 28px;
   --control-height-lg: 32px;
   --focus-ring: 2px solid var(--color-focus);
@@ -80,5 +90,6 @@
     --duration-small-exit: 0ms;
     --duration-pane: 0ms;
     --duration-pane-exit: 0ms;
+    --duration-tick: 0ms;
   }
 }
