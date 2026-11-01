@@ -13,7 +13,9 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc -p tsconfig.node.json",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bindings": "node scripts/bindings.mjs",
+    "bindings:check": "node scripts/bindings.mjs --check"
   },
   "dependencies": {
     "@boltget/ui": "workspace:*",

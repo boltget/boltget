@@ -6,12 +6,16 @@ import globals from "globals";
 import ts from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["node_modules/", "dist/", "src-tauri/"] },
+  // src/lib/bindings.ts is generated from Rust (src-tauri/src/ipc.rs).
+  { ignores: ["node_modules/", "dist/", "src-tauri/", "src/lib/bindings.ts"] },
   js.configs.recommended,
   ts.configs.recommended,
   svelte.configs.recommended,
   { languageOptions: { globals: { ...globals.browser } } },
-  { files: ["*.config.js", "*.config.ts"], languageOptions: { globals: { ...globals.node } } },
+  {
+    files: ["*.config.js", "*.config.ts", "scripts/**"],
+    languageOptions: { globals: { ...globals.node } },
+  },
   {
     files: ["**/*.svelte", "**/*.svelte.ts"],
     languageOptions: { parserOptions: { parser: ts.parser } },

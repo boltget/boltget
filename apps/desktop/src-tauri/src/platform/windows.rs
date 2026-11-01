@@ -25,7 +25,8 @@ use std::ffi::c_void;
 use std::fmt::Display;
 use std::sync::{Mutex, Once, PoisonError};
 
-use tauri::{Emitter, WebviewWindow};
+use tauri::WebviewWindow;
+use tauri_specta::Event as _;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2Controller, ICoreWebView2Settings3, ICoreWebView2Settings5, ICoreWebView2Settings6,
 };
@@ -49,13 +50,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{Interface, PCWSTR, w};
 
-use crate::commands::CaptionRect;
+use crate::commands::{CaptionMaximize, CaptionRect};
 
 /// `HTMAXBUTTON` as an `LRESULT` value.
 #[expect(clippy::cast_possible_wrap, reason = "HTMAXBUTTON is 9")]
 const HIT_MAXIMIZE: isize = HTMAXBUTTON as isize;
-/// The event that tells the page how to draw its maximize button.
-const CAPTION_EVENT: &str = "caption-maximize";
 const OVERLAY_CLASS: PCWSTR = w!("BoltgetCaptionMaximize");
 /// Tauri's own child window for resizing an undecorated window from its top
 /// edge. The overlay stays below it, so the top edge still resizes.
@@ -218,23 +217,8 @@ unsafe fn apply_settings(
     Ok(())
 }
 
-/// How the page should draw its maximize button.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ButtonState {
-    Rest,
-    Hover,
-    Press,
-}
-
-impl ButtonState {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Rest => "rest",
-            Self::Hover => "hover",
-            Self::Press => "press",
-        }
-    }
-}
+/// How the page should draw its maximize button; also the event payload.
+type ButtonState = CaptionMaximize;
 
 /// Per-window data of the overlay, owned by the window (`GWLP_USERDATA`)
 /// from `WM_NCCREATE` until `WM_NCDESTROY`.
@@ -354,7 +338,7 @@ fn create_overlay(window: &WebviewWindow, parent: HWND) {
         state: Cell::new(ButtonState::Rest),
         tracking: Cell::new(false),
         notify: Box::new(move |state| {
-            let _ = page.emit(CAPTION_EVENT, state.name());
+            let _ = state.emit(&page);
         }),
     });
     let data = Box::into_raw(overlay);

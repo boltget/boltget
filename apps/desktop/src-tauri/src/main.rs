@@ -1,20 +1,27 @@
 //! The Boltget desktop app: a Tauri 2 shell around `boltget-engine`.
 //!
-//! This is the v0.2 app shell: one window with a custom title bar, the theme
-//! plumbing and the native details that make it feel like a Windows app
-//! (docs/APP-DESIGN.md). The engine is not wired yet.
+//! The v0.2 app: one window with a custom title bar, the theme plumbing and
+//! the native details that make it feel like a Windows app
+//! (docs/APP-DESIGN.md), and the engine bridge (`bridge`): the app owns the
+//! engine and its database and streams it to the page.
 // No console window behind the app in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bridge;
 mod commands;
+mod error;
+mod ipc;
 mod platform;
 mod theme;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use tauri::{Manager, WebviewWindow, WindowEvent};
+use boltget_engine::EngineConfig;
+use tauri::{Manager, RunEvent, WebviewWindow, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
+
+use crate::bridge::Bridge;
 
 /// The label of the main window in `tauri.conf.json`.
 pub(crate) const MAIN_WINDOW: &str = "main";
@@ -35,6 +42,9 @@ impl WindowShown {
 }
 
 fn main() {
+    init_logging();
+    let ipc = ipc::builder();
+    let (bridge, hub) = Bridge::new(bridge::TICK);
     let app = tauri::Builder::default()
         // First, so a second launch exits before it creates anything.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -51,13 +61,12 @@ fn main() {
                 .build(),
         )
         .manage(WindowShown::default())
-        .invoke_handler(tauri::generate_handler![
-            commands::app_info,
-            commands::show_main_window,
-            commands::set_window_chrome,
-            commands::set_caption_layout,
-        ])
-        .setup(|app| {
+        .manage(bridge)
+        .invoke_handler(ipc.invoke_handler())
+        .setup(move |app| {
+            ipc.mount_events(app);
+            tauri::async_runtime::spawn(hub);
+            start_engine(app.handle());
             let window = app
                 .get_webview_window(MAIN_WINDOW)
                 .ok_or("the main window is missing from tauri.conf.json")?;
@@ -67,12 +76,57 @@ fn main() {
         .build(tauri::generate_context!());
 
     match app {
-        Ok(app) => app.run(|_, _| {}),
+        Ok(app) => app.run(|app, event| {
+            if let RunEvent::Exit = event {
+                // Every running download writes its final checkpoint.
+                tauri::async_runtime::block_on(app.state::<Bridge>().shutdown());
+            }
+        }),
         Err(error) => {
             eprintln!("Boltget could not start: {error}");
             std::process::exit(1);
         }
     }
+}
+
+/// Logs go to stderr in debug builds (`RUST_LOG` filters them); release
+/// builds log nothing until log files arrive (docs/ARCHITECTURE.md,
+/// "Persistence").
+fn init_logging() {
+    if cfg!(debug_assertions) {
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .try_init();
+    }
+}
+
+/// Opens the engine in the background: the window does not wait for the
+/// database, and shows the engine's status when it arrives.
+///
+/// The data directory is the engine's default; debug builds accept
+/// `BOLTGET_DATA_DIR`, like the CLI, so development never touches real
+/// downloads.
+fn start_engine(app: &tauri::AppHandle) {
+    let dir = cfg!(debug_assertions)
+        .then(|| std::env::var_os("BOLTGET_DATA_DIR"))
+        .flatten()
+        .map(std::path::PathBuf::from)
+        .or_else(boltget_engine::default_data_dir);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let bridge = app.state::<Bridge>();
+        match dir {
+            Some(dir) => {
+                bridge
+                    .open(dir, EngineConfig::default(), bridge::LOCK_RETRY)
+                    .await;
+            }
+            None => bridge.no_data_dir(),
+        }
+    });
 }
 
 /// Everything that must happen before the hidden main window is first shown.

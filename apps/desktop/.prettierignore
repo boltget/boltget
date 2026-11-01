@@ -1,3 +1,5 @@
 dist/
 # Rust side: formatted by rustfmt; gen/ is written by tauri-build.
 src-tauri/
+# Generated from Rust by tauri-specta (checked by a Rust test instead).
+src/lib/bindings.ts
