@@ -1,6 +1,7 @@
 // The app's engine store, wired to the backend through the generated
-// bindings. Outside Tauri (the UI alone in a browser) nothing connects and
-// the store stays empty, in the "starting" state.
+// bindings. Outside Tauri (the UI alone in a browser) development builds use
+// a simulated engine (mock.ts) for design review; anything else stays empty,
+// in the "starting" state.
 import { Channel, isTauri } from "@tauri-apps/api/core";
 import { isPlainMessageKey, t } from "@boltget/ui";
 import { commands, type EngineMessage, type UiError } from "../bindings";
@@ -18,8 +19,13 @@ export const tauriEngineApi: EngineApi = {
   commands,
 };
 
+const simulated =
+  import.meta.env.DEV && !isTauri() && typeof location !== "undefined" && !import.meta.env.VITEST
+    ? (await import("./mock")).mockEngineApi(location.search)
+    : null;
+
 /** The one store the app uses. */
-export const downloads = new DownloadStore(tauriEngineApi);
+export const downloads = new DownloadStore(simulated ?? tauriEngineApi);
 
 /** The user-facing text of an error the backend sent. */
 export function errorText(error: Pick<UiError, "key">): string {

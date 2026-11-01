@@ -12,7 +12,9 @@
   import icon24 from "../../../../brand/svg/icon-24.svg";
   import CaptionButtons from "./CaptionButtons.svelte";
   import Icon from "./Icon.svelte";
+  import { app } from "./app.svelte";
   import { appWindow } from "./native";
+  import { addFromClipboard } from "./paste";
 
   let focused = $state(true);
   let search: HTMLInputElement | undefined = $state();
@@ -23,16 +25,36 @@
     return () => off?.();
   });
 
-  // Ctrl+K will open the command palette; until it exists it focuses search.
+  // Ctrl+K will open the command palette; until it exists it focuses
+  // search, as do Ctrl+F and "/" (DESIGN-PRINCIPLES #6).
   function onkeydown(event: KeyboardEvent) {
-    if (event.ctrlKey && !event.shiftKey && !event.altKey && event.code === "KeyK") {
+    const plain = !event.shiftKey && !event.altKey;
+    const typing = (event.target as HTMLElement | null)?.closest("input, textarea");
+    if (
+      (event.ctrlKey && plain && (event.code === "KeyK" || event.code === "KeyF")) ||
+      (event.key === "/" && !event.ctrlKey && !typing)
+    ) {
       event.preventDefault();
       search?.focus();
+      search?.select();
     }
   }
 
+  function onsearchkey(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      if (app.query) app.query = "";
+      else search?.blur();
+    } else if (event.key === "ArrowDown" || event.key === "Enter") {
+      // Into the results.
+      event.preventDefault();
+      document.querySelector<HTMLElement>("[role='listbox']")?.focus();
+    }
+  }
+
+  // Until the add sheet arrives (step 4), the button takes a link from the
+  // clipboard, like Ctrl+V.
   function addDownload() {
-    // The add sheet arrives in a later step.
+    void addFromClipboard();
   }
 </script>
 
@@ -56,6 +78,8 @@
     <span class="search-icon"><Icon name="search" /></span>
     <input
       bind:this={search}
+      bind:value={app.query}
+      onkeydown={onsearchkey}
       type="search"
       placeholder={t("titlebar.search")}
       aria-label={t("titlebar.search")}

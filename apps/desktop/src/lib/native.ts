@@ -13,7 +13,12 @@ export const inTauri = isTauri();
 export type { AppInfo };
 
 export async function appInfo(): Promise<AppInfo> {
-  if (!inTauri) return { version: "0.0.0", debug: import.meta.env.DEV, devTheme: null };
+  if (!inTauri) {
+    // The UI alone in a browser: `?theme=light|dark` stands in for
+    // BOLTGET_DEV_THEME, for screenshots of both themes.
+    const devTheme = import.meta.env.DEV ? new URLSearchParams(location.search).get("theme") : null;
+    return { version: "0.0.0", debug: import.meta.env.DEV, devTheme };
+  }
   return commands.appInfo();
 }
 

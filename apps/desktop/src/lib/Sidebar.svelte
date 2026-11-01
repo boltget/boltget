@@ -5,21 +5,27 @@
 -->
 <script lang="ts">
   import { t, type PlainMessageKey } from "@boltget/ui/messages";
+  import { app } from "./app.svelte";
+  import { downloads } from "./engine";
   import Icon, { type IconName } from "./Icon.svelte";
+  import { viewCounts, type View } from "./list/model";
 
   interface Entry {
-    id: string;
+    id: View | "settings";
     label: PlainMessageKey;
     icon: IconName;
     count?: number;
   }
 
-  const VIEWS: Entry[] = [
-    { id: "all", label: "view.all", icon: "all", count: 0 },
-    { id: "active", label: "view.active", icon: "active", count: 0 },
-    { id: "completed", label: "view.completed", icon: "completed", count: 0 },
-    { id: "scheduled", label: "view.scheduled", icon: "scheduled", count: 0 },
-  ];
+  // Counts read only each download's state, so progress never touches them.
+  const counts = $derived(viewCounts(downloads.downloads.filter((d) => !app.hidden.has(d.id))));
+
+  const VIEWS: Entry[] = $derived([
+    { id: "all", label: "view.all", icon: "all", count: counts.all },
+    { id: "active", label: "view.active", icon: "active", count: counts.active },
+    { id: "completed", label: "view.completed", icon: "completed", count: counts.completed },
+    { id: "scheduled", label: "view.scheduled", icon: "scheduled", count: counts.scheduled },
+  ]);
 
   const CATEGORIES: Entry[] = [
     { id: "video", label: "category.video", icon: "video" },
@@ -30,8 +36,12 @@
     { id: "other", label: "category.other", icon: "other" },
   ];
 
-  let selected = $state("all");
   const numbers = new Intl.NumberFormat("en");
+
+  function choose(id: Entry["id"]) {
+    // Settings opens its own window in a later step.
+    if (id !== "settings") app.view = id;
+  }
 </script>
 
 {#snippet item(entry: Entry)}
@@ -40,9 +50,9 @@
     <button
       class="item"
       type="button"
-      aria-current={selected === entry.id ? "page" : undefined}
+      aria-current={app.view === entry.id ? "page" : undefined}
       title={label}
-      onclick={() => (selected = entry.id)}
+      onclick={() => choose(entry.id)}
     >
       <Icon name={entry.icon} />
       <span class="label">{label}</span>

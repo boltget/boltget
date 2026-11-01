@@ -1,0 +1,63 @@
+<!--
+  Throughput over the last minute (APP-DESIGN #10): one line and a faint
+  area, scaled to the highest speed seen. Samples arrive at 2 Hz; the path is
+  redrawn, never tweened.
+-->
+<script lang="ts">
+  interface Props {
+    samples: readonly number[];
+    capacity: number;
+    label: string;
+  }
+
+  let { samples, capacity, label }: Props = $props();
+
+  const W = 320;
+  const H = 56;
+
+  const paths = $derived.by(() => {
+    if (samples.length < 2) return null;
+    const max = Math.max(...samples) * 1.15 || 1;
+    const step = W / Math.max(1, capacity - 1);
+    const offset = (capacity - samples.length) * step;
+    const points = samples.map((v, i) => [offset + i * step, H - 2 - (v / max) * (H - 6)] as const);
+    const line = points
+      .map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`)
+      .join("");
+    const first = points[0] as readonly [number, number];
+    const last = points[points.length - 1] as readonly [number, number];
+    return { line, area: `${line}L${last[0].toFixed(1)} ${H}L${first[0].toFixed(1)} ${H}Z` };
+  });
+</script>
+
+<svg class="spark" viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label={label}>
+  <path class="grid" d="M0 {H / 2}H{W}" />
+  {#if paths}
+    <path class="area" d={paths.area} />
+    <path class="line" d={paths.line} />
+  {/if}
+</svg>
+
+<style>
+  .spark {
+    width: 100%;
+    height: 56px;
+    overflow: visible;
+  }
+  .grid {
+    stroke: var(--color-hairline);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 2 3;
+  }
+  .area {
+    fill: var(--color-accent-tint);
+  }
+  .line {
+    fill: none;
+    stroke: var(--color-accent);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+</style>
