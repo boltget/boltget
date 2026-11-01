@@ -195,6 +195,16 @@ The first step of v0.2 (2026-11-01) built the shell that later steps fill in: ti
 - **WebView2:** no browser context menu, status bubble, pinch zoom or swipe navigation in any build; no browser accelerator keys (reload, find, print, devtools) in release builds; overlay scrollbars (`fluentOverlay`).
 - **Reviewing themes.** Debug builds accept `BOLTGET_DEV_THEME=light|dark` and flip the theme with `Ctrl+Shift+L`; the Theme setting itself arrives with the settings window.
 
+## The engine bridge as built
+
+The second step of v0.2 (2026-11-01) connected the shell to the engine; the IPC contract itself is in [ARCHITECTURE.md, "UI to backend"](ARCHITECTURE.md#1-ui-to-backend-tauri). Decisions it took for the UI:
+
+- **The app owns the engine.** It opens the engine and its database in the background as the app starts, so the first frame never waits for it (#28). While the engine is starting, or while a `boltget` CLI owns the database, the store's status says so (`starting`, `locked`); the list's own wording for these states arrives with the list. The engine's error keys and the app's are in the string catalog, and `errorText()` falls back to a generic message for a key the catalog does not know.
+- **Debug builds** use `BOLTGET_DATA_DIR` like the CLI, so development never touches real downloads, and expose the store and the generated commands to the devtools console as `__boltget`. There is no debug view.
+- **The store** (`apps/desktop/src/lib/engine`) keeps one `Download` object per download with a `$state` field per value, and the list of ids separately. A progress tick updates only the fields that changed, so only those rows re-render; the id list changes only when downloads are added or removed. This is the data side of the budget in #33.
+- **Optimistic actions** (#33): pause, resume, remove and speed limits change the row at once and roll back if the backend refuses, recording the error for a quiet notice. A new download's row comes back from `add_download` directly, before the engine's first event.
+- **Speed is averaged in the backend** over 3 s (#27), so every view (rows, tray, taskbar) shows the same number; the UI still decides how often to repaint digits.
+
 ## Resolved conflicts in the design documents
 
 The research found nine places where the existing documents disagreed or did not fit a desktop app. All were resolved as follows, and the documents concerned were updated:

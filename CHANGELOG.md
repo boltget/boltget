@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The desktop app runs the download engine: it opens your downloads when it starts, streams their progress to the window several times a second in one batch for all of them, and continues downloads that were interrupted when the app was killed or the computer went down. Downloads you paused, or that were running when you quit, stay paused. While a `boltget` command-line download is using your downloads, the app waits and takes over when it finishes. The download list itself arrives in the next preview.
+
 ### Changed
 
 - The name is now written Boltget, with one capital, everywhere: the CLI's messages, the website, the logo and the documentation. Commands, paths and settings (`boltget`, `BOLTGET_DATA_DIR`) do not change.

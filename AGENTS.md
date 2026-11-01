@@ -40,7 +40,7 @@ cargo test --workspace
 
 Run the CLI: `cargo run -p boltget-cli -- get <url>` (add `--release` for any speed measurement).
 
-Desktop app: `pnpm install`, then `pnpm --filter @boltget/desktop tauri dev` (the UI alone in a browser: `pnpm --filter @boltget/desktop dev`). Before committing app or UI changes run `check`, `lint` and `test` for both `@boltget/ui` and `@boltget/desktop` (`pnpm --filter <name> <script>`). In debug builds `BOLTGET_DEV_THEME=light|dark` forces a theme and `Ctrl+Shift+L` flips it.
+Desktop app: `pnpm install`, then `pnpm --filter @boltget/desktop tauri dev` (the UI alone in a browser: `pnpm --filter @boltget/desktop dev`). Before committing app or UI changes run `check`, `lint` and `test` for both `@boltget/ui` and `@boltget/desktop` (`pnpm --filter <name> <script>`). After changing a Tauri command or an IPC type, regenerate `apps/desktop/src/lib/bindings.ts` with `pnpm --filter @boltget/desktop bindings` (a test fails while it is stale). In debug builds `BOLTGET_DEV_THEME=light|dark` forces a theme and `Ctrl+Shift+L` flips it.
 
 Website (pnpm workspace at the root, Node from `.node-version`): `pnpm install`, then `pnpm --filter @boltget/web dev`; before committing site changes run `pnpm --filter @boltget/web check` and `pnpm --filter @boltget/web build`.
 

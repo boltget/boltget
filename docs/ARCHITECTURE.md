@@ -95,6 +95,7 @@ Exactly one process at a time may own the engine state for a given database:
 - Ownership is a lock file (`boltget.db.lock`, held with an exclusive OS file lock for the lifetime of the owner) next to the database.
   - *Implemented (v0.1)* with `std::fs::File::try_lock` (`LockFileEx` on Windows, `flock` on Unix), taken before the database is opened and released only after it is closed. The OS drops the lock when the owner dies, so a crash never leaves a stale lock. A second owner gets `Error::DatabaseLocked`.
 - The desktop app takes it on start. If it cannot (a standalone CLI is running), the app shows a "Boltget CLI is running a download" state and becomes a client until the lock is released.
+  - *Implemented (v0.2, engine bridge):* the app opens the engine in the background, so the window never waits for it. While a CLI owns the database the engine status is `locked` (with the directory) and engine commands fail with `error.engine_unavailable`; the app tries again every 2 s and becomes ready on its own when the lock is released. It is not a client yet: client mode needs the named pipe (a later v0.2 step).
 - Clients talk to the owner over IPC. This is simpler and safer than having multiple processes coordinate on SQLite rows.
 
 ## Engine internals at a glance
@@ -129,7 +130,9 @@ The full algorithm for workers, splits and checkpoints is in [ENGINE.md](ENGINE.
 
 ## IPC and events
 
-There are three IPC boundaries. All of them carry the same logical message types, defined once in the engine crate (Rust types with `serde`), and exported to TypeScript with `ts-rs` or `specta` (decided in v0.2) so the UI and extension never hand-write message shapes.
+There are three IPC boundaries. All of them carry the same logical message types, defined once in Rust (types with `serde`), and exported to TypeScript so the UI and extension never hand-write message shapes.
+
+> **Decided in v0.2:** `tauri-specta` generates the UI's bindings, calls included ([TECH-STACK.md, ADR-017](TECH-STACK.md#adr-017-tauri-specta-for-generated-ipc-bindings)). The types are the app's own (`apps/desktop/src-tauri/src/bridge/dto.rs`), mapped from the engine's, not the engine's types themselves: the engine stays free of the generator, and the UI does not depend on engine internals. The named-pipe protocol will reuse them (moved to a shared crate if the CLI needs them).
 
 ### 1. UI to backend (Tauri)
 
@@ -150,6 +153,16 @@ Progress message (sketch):
 ```
 
 Segment arrays are sent only for the download whose details are open, and only when they changed.
+
+> **Implemented (v0.2, engine bridge).** The contract as built; the generated `apps/desktop/src/lib/bindings.ts` is the reference.
+>
+> - **Commands** return `{ status: "ok", data } | { status: "error", error: UiError }`, where `UiError` is `{ key, message }`: a catalog key plus an English diagnostic that is never shown. Engine: `engine_status`, `subscribe_engine(onMessage: Channel<EngineMessage>)`, `list_downloads`, `probe_url(url)` (name, size, type, resumable, `webPage`, redirects), `add_download({ url, directory?, fileName?, connections?, speedLimit?, checksum? })` (returns the new row at once; the folder defaults to the user's Downloads folder; a typed name may not contain a folder), `pause_download(id)`, `resume_download(id, restart)`, `remove_download(id, deleteFile)`, `refresh_link(id, url)`, `set_speed_limit(scope: { kind: "global" } | { kind: "download", id }, bytesPerSecond)`, `get_settings`, `update_settings` (the engine's only setting today is the global speed limit), `download_segments(id)`, `set_focused_download(id | null)`, `set_ui_visible(visible)`. The window commands (`app_info`, `show_main_window`, `set_window_chrome`, `set_caption_layout`) and the `caption-maximize` event are generated the same way.
+> - **One channel instead of events plus a channel.** A page subscribes once with a `Channel<EngineMessage>`; everything about the engine arrives on it, in order. The first message is a `snapshot` (status, every row, settings), taken inside the task that produces the stream, so nothing between the snapshot and the first update can be lost. That ordering is why low-frequency changes do not travel as separate Tauri events. Then: `status` (`starting`, `ready`, `locked { dir }`, `failed { error }`), `settings`, and `batch`.
+> - **Coalescing.** One backend task owns a copy of the list. Engine events (added, probed, state changed, resumed, segments changed, completed) and command results only mark rows dirty. Every **250 ms** it samples progress of running downloads only (one short lock each) and sends **at most one `batch` per tick** to each page: `rows` (each changed row once, whole), `removed` ids, `progress` (`{ id, downloaded, total, bps, connections, segments }`, only for downloads whose numbers moved, and not for rows already in the batch) and `events` (`added`, `stateChanged { state, error }`, `completed { path }`, `removed`) for toasts and motion. `bps` is a 3 s moving average computed in the backend. A quiet tick sends nothing; 500 rows with 20 running cost 20 samples and one message per tick.
+> - **The file map** (`segments`: `{ start, end | null, received, connection | null }`) travels only for the focused download (`set_focused_download`, the details pane), and only when it changed or after a split. Other downloads' maps are available on demand with `download_segments`. One tick rate serves both: the map draws at 30 fps or less anyway.
+> - **Hidden window.** The page reports `visibilitychange` with `set_ui_visible`. While hidden it receives no batches (the backend keeps its copy and the speeds current); when shown again it receives one snapshot (APP-DESIGN #30).
+> - **Missed engine events** (a lagging broadcast receiver) make the backend read the list again and send a snapshot.
+> - Paths are strings; byte counts are JSON numbers (exact up to 2^53).
 
 ### 2. Extension to app (native messaging, through the host)
 
@@ -290,7 +303,7 @@ Settings are typed in Rust (`struct Settings` with `serde` defaults) and stored 
 > - `download` also stores how the destination was requested (`requested_kind` `dir`/`file`, `requested_dest`, `conflict`), so a download that never got past the probe can be started again exactly as added; `file_name` and `dest_dir` are `NULL` until the probe resolves them. `validator_date` (the probe's `Date`, needed for the `If-Range` rule), `encoded` (a `Content-Encoding` makes resuming impossible) and `error_key` (message-catalog key) are added.
 > - `segment."end"` is `NULL` while the total size is unknown (a single open segment).
 > - `request_ctx` is plain JSON **without secrets** (no `Authorization`) instead of a DPAPI-encrypted blob, until cookies make encryption necessary; see [Security](#security).
-> - `queue`, `category`, `download_source` and `media_job` are not created yet; they arrive with their features as new migrations. `setting` exists but is unused.
+> - `queue`, `category`, `download_source` and `media_job` are not created yet; they arrive with their features as new migrations. `setting` exists but is unused. (*v0.2:* `DownloadSummary` also reports the download's `speed_limit_bps`, for the app's rows; no schema change.)
 > - Segment rows of a completed download are deleted.
 >
 > **Schema versions 2–4 (v0.1 phase 3):** v2 adds `download.speed_limit_bps`; v3 adds `checksum_algo`, `checksum_expected`, `checksum_source` (`user` or the response header it came from) and `checksum_actual`; v4 creates `download_source` as drafted (`primary` and `refreshed` rows; after a link refresh `download.url` is the new link). The `setting` table is now used, one JSON value per key: `engine.speed_limit_bps` (global limit) and `engine.host_ceilings` (`{"scheme://host:port": [ceiling, until_unix_ms]}`, learned connection ceilings). *Later in phase 3:* `engine.host_starts`, same format, holds learned start counts for hosts that limit each connection (no schema change). `request_ctx` may also hold the cookie file path and the proxy URL without credentials, still no secrets.
@@ -323,6 +336,15 @@ stateDiagram-v2
 > **Phase 3:** `Verifying` (hashing what is left after the last byte), `Corrupt` (checksum mismatch; the partial file is kept, resume with `restart` downloads again, resume without a checksum keeps it) and `NeedsNewLink` (expired link; `refresh_link` validates a new one and sets `Paused`) are implemented. `Verifying` is entered only when there is a checksum, and only for the part not yet hashed during the download.
 >
 > **Implemented in v0.1:** `Queued`, `Probing`, `Downloading`, `Retrying`, `Paused`, `Completed`, `Failed` and `Cancelled` (stopped by the caller; resumable like `Paused`). There is no scheduler yet, so resuming goes straight from `Paused`/`Failed`/`Cancelled` to `Downloading` (or `Probing` when it has to start over) instead of through `Queued`, and `Verifying`, `NeedsNewLink` and `Corrupt` arrive with checksums and link refresh. A download a dead process left in `Probing`/`Downloading`/`Retrying` is set to `Paused` when the database is next opened.
+
+### Recovery on start
+
+The roadmap promises that the app survives a forced kill during active downloads and resumes everything on the next start. *Implemented (v0.2):*
+
+- `Engine::open` marks downloads a dead process left `probing`/`downloading`/`retrying`/`verifying` as `paused` (their checkpoint never claims more than was durable) and now also reports them: `Engine::recovered()` returns their ids.
+- The app resumes exactly those, plus downloads still `queued` (only an add interrupted before it started leaves one, as there is no scheduler yet), right after the engine opens. A download that cannot continue (partial file gone, file changed on the server) fails with its error as usual; one whose server cannot resume starts over, as [ENGINE.md](ENGINE.md) promises.
+- Downloads the user paused stay paused. So do downloads that were running when the user **quit** normally: quitting pauses every download (each writes its final checkpoint; the app waits at most 5 s) and they wait for the user. Continuing them after a logoff or reboot is the roadmap's separate shutdown criterion, not done yet.
+- A `boltget` CLI killed mid-download is recovered the same way when the app takes the database over.
 
 ## Persistence
 

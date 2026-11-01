@@ -64,7 +64,8 @@ Exit criteria:
 
 - [x] pnpm workspace, CI builds the app on Windows; Prettier, ESLint, `svelte-check`, Vitest
   *Done (2026-11-01):* the app shell, `packages/ui` and `.github/workflows/desktop.yml` (generated-file checks, `svelte-check`, ESLint, Prettier, Vitest and a release build on Windows), green on `main`.
-- [ ] TypeScript bindings for engine messages are generated, not hand-written; CI fails if they are stale
+- [x] TypeScript bindings for engine messages are generated, not hand-written; CI fails if they are stale
+  *Done (2026-11-01):* tauri-specta generates `apps/desktop/src/lib/bindings.ts` (commands, the engine stream and their types) from the Rust IPC types ([TECH-STACK.md, ADR-017](TECH-STACK.md#adr-017-tauri-specta-for-generated-ipc-bindings)); a Rust test fails when it is stale, in `ci.yml` and in `desktop.yml`'s `bindings:check` step.
 - [ ] All [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) checklist items pass for every screen: themes, keyboard, reduced motion, screen reader basics
 - [ ] All user-facing strings come from the string catalog (a lint rule enforces no literals in components)
 - [ ] 500 downloads in the list stay smooth (no dropped frames during progress updates on a mid-range laptop) — design target, verified with the WebView2 performance profiler

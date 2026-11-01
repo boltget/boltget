@@ -20,6 +20,7 @@ Every major technology choice in Boltget, recorded as a short Architecture Decis
 | [014](#adr-014-gpl-30-or-later) | License | GPL-3.0-or-later |
 | [015](#adr-015-english-only-product-with-a-central-string-catalog) | Language | English-only product, central string catalog |
 | [016](#adr-016-windows-first) | Platforms | Windows first |
+| [017](#adr-017-tauri-specta-for-generated-ipc-bindings) | UI ↔ backend types | tauri-specta (generated commands, events and types) |
 
 ---
 
@@ -241,3 +242,23 @@ Details: [RELEASE.md](RELEASE.md).
 **Decision.** v1.0 targets Windows 10 and 11 (x64; ARM64 as soon as CI supports it). macOS and Linux follow after 1.0.
 
 **Why.** IDM, the product we measure ourselves against, is Windows-only, so that is where its users are. Shipping one platform well beats three platforms badly. The stack (Rust, Tauri, WXT) is cross-platform, and platform-specific code is isolated from day one, so the later ports are planned work, not rewrites.
+
+## ADR-017: tauri-specta for generated IPC bindings
+
+**Context.** The page and the Rust backend talk through Tauri commands, events and channels. [ROADMAP.md](ROADMAP.md) requires the TypeScript for these messages to be generated, not hand-written, with CI failing when it is stale. [ARCHITECTURE.md](ARCHITECTURE.md#ipc-and-events) left the choice between `ts-rs` and `specta` to v0.2.
+
+**Decision.** `tauri-specta` 2 (with `specta` 2 and `specta-typescript`), pinned to exact release-candidate versions and upgraded together. Commands carry `#[specta::specta]`, the IPC types derive `specta::Type`, and `apps/desktop/src-tauri/src/ipc.rs` lists every command and event once: Tauri's invoke handler and the generated `apps/desktop/src/lib/bindings.ts` both come from that list.
+
+**Why.**
+- It generates the **calls**, not only the types: `commands.pauseDownload(id)` is a typed function whose argument names, argument types, result and error type all come from Rust, including `Channel<EngineMessage>` arguments and typed events. With `ts-rs` the types are generated but every `invoke("name", { args })` is still written by hand, which is exactly the drift the roadmap criterion is about.
+- One registration list removes a second source of truth (`generate_handler!` plus a separate export list).
+- MIT-licensed, pure Rust, no build tools; it passes `cargo-deny`.
+
+**Rejected.**
+- `ts-rs` plus a hand-written invoke layer: stable releases, but command names and argument shapes stay hand-written.
+- Generating from the engine's own types (the draft in ARCHITECTURE.md): it would make the engine depend on a binding generator, and its types carry internals (paths, `Url`, segment worker ids) the UI should not depend on. The app owns its IPC types (`bridge/dto.rs`) and maps the engine's onto them; the mapping is tested.
+
+**Consequences.**
+- The crates are release candidates. Exact pins (`=2.0.0-rc.26`, `=0.0.13`) keep builds reproducible; an upgrade regenerates and reviews `bindings.ts`. tauri-specta pulls in `paste` (an archived, finished macro crate; RUSTSEC-2024-0436 is ignored in `deny.toml` with that reason).
+- Settings: serde "phases" are disabled (one TS type per Rust type; ours serialize and deserialize alike) and `u64` exports as `number`, exact up to 2^53 bytes. Optional fields of argument types use `#[specta(optional)]` so callers can omit them.
+- `pnpm --filter @boltget/desktop bindings` regenerates the file. The `ipc::tests::bindings_are_up_to_date` test fails when it is stale, so `cargo test --workspace` (ci.yml, Windows and Linux) and the `bindings:check` step in desktop.yml both catch a forgotten regeneration. The file is excluded from ESLint and Prettier but type-checked by `svelte-check`.
