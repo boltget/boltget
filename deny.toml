@@ -24,6 +24,10 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant via zbus (single-instance plugin on Linux)" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names via zbus (single-instance plugin on Linux)" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via zbus (single-instance plugin on Linux)" },
+    # paste: a finished, dependency-free macro crate archived by its author,
+    # used by tauri-specta's command macros at compile time only. No known
+    # vulnerability. Revisit when tauri-specta drops it.
+    { id = "RUSTSEC-2024-0436", reason = "paste via tauri-specta (compile-time macro)" },
 ]
 
 [licenses]

@@ -25,6 +25,21 @@ serde.workspace = true
 tauri = { version = "2.12", features = [] }
 tauri-plugin-single-instance = "2.5"
 tauri-plugin-window-state = "2.5"
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+# Generated TypeScript bindings for commands, events and their types
+# (docs/ARCHITECTURE.md, "UI to backend"). Still release candidates: pinned
+# exactly, as tauri-specta asks, and upgraded together.
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+specta-typescript = "=0.0.13"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+
+[dev-dependencies]
+boltget-testserver.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
 
 # Window chrome on Windows (src/platform/windows.rs): the snap-layout overlay,
 # DWM attributes and WebView2 settings. Same versions as Tauri's own.
