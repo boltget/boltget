@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The desktop app runs the download engine: it opens your downloads when it starts, streams their progress to the window several times a second in one batch for all of them, and continues downloads that were interrupted when the app was killed or the computer went down. Downloads you paused, or that were running when you quit, stay paused. While a `boltget` command-line download is using your downloads, the app waits and takes over when it finishes. The download list itself arrives in the next preview.
+- The desktop app's download list: one calm row per download with its progress, speed and time left, grouped into Active, Queued and paused, and history by day, filtered by the sidebar's views and file-type categories and by search. Rows stay put while you work in the list. Select with the mouse or the keyboard (Shift and Ctrl work as in Explorer); Space pauses or resumes, Enter opens, Ctrl+Enter shows the file in its folder, Delete removes from the list with Undo, and Shift+Delete deletes the file after asking. Right-click for the same actions in a native menu, or switch to compact rows with Ctrl+Shift+D. It stays smooth with 500 downloads.
+- The details pane (Ctrl+I) shows the selected download in depth: large live numbers, a file map that fills square by square as each connection writes, the speed over the last minute, the connections at work, where the file is saved, its link and checksum, and a speed limit for that download alone. A download whose link expired takes a fresh link right there; a failed one says what happened in plain words, with the technical details folded away.
+- Until the add sheet arrives, paste a link anywhere in the window (Ctrl+V), drop one on it, or click Add download with a link on the clipboard to start downloading it.
 
 ### Changed
 

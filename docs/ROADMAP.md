@@ -69,6 +69,7 @@ Exit criteria:
 - [ ] All [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) checklist items pass for every screen: themes, keyboard, reduced motion, screen reader basics
 - [ ] All user-facing strings come from the string catalog (a lint rule enforces no literals in components)
 - [ ] 500 downloads in the list stay smooth (no dropped frames during progress updates on a mid-range laptop) — design target, verified with the WebView2 performance profiler
+  *Progress (2026-11-01):* the list is virtualised and was measured with 500 simulated downloads in Chromium with the CPU throttled 4× (no long tasks, no frame over 33 ms while flinging through it; [APP-DESIGN.md](APP-DESIGN.md#the-list-and-the-details-pane-as-built)). Still to do: the WebView2 profiler on a real mid-range laptop.
 - [ ] Idle memory, startup time and installer size measured and published; compared with the targets in [VISION.md](VISION.md#what-beating-idm-means-measurably)
 - [ ] App survives forced kill during active downloads and resumes everything on next start
 - [ ] Unsigned preview builds available from GitHub Releases as pre-releases, clearly labelled

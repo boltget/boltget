@@ -205,6 +205,36 @@ The second step of v0.2 (2026-11-01) connected the shell to the engine; the IPC 
 - **Optimistic actions** (#33): pause, resume, remove and speed limits change the row at once and roll back if the backend refuses, recording the error for a quiet notice. A new download's row comes back from `add_download` directly, before the engine's first event.
 - **Speed is averaged in the backend** over 3 s (#27), so every view (rows, tray, taskbar) shows the same number; the UI still decides how often to repaint digits.
 
+## The list and the details pane as built
+
+The third step of v0.2 (2026-11-01) built the main list (#3, #4) and the details pane (#10 to #12). Decisions it took where this brief was open, and where it deviates:
+
+**The list**
+- **Rows** are as specified: 40 px comfortable (name with the state or the primary action at the right; a 4 px square progress bar and one muted status line below) and 32 px compact (`Ctrl+Shift+D`, one line, the fill alone as a 2 px underline with no track, so a column of rows does not read as ruled lines). The fill is the mark's gradient while a download runs and neutral grey once it stops.
+- **Units are binary everywhere**, speeds included (`48.2 MiB/s`, where #3's example said `MB/s`), so a row never mixes two unit systems. Numbers that change live keep their trailing zeros (`0.40 / 5.97 GiB`) so their width does not jump; settled sizes drop them (`7 MiB`). Digits repaint on one shared 2 Hz beat.
+- **Groups.** Failed, corrupt and expired-link downloads sit at the top of "Queued and paused" rather than in a group of their own. Section headers do not stick. Every view is grouped the same way; a sort other than Grouped gives one flat list (Name, Size, Date added).
+- **"Rows never move on their own"** is implemented as: sections are held while the pointer moves over the list, it scrolls, or a key is pressed in it, and for 2.5 s after the last of these (0.3 s after the pointer leaves). A pointer resting on the list without moving does not count as using it, so history still settles while the user looks elsewhere. Adding or removing a download does move rows: the user did it.
+- **One header line above the list** with the view's title and count, the sort menu and the pane toggle. It holds view options, not actions on downloads, so it is not the toolbar #1 rules out.
+- **Selection and keyboard** follow Explorer: click, `Ctrl`+click, `Shift`+click, arrows, `Home`/`End`/`PageUp`/`PageDown` with `Shift` to extend and `Ctrl` to move without selecting, `Ctrl+A`. The list is one `listbox` with `aria-activedescendant`, so focus stays on the list and rows can be virtualised; the row's two buttons (primary action, more) are a pointer shortcut and are created only for the hovered or keyboard row. The keyboard reaches the same actions through the shortcuts and the `Menu` key or `Shift+F10`.
+- **Remove is undoable** (DESIGN-PRINCIPLES #6) without engine support: the row hides for 6 s with "Removed … Undo" and a running download pauses at once; the removal is made when the notice ends. Quitting within those 6 s keeps the download. Deleting the file asks first, in an in-window dialog (the only confirmation in the app; Cancel has focus).
+- **Context menus are native** (#29). Outside Tauri (the UI alone in a browser) there are none, and the sort button cycles instead.
+- **Copy link** copies the link as the engine keeps it for display, without its query string or credentials.
+- **Engine states** take the list's place calmly: "Opening your downloads…" fades in only if opening takes over 400 ms; a CLI holding the database shows a lock, one sentence and the folder in Mono; a failure shows the catalog message with the diagnostic in Mono below. A view or search with nothing in it says so in one line.
+- **Adding, until the add sheet (#6) exists:** `Ctrl+V` anywhere outside a field, a dropped link and the "Add download" button (with a link on the clipboard) start the http(s) links in the text at once, with a quiet "Downloading …" notice.
+- **Smoothness (#33)** was measured with 500 simulated downloads, 20 of them running, in Chromium at 1280 × 800: no long tasks; flinging through the whole list at about 3,600 px/s with the CPU throttled 4× (a mid-range laptop) holds 57 fps with no frame over 33 ms, and progress ticks alone stay at the display's rate. A progress tick re-renders only the rows on screen whose numbers changed.
+
+**The details pane**
+- **It is 360 px wide** and appears when it is on (`Ctrl+I`, or the header's toggle) and something is selected; with several downloads selected it shows their count and total size. Under 1000 px of window width it floats over the list with the floating elevation instead of squeezing it.
+- **Top:** name (two lines at most), host and size, the primary action as a button (solid emerald only for Open), Show in folder and the same menu as the row. Then the hero card's stats: speed, received, time left and connections while running; size and when it finished once complete; received and what is left while stopped.
+- **The file map** is a canvas of 8 rows of whole-pixel squares (about 9 px with 2 px gaps), each square a slice of the file along one emerald gradient (tokens `--color-map-*`). Arriving squares ease in with a brief light; the square a connection is writing is deep ink (mint on dark) with a halo; a finished download settles over 0.7 s into one calm field at about 45% opacity. Connections are numbered from 1, though the engine counts from 0. A stopped download whose map was not streamed this session shows its received share filled in file order. A file of unknown size shows one line instead of a map. Hovering a square shows its byte range and its connection. Reduced motion shows every square settled.
+- **Below the map:** the speed over the last minute (2 Hz samples, a line on a faint area) and the connections at work, each with its part's progress. The engine does not report events such as "took half of #3" yet, so the list has no events.
+- **File:** saved or saving to, the link, a refreshed link if there is one, the checksum (none given, checked at the end, verified, or does not match; its digest and, when the server sent it, the header) and whether the download can continue after a stop, each with a copy button.
+- **Speed limit** for that download alone, in MiB/s, applied on `Enter` or leaving the field; empty is no limit.
+- **Problems** (failed, corrupt, expired link) appear above the stats as one sentence from the catalog with a status glyph; an expired link gets the "Refresh link" field right there. The engine's English diagnostic, the only place an HTTP code appears, is folded under "Technical details". There is no Log section yet (the engine keeps no per-download log) and no connections stepper (the engine cannot change a running download's connection count); both wait for engine support.
+
+**Development aids**
+- The UI alone in a browser (`pnpm --filter @boltget/desktop dev`) runs on a simulated engine in development builds: `?mock=500&active=20` seeds downloads, `?engine=starting|locked|failed` holds a state, `?theme=light|dark` forces a theme. It is never part of a release build.
+
 ## Resolved conflicts in the design documents
 
 The research found nine places where the existing documents disagreed or did not fit a desktop app. All were resolved as follows, and the documents concerned were updated:
@@ -227,4 +257,4 @@ These decisions are settled with the clickable prototype, before the app is buil
 
 - **Auto-start on paste.** Should `Ctrl+V` in the window start the download at once, with an undoable preview row (Downie and browsers), or open the sheet with Download focused (one `Enter`)? The default above is the sheet; auto-start is the alternative to test.
 - **A table layout for IDM users,** or one row model only. Rows ship in v0.2; a table is added later if users ask.
-- **Segments in the row.** Should the progress bar of an active row hint at gaps (a 1 px mini map), or should segments appear only in the details pane?
+- **Segments in the row.** Should the progress bar of an active row hint at gaps (a 1 px mini map), or should segments appear only in the details pane? *For now only in the pane;* rows keep one plain bar.
