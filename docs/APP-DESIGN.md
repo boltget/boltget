@@ -162,7 +162,8 @@ The full reports, with sources, are kept outside the repository. This document r
     - **Browser leftovers:** release builds have no browser right-click menu, and no reload, zoom or devtools shortcuts.
     - **Window state:** size and position are restored before the window is shown, and a missing monitor is handled.
     - **Hidden window:** while the window is hidden it receives no progress ticks; one snapshot arrives when it is shown again.
-31. **Title bar.** It is custom, with the snap layout flyout kept: a small native window over the maximize button returns `HTMAXBUTTON` (see Tauri [#4531](https://github.com/tauri-apps/tauri/issues/4531)). The caption buttons are 46 × 32 px and use Segoe Fluent Icons glyphs. If that work slips, v0.2 falls back to native decorations with a themed caption colour, because a title bar without snap layouts is worse than a plain one.
+31. **Title bar.** It is custom, with the snap layout flyout kept: a small native window over the maximize button returns `HTMAXBUTTON` (see Tauri [#4531](https://github.com/tauri-apps/tauri/issues/4531)). The caption buttons are 46 px wide and use Segoe Fluent Icons glyphs. If that work slips, v0.2 falls back to native decorations with a themed caption colour, because a title bar without snap layouts is worse than a plain one.
+    - *Built (2026-11-01):* the overlay works on Windows 11, so the fallback is not used. The buttons fill the title bar's height (46 × 44 px, like Edge and Terminal) rather than 46 × 32, so the top edge of a maximized window still hits them. The overlay forwards hover and press to the page, which draws the button, and maximizes or restores on click; keyboard and screen readers use the page's button. Tauri's own top-edge resize strip stays above the overlay. Glyphs fall back to Segoe MDL2 Assets (Windows 10), then to inline SVG.
 32. **Mica is optional and confined to the chrome.** If used at all, it sits behind the title bar and sidebar on Windows 11, never under the list. It is off when the system turns transparency off. The content area is always the solid theme background.
 33. **Performance budgets.**
     - The list is virtualised with a fixed row height.
@@ -179,6 +180,20 @@ The full reports, with sources, are kept outside the repository. This document r
     - The tokens come from `brand/tokens/tokens.css`, light theme. The chrome (title bar and sidebar) is `#F6F6F7`, the content area white, hairlines `rgb(9 9 11 / 8%)`, and the accent `#047857` with white text. Progress fills use the light gradient (`#34D399` → `#047857`).
     - Dark (Ink) remains a full theme. The app follows the system setting and is reviewed in both themes. Light is the reference for screenshots, and it is designed and polished first.
     - Mica is not used in v0.2.
+
+## The app shell as built
+
+The first step of v0.2 (2026-11-01) built the shell that later steps fill in: title bar, sidebar, the empty state and the theme plumbing. Decisions it took where this brief was open:
+
+- **The content area is a sheet on the chrome.** The title bar and sidebar are one grey surface; the content area sits on it with a hairline on its top and left edges and an 8 px top-left corner, like the website's hero card.
+- **Ink's surfaces.** In dark, the content is the brand's `#0B0B0F` and the chrome one step lighter (`#141418`), the inverse of Daylight's grey chrome around white content. Secondary 12 px text is weight 500 in dark (#25).
+- **The colours are generated.** Every app colour is a semantic token (`--color-chrome`, `--color-hairline`, `--color-accent-tint`, …) defined once, for both themes, in `packages/ui/scripts/generate.mjs` from the brand tokens; see [TECH-STACK.md, ADR-004](TECH-STACK.md#adr-004-svelte-5-typescript-and-vite-for-the-ui). Daylight's chrome comes out at exactly `#F6F6F7`. The close button's hover red is the brand's error red (`#DC2626`), not Windows' own `#C42B1C`, so no colour is hard-coded.
+- **Launch.** The window is created hidden, its background set from Rust to the theme's content colour while it is still hidden, and the page inlines the same colour in `index.html`. The page applies the theme, waits for the bundled fonts and one frame, then asks Rust to show the window. If the page never asks, Rust shows it after 3 s. Size, position and the maximized state are restored while it is hidden.
+- **The title bar's icon** is the pixel-snapped app icon (`icon-16.svg` at 1x and 2x, `icon-24.svg` at 1.5x), since the mark without a tile has a 24 px minimum.
+- **The empty state's mark** is drawn at 108 px, where the canonical squares land on whole pixels at 100% scale. It waits, dim, until the window is visible, then plays once.
+- **The icon rail** is 52 px wide; labels become tooltips.
+- **WebView2:** no browser context menu, status bubble, pinch zoom or swipe navigation in any build; no browser accelerator keys (reload, find, print, devtools) in release builds; overlay scrollbars (`fluentOverlay`).
+- **Reviewing themes.** Debug builds accept `BOLTGET_DEV_THEME=light|dark` and flip the theme with `Ctrl+Shift+L`; the Theme setting itself arrives with the settings window.
 
 ## Resolved conflicts in the design documents
 

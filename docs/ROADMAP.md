@@ -63,6 +63,7 @@ Scope: `apps/desktop`, `packages/ui`. Main list, add sheet (with probe preview),
 Exit criteria:
 
 - [ ] pnpm workspace, CI builds the app on Windows; Prettier, ESLint, `svelte-check`, Vitest
+  *Status (2026-11-01):* the app shell, `packages/ui` and `.github/workflows/desktop.yml` exist (generated-file checks, `svelte-check`, ESLint, Prettier, Vitest and a release build on Windows); checked off once the workflow has run green on `main`.
 - [ ] TypeScript bindings for engine messages are generated, not hand-written; CI fails if they are stale
 - [ ] All [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) checklist items pass for every screen: themes, keyboard, reduced motion, screen reader basics
 - [ ] All user-facing strings come from the string catalog (a lint rule enforces no literals in components)

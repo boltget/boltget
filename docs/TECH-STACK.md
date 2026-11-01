@@ -84,9 +84,18 @@ Every major technology choice in BoltGet, recorded as a short Architecture Decis
 
 **Consequences.** WebView2 is required on Windows (preinstalled on Windows 11 and current Windows 10; the installer bootstraps it if missing). UI behaviour must be tested on each platform's WebView later.
 
+**Implementation decisions (v0.2, 2026-11-01).**
+- **Versions.** Tauri 2.12 with `tauri-plugin-single-instance` and `tauri-plugin-window-state`; JavaScript packages pinned exactly, as in `apps/web`. Tauri 2.12 needs Rust 1.90, so `apps/desktop/src-tauri` declares `rust-version = "1.90"` while the engine and CLI keep the workspace's 1.89.
+- **Window chrome.** Undecorated window (`decorations: false`, with the system shadow, so Windows 11 still draws the rounded corners and border) and a title bar drawn by the page. Snap layouts are kept with a native child window over the page's maximize button that answers `WM_NCHITTEST` with `HTMAXBUTTON` ([APP-DESIGN.md #31](APP-DESIGN.md#native-on-windows)). The Win32 code lives in `src-tauri/src/platform/windows.rs`, the app's only `unsafe` module. The documented fallback (native decorations with a themed caption) was not needed.
+- **Linux CI.** The desktop crate stays in `cargo clippy --workspace` and `cargo test --workspace` on Linux: `ci.yml` installs WebKitGTK and GTK first. Excluding it would leave its non-Windows code unlinted until the Linux port, which is how platform branches rot. The Linux-only unmaintained crates Tauri brings in (GTK's `proc-macro-error`, the single-instance plugin's `zbus`) are ignored in `deny.toml` with reasons.
+- **Builds in CI.** `.github/workflows/desktop.yml` runs the UI checks and `tauri build --no-bundle` on Windows; installers come with the release work.
+- **Binary name.** In `target/` the app is `boltget-desktop.exe`, not `BoltGet.exe`: Windows file names are case-insensitive, and the CLI's `boltget.exe` is built into the same directory. The installed name (`BoltGet.exe` in [ARCHITECTURE.md](ARCHITECTURE.md#the-desktop-app-boltgetexe)) is set when the installer is built.
+
 ## ADR-004: Svelte 5, TypeScript and Vite for the UI
 
 **Decision.** Svelte 5 (runes) with TypeScript, built with Vite. Shared components and design tokens in `packages/ui`.
+
+**Token pipeline (v0.2).** `brand/tokens/tokens.json` stays the single source of colour values. `packages/ui/scripts/generate.mjs` turns it into the brand primitives (`src/tokens/brand.css`), the app's semantic colours for both themes (`src/tokens/theme.css`, one `light-dark()` pair per token, from a table in the script that is the only place app colours are decided) and the same colours resolved to hex (`src/tokens/theme.json`) for code that cannot read CSS: the Tauri build script (the window background before the page paints) and the Vite plugin that inlines the pre-paint background into `index.html`. The generated files are committed; `generate --check` in CI fails when they are stale. Theme switching is `color-scheme` on `<html>`: `data-theme` for an explicit Light or Dark, the OS for System. The website still imports `brand/` directly and moves to `packages/ui` later.
 
 **Why.**
 - Compiles to small, fast JavaScript; little runtime. Matters for startup time in the app and for the website's near-zero-JS budget.
@@ -224,6 +233,8 @@ Details: [RELEASE.md](RELEASE.md).
 **Why.** A single language keeps the scope tight for 1.0 and keeps copy consistent. A central catalog costs almost nothing now, keeps wording reviewable in one place, and keeps the door open: localization is a possible post-1.0, community-driven effort, not a goal.
 
 **Rejected.** Adopting an i18n library and translation platform now (cost without users who need it); scattering literals (makes later translation a rewrite).
+
+**Implementation (v0.2).** `packages/ui/src/messages/en.json` holds the app's messages; a message is a string with named placeholders (`"Press {shortcut}"`) or a plural object keyed by Intl plural category (`{ "one": "{count} download", "other": "{count} downloads" }`). `t(key, params)` fills placeholders and formats numbers with `Intl`. `scripts/generate.mjs` derives `keys.ts` from the catalog, so a wrong key or a missing placeholder fails type checking; CI fails if `keys.ts` is stale. Native code returns catalog keys in errors (`UiError { key }`), never prose.
 
 ## ADR-016: Windows first
 
