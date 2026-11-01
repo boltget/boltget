@@ -564,7 +564,14 @@ mod tests {
         let mut m = Model::default();
         m.added(row(7, DownloadState::Queued));
         m.added(row(7, DownloadState::Queued));
-        m.completed(DownloadId(7), "C:\\d\\file.iso".into(), 99);
+        m.completed(
+            DownloadId(7),
+            std::path::Path::new("d")
+                .join("file.iso")
+                .to_string_lossy()
+                .into_owned(),
+            99,
+        );
         let (rows, _, _, events) = batch(m.tick(Vec::new(), Instant::now()));
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].state, DownloadState::Completed);
