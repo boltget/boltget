@@ -1,0 +1,110 @@
+# Desktop app (apps/desktop) and its UI package (packages/ui): token and
+# message freshness, svelte-check, ESLint, Prettier, Vitest, and a release
+# build of the app on Windows, the platform it ships on first (ADR-016).
+# Rust formatting, clippy and cargo-deny for the app's crate run in ci.yml
+# with the rest of the workspace.
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "packages/ui/**"
+      - "brand/tokens/**"
+      - "brand/fonts/**"
+      - "brand/svg/**"
+      - "brand/png/**"
+      - "brand/ico/**"
+      - "crates/engine/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".node-version"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "packages/ui/**"
+      - "brand/tokens/**"
+      - "brand/fonts/**"
+      - "brand/svg/**"
+      - "brand/png/**"
+      - "brand/ico/**"
+      - "crates/engine/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".node-version"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    name: check, lint, test, build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Version from "packageManager" in the root package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install
+        # The app and its workspace dependencies only.
+        run: pnpm install --frozen-lockfile --filter "@boltget/desktop..."
+
+      - name: Check (generated files, svelte-check, tsc)
+        run: |
+          pnpm --filter @boltget/ui check
+          pnpm --filter @boltget/desktop check
+
+      - name: Lint (ESLint, Prettier)
+        run: |
+          pnpm --filter @boltget/ui lint
+          pnpm --filter @boltget/desktop lint
+
+      - name: Test (Vitest)
+        run: |
+          pnpm --filter @boltget/ui test
+          pnpm --filter @boltget/desktop test
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          key: desktop-release
+
+      - name: Build the app (release, no installer)
+        run: pnpm --filter @boltget/desktop tauri build --no-bundle -- --locked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boltget-desktop-windows-x64
+          path: target/release/boltget-desktop.exe
+          retention-days: 7
