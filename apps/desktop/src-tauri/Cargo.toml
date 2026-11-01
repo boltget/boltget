@@ -1,6 +1,6 @@
 [package]
 name = "boltget-desktop"
-description = "BoltGet desktop app: the Tauri shell around the engine"
+description = "Boltget desktop app: the Tauri shell around the engine"
 version.workspace = true
 edition.workspace = true
 # Tauri 2.12 needs Rust 1.90; the engine and CLI keep the workspace's 1.89.

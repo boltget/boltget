@@ -1,6 +1,6 @@
 # Features
 
-This document lists every planned BoltGet feature, the milestone that targets it, and how it compares with Internet Download Manager (IDM) and three well-known reference points: Free Download Manager (FDM), Motrix and aria2.
+This document lists every planned Boltget feature, the milestone that targets it, and how it compares with Internet Download Manager (IDM) and three well-known reference points: Free Download Manager (FDM), Motrix and aria2.
 
 ## How to read this
 
@@ -9,11 +9,11 @@ This document lists every planned BoltGet feature, the milestone that targets it
   - `Yes` / `No` are things we are confident about.
   - `?` means we are not sure. If you know the answer, open a PR with a source.
   - `Partial` is explained in the notes.
-- The **BoltGet column describes plans**, not shipped features. Nothing is shipped yet.
+- The **Boltget column describes plans**, not shipped features. Nothing is shipped yet.
 
 ## Core engine
 
-| Feature | BoltGet | Milestone | IDM | FDM | Motrix | aria2 |
+| Feature | Boltget | Milestone | IDM | FDM | Motrix | aria2 |
 |---|---|---|---|---|---|---|
 | Multi-connection (segmented) HTTP/HTTPS downloads | Yes | v0.1 | Yes | Yes | Yes (via aria2) | Yes |
 | Dynamic segmentation (re-split the largest remaining segment when a connection frees up) | Yes | v0.1 | Yes | ? | Partial (aria2 model) | Partial |
@@ -41,7 +41,7 @@ This document lists every planned BoltGet feature, the milestone that targets it
 
 ## Desktop app
 
-| Feature | BoltGet | Milestone | IDM | FDM | Motrix | aria2 |
+| Feature | Boltget | Milestone | IDM | FDM | Motrix | aria2 |
 |---|---|---|---|---|---|---|
 | GUI | Yes (Tauri 2 + Svelte 5) | v0.2 | Yes (Win32) | Yes | Yes (Electron) | No (third-party GUIs) |
 | Light and dark themes | Yes, both designed (light first) | v0.2 | No | ? | Yes | n/a |
@@ -60,7 +60,7 @@ This document lists every planned BoltGet feature, the milestone that targets it
 
 ## Browser integration
 
-| Feature | BoltGet | Milestone | IDM | FDM | Motrix | aria2 |
+| Feature | Boltget | Milestone | IDM | FDM | Motrix | aria2 |
 |---|---|---|---|---|---|---|
 | Chrome, Edge, Firefox extension | Yes (WXT, Manifest V3) | v0.3 | Yes | Yes | Third-party | Third-party |
 | Automatic capture by file type and size | Yes | v0.3 | Yes | Yes | n/a | n/a |
@@ -74,7 +74,7 @@ Details: [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md).
 
 ## Video and audio
 
-| Feature | BoltGet | Milestone | IDM | FDM | Motrix | aria2 |
+| Feature | Boltget | Milestone | IDM | FDM | Motrix | aria2 |
 |---|---|---|---|---|---|---|
 | Download from video sites | Yes, via yt-dlp sidecar | v0.4 | Yes | ? | No | No |
 | HLS / DASH stream download and mux | Yes, via yt-dlp + ffmpeg | v0.4 | Yes | ? | No | No |
@@ -88,7 +88,7 @@ Details: [VIDEO.md](VIDEO.md).
 
 ## CLI and automation
 
-| Feature | BoltGet | Milestone | IDM | FDM | Motrix | aria2 |
+| Feature | Boltget | Milestone | IDM | FDM | Motrix | aria2 |
 |---|---|---|---|---|---|---|
 | Command-line tool | Yes (`boltget`) | v0.1 | Partial (`idman.exe` switches) | ? | No | Yes |
 | JSON output for scripting | Yes (`--json`) | v0.1 | No | ? | No | Partial (RPC) |
@@ -98,7 +98,7 @@ Details: [VIDEO.md](VIDEO.md).
 
 ## Platform, distribution, trust
 
-| Feature | BoltGet | Milestone | IDM | FDM | Motrix | aria2 |
+| Feature | Boltget | Milestone | IDM | FDM | Motrix | aria2 |
 |---|---|---|---|---|---|---|
 | Windows | Yes | v1.0 (previews from v0.2) | Yes | Yes | Yes | Yes |
 | macOS | Yes | post-1.0 | No | Yes | Yes | Yes |

@@ -5,10 +5,10 @@ Benchmark harness. Method and published results: [docs/BENCHMARK.md](../docs/BEN
 | File | What |
 |---|---|
 | `targets.toml` | Versioned target list: public speed-test files and local lab scenarios |
-| `idm-compare.ps1` | BoltGet vs Internet Download Manager, interleaved, on the same targets (Windows) |
+| `idm-compare.ps1` | Boltget vs Internet Download Manager, interleaved, on the same targets (Windows) |
 | `results/<date>-<what>/` | Raw data of published runs: every run, the summary, the machine and tool settings |
 
-## BoltGet only
+## Boltget only
 
 ```sh
 cargo build --release -p boltget-cli -p boltget-testserver

@@ -1,6 +1,6 @@
 //! # boltget-engine
 //!
-//! The BoltGet download engine: probing without `HEAD`, dynamic segmentation
+//! The Boltget download engine: probing without `HEAD`, dynamic segmentation
 //! ("split the largest remaining segment"), one explicit HTTP connection per
 //! worker, sparse preallocation, positional writes from a dedicated writer
 //! thread, retries with backoff and stall detection.

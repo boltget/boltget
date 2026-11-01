@@ -56,7 +56,7 @@ use crate::commands::CaptionRect;
 const HIT_MAXIMIZE: isize = HTMAXBUTTON as isize;
 /// The event that tells the page how to draw its maximize button.
 const CAPTION_EVENT: &str = "caption-maximize";
-const OVERLAY_CLASS: PCWSTR = w!("BoltGetCaptionMaximize");
+const OVERLAY_CLASS: PCWSTR = w!("BoltgetCaptionMaximize");
 /// Tauri's own child window for resizing an undecorated window from its top
 /// edge. The overlay stays below it, so the top edge still resizes.
 const TAURI_RESIZE_CLASS: PCWSTR = w!("TAURI_DRAG_RESIZE_BORDERS");

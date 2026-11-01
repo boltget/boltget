@@ -1,6 +1,6 @@
 # Browser integration
 
-The BoltGet extension catches downloads in the browser and hands them to the BoltGet app together with everything the app needs to fetch the same file (cookies, referrer, headers). It also detects media on pages and offers to send the page to the app. It does no downloading itself and contains no site-specific extraction logic.
+The Boltget extension catches downloads in the browser and hands them to the Boltget app together with everything the app needs to fetch the same file (cookies, referrer, headers). It also detects media on pages and offers to send the page to the app. It does no downloading itself and contains no site-specific extraction logic.
 
 - Code: `apps/extension` (planned)
 - Framework: [WXT](https://wxt.dev), Manifest V3, TypeScript, Svelte 5 for the popup and options UI
@@ -41,10 +41,10 @@ The capture decision is a pure function `shouldCapture(event, rules) → Decisio
 | Permission | Why |
 |---|---|
 | `downloads` | Observe new downloads, pause/cancel/erase the browser's copy after the app accepts it |
-| `nativeMessaging` | Talk to the BoltGet app |
+| `nativeMessaging` | Talk to the Boltget app |
 | `cookies` | Read cookies for the download URL so the app can make the same authenticated request |
 | `webRequest` | Observe (not block, on Chrome) request headers such as `Referer` and `User-Agent`, and response `Content-Type` for media detection |
-| `contextMenus` | "Download with BoltGet", "Download all links", "Send page to BoltGet" |
+| `contextMenus` | "Download with Boltget", "Download all links", "Send page to Boltget" |
 | `storage` | Capture rules and site lists |
 | `scripting` | Inject the link collector only when the user invokes "Download all links" |
 | host permissions | Needed by `cookies` and `webRequest` for the sites involved. Requested as **optional** `<all_urls>` during onboarding with an explanation, so the user explicitly grants them. Without them, capture still works but without cookies/headers (many downloads will then fail in the app, and the extension says so). |
@@ -58,7 +58,7 @@ sequenceDiagram
   participant B as Browser
   participant E as Extension (background)
   participant H as Native host
-  participant A as BoltGet app
+  participant A as Boltget app
 
   B->>E: downloads.onCreated / onDeterminingFilename (item)
   E->>E: shouldCapture(item, rules, modifier state)?
@@ -101,7 +101,7 @@ Whether to use blocking `webRequest` on Firefox in v0.3 or keep a single code pa
 - Downloads from incognito/private windows, unless the user has enabled the extension in private windows **and** turned on "capture in private windows" in options. Private downloads never appear in the app's history after completion (opt-in setting).
 - `file:` URLs.
 - Requests with a `POST` body that the extension cannot see (form-submission downloads). These stay in the browser.
-- Downloads started by the BoltGet app itself (none in v1, but guarded).
+- Downloads started by the Boltget app itself (none in v1, but guarded).
 
 ## Capture rules
 
@@ -133,11 +133,11 @@ Notes:
 
 | Context | Item | Message |
 |---|---|---|
-| Link | Download with BoltGet | `capture` (forced) for the link URL, with cookies for it and the page as referrer |
-| Selection | Download selected links with BoltGet | Content script collects `<a href>` within the selection → `add_links` |
-| Page | Download all links with BoltGet... | Content script collects all links → `add_links`; the app opens a picker with filters by type |
-| Video / audio element | Download media with BoltGet | `media_page` with the page URL and element source hint |
-| Page | Send page to BoltGet | `media_page` with the page URL |
+| Link | Download with Boltget | `capture` (forced) for the link URL, with cookies for it and the page as referrer |
+| Selection | Download selected links with Boltget | Content script collects `<a href>` within the selection → `add_links` |
+| Page | Download all links with Boltget... | Content script collects all links → `add_links`; the app opens a picker with filters by type |
+| Video / audio element | Download media with Boltget | `media_page` with the page URL and element source hint |
+| Page | Send page to Boltget | `media_page` with the page URL |
 
 Media-related items follow the [store policy constraints](#store-policy-constraints).
 
@@ -156,7 +156,7 @@ Nothing is sent for downloads that are not captured. Nothing is stored by the ex
 
 ### Protocol
 
-Defined in [ARCHITECTURE.md, IPC and events](ARCHITECTURE.md#2-extension-to-app-native-messaging-through-the-host). Framing (browser-defined): each message is a 32-bit length in native byte order followed by UTF-8 JSON. Chromium limits messages from the host to the browser to 1 MB; messages to the host can be much larger, but BoltGet's host rejects anything over 1 MiB anyway.
+Defined in [ARCHITECTURE.md, IPC and events](ARCHITECTURE.md#2-extension-to-app-native-messaging-through-the-host). Framing (browser-defined): each message is a 32-bit length in native byte order followed by UTF-8 JSON. Chromium limits messages from the host to the browser to 1 MB; messages to the host can be much larger, but Boltget's host rejects anything over 1 MiB anyway.
 
 The background script uses `runtime.connectNative` while it needs a session (for example while the popup is open) and `runtime.sendNativeMessage` for one-off captures, because MV3 service workers are terminated when idle and must not depend on a long-lived port.
 
@@ -169,7 +169,7 @@ Chromium manifest (`app.boltget.native_host.chrome.json`, in the install directo
 ```json
 {
   "name": "app.boltget.native_host",
-  "description": "BoltGet native messaging host",
+  "description": "Boltget native messaging host",
   "path": "boltget-native-host.exe",
   "type": "stdio",
   "allowed_origins": [
@@ -186,8 +186,8 @@ Firefox manifest (`app.boltget.native_host.firefox.json`):
 ```json
 {
   "name": "app.boltget.native_host",
-  "description": "BoltGet native messaging host",
-  "path": "C:\\Users\\<user>\\AppData\\Local\\Programs\\BoltGet\\boltget-native-host.exe",
+  "description": "Boltget native messaging host",
+  "path": "C:\\Users\\<user>\\AppData\\Local\\Programs\\Boltget\\boltget-native-host.exe",
   "type": "stdio",
   "allowed_extensions": ["extension@boltget.app"]
 }
@@ -239,9 +239,9 @@ Media detection only **detects and hands off**. All extraction, format selection
   The app itself accepts any URL the user pastes; that is the app's business, not the extension's.
 - **Edge Add-ons:** treated the same as Chrome (same build).
 - **Firefox Add-ons:** has different rules, but for one consistent product the Firefox build applies the same YouTube exclusion by default. This can be revisited.
-- **No remote code** (MV3 rule, and a BoltGet security rule): all extension logic is bundled; capture rules come from the app as data, never code.
-- **Single purpose:** the listing describes one purpose, "send downloads to the BoltGet download manager", with media detection as part of that purpose.
-- **Privacy disclosures:** the extension collects no data for BoltGet; cookies and headers go only to the local app over native messaging. The listing's data-use section states exactly this.
+- **No remote code** (MV3 rule, and a Boltget security rule): all extension logic is bundled; capture rules come from the app as data, never code.
+- **Single purpose:** the listing describes one purpose, "send downloads to the Boltget download manager", with media detection as part of that purpose.
+- **Privacy disclosures:** the extension collects no data for Boltget; cookies and headers go only to the local app over native messaging. The listing's data-use section states exactly this.
 - Policies change. Before each store submission, the release checklist ([RELEASE.md](RELEASE.md)) includes re-reading the current program policies.
 
 ## Testing

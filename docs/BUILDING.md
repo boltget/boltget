@@ -1,6 +1,6 @@
 # Building from source
 
-How to build the BoltGet command-line downloader (`boltget`), including the exact build of a release. The desktop app (v0.2) will add its own steps here.
+How to build the Boltget command-line downloader (`boltget`), including the exact build of a release. The desktop app (v0.2) will add its own steps here.
 
 ## Requirements
 

@@ -1,4 +1,4 @@
-//! The BoltGet desktop app: a Tauri 2 shell around `boltget-engine`.
+//! The Boltget desktop app: a Tauri 2 shell around `boltget-engine`.
 //!
 //! This is the v0.2 app shell: one window with a custom title bar, the theme
 //! plumbing and the native details that make it feel like a Windows app
@@ -69,7 +69,7 @@ fn main() {
     match app {
         Ok(app) => app.run(|_, _| {}),
         Err(error) => {
-            eprintln!("BoltGet could not start: {error}");
+            eprintln!("Boltget could not start: {error}");
             std::process::exit(1);
         }
     }

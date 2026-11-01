@@ -2,7 +2,7 @@
 
 The design brief for `apps/desktop`: what the main window, the add flow, the details pane, the tray, notifications and settings look like and why. It applies [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) and [brand/BRAND.md](../brand/BRAND.md) to the app; where those documents were silent or disagreed, the decision is recorded here and the other document points to it.
 
-The goal in one line: **it should feel like a premium Windows app, and it should never look complicated.** BoltGet does more than IDM; it must look like it does less.
+The goal in one line: **it should feel like a premium Windows app, and it should never look complicated.** Boltget does more than IDM; it must look like it does less.
 
 ## Research behind it
 
@@ -76,7 +76,7 @@ The full reports, with sources, are kept outside the repository. This document r
 
    AB Download Manager's most common complaint is downloads that turn out to be `.html` pages; the engine's probe already knows enough to catch this.
 8. **Several links become a visible checklist in the same sheet.** It lists the probed name and size of each link, a select-all checkbox, one folder for all, and the button "Download 12 files". Links never land in a hidden staging tab.
-9. **Clipboard monitoring is opt-in and only offers.** When it is on, a copied link appears as an in-app chip (or, if the user enables it, a toast). Repeats collapse, and links copied from BoltGet itself are ignored. Nothing is ever added silently.
+9. **Clipboard monitoring is opt-in and only offers.** When it is on, a copied link appears as an in-app chip (or, if the user enables it, a toast). Repeats collapse, and links copied from Boltget itself are ignored. Nothing is ever added silently.
 
 ### Details
 

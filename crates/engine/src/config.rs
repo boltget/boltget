@@ -158,7 +158,7 @@ impl Default for EngineConfig {
             slow_window: Duration::from_secs(20),
             disk_margin: 16 * 1024 * 1024,
             mark_of_the_web: true,
-            user_agent: concat!("BoltGet/", env!("CARGO_PKG_VERSION")).to_owned(),
+            user_agent: concat!("Boltget/", env!("CARGO_PKG_VERSION")).to_owned(),
             speed_limit: None,
             proxy: crate::proxy::ProxyRules::direct(),
             adaptive: true,

@@ -138,4 +138,4 @@ jobs:
           prerelease=""
           case "$VERSION" in 0.*|*-*) prerelease="--prerelease" ;; esac
           gh release create "$TAG" dist/* --draft $prerelease \
-            --title "BoltGet $VERSION" --notes-file notes.md --verify-tag
+            --title "Boltget $VERSION" --notes-file notes.md --verify-tag

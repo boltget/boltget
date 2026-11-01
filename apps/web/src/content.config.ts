@@ -27,7 +27,7 @@ export const collections = {
     loader: glob({ pattern: "CHANGELOG.md", base: "../.." }),
   }),
 
-  // Rows of the BoltGet and IDM comparison, derived from docs/FEATURES.md.
+  // Rows of the Boltget and IDM comparison, derived from docs/FEATURES.md.
   compare: defineCollection({
     loader: file("src/data/compare-idm.json"),
     schema: z.object({

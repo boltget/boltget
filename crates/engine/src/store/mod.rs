@@ -32,13 +32,13 @@ pub const DB_FILE: &str = "boltget.db";
 /// Name of the owner lock file in the data directory.
 pub const LOCK_FILE: &str = "boltget.db.lock";
 
-/// The default data directory: `%LOCALAPPDATA%\BoltGet` on Windows,
+/// The default data directory: `%LOCALAPPDATA%\Boltget` on Windows,
 /// `~/Library/Application Support/app.boltget` on macOS and
 /// `$XDG_DATA_HOME/boltget` elsewhere. `None` if the OS reports no home directory.
 pub fn default_data_dir() -> Option<PathBuf> {
     let base = directories::BaseDirs::new()?;
     #[cfg(windows)]
-    let dir = base.data_local_dir().join("BoltGet");
+    let dir = base.data_local_dir().join("Boltget");
     #[cfg(target_os = "macos")]
     let dir = base.data_dir().join("app.boltget");
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -203,7 +203,7 @@ impl Store {
         }
         if version != latest {
             return Err(Error::Database(format!(
-                "{} has schema version {version}, this BoltGet expects {latest}",
+                "{} has schema version {version}, this Boltget expects {latest}",
                 db_path.display()
             )));
         }

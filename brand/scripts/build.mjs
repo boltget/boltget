@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * BoltGet brand kit build.
+ * Boltget brand kit build.
  *
  * Regenerates every derived asset (SVG, PNG, ICO, tokens, preview.html) from the
  * single geometry + palette definition below. The two canonical files
@@ -196,7 +196,7 @@ const SANS = (w) => font(`geist-sans/Geist-${w}.ttf`);
 const MONO = (w) => font(`geist-mono/GeistMono-${w}.ttf`);
 
 /** Optical kerning for the wordmark, in font units, added to the font's own GPOS kerning. */
-const WORDMARK = { weight: 'SemiBold', tracking: -0.025, adjust: { Bo: -6, lt: 12, tG: 8 } };
+const WORDMARK = { weight: 'SemiBold', tracking: -0.025, adjust: { Bo: -6, lt: 12 } };
 
 /**
  * Lay out a single line as outlined path data.
@@ -236,7 +236,7 @@ function text(str, { f, size, x = 0, y = 0, tracking = 0, adjust = {}, anchor = 
 const capHeight = (f, size) => (f.tables.os2.sCapHeight / f.unitsPerEm) * size;
 
 function wordmarkText(size, x = 0, y = 0, anchor = 'start') {
-  return text('BoltGet', { f: SANS(WORDMARK.weight), size, x, y, tracking: WORDMARK.tracking, adjust: WORDMARK.adjust, anchor });
+  return text('Boltget', { f: SANS(WORDMARK.weight), size, x, y, tracking: WORDMARK.tracking, adjust: WORDMARK.adjust, anchor });
 }
 
 /* ------------------------------------------------------------------------ */
@@ -333,7 +333,7 @@ function canonicalRects(r) {
 function canonicalIcon(animated) {
   const head = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${ART} ${ART}" width="${ART}" height="${ART}">`,
-    '  <title>BoltGet</title>',
+    '  <title>Boltget</title>',
     '  <defs>',
     linGrad('g', GRAD_DARK),
     '  </defs>',
@@ -371,11 +371,11 @@ function buildLogos() {
   const markSvg = (title, fill, defs = '') =>
     svg({ w: 108, h: 108, viewBox: MARK_VIEWBOX, title, defs, body: `  <path fill="${fill}" d="${d}"/>` });
 
-  writeSvg('svg/mark.svg', markSvg('BoltGet mark', 'url(#g)', linGrad('g', GRAD_DARK)));
-  writeSvg('svg/mark-light.svg', markSvg('BoltGet mark (for light backgrounds)', 'url(#g)', linGrad('g', GRAD_LIGHT)));
-  writeSvg('svg/mark-white.svg', markSvg('BoltGet mark, white', C.white));
-  writeSvg('svg/mark-black.svg', markSvg('BoltGet mark, black', C.ink));
-  writeSvg('svg/mark-green.svg', markSvg('BoltGet mark, green', C.green));
+  writeSvg('svg/mark.svg', markSvg('Boltget mark', 'url(#g)', linGrad('g', GRAD_DARK)));
+  writeSvg('svg/mark-light.svg', markSvg('Boltget mark (for light backgrounds)', 'url(#g)', linGrad('g', GRAD_LIGHT)));
+  writeSvg('svg/mark-white.svg', markSvg('Boltget mark, white', C.white));
+  writeSvg('svg/mark-black.svg', markSvg('Boltget mark, black', C.ink));
+  writeSvg('svg/mark-green.svg', markSvg('Boltget mark, green', C.green));
 
   // Animated mark (transparent), CSS-driven so it honours prefers-reduced-motion.
   const kf = MOTION.keyTimes.map((t, i) => `${fmt(t * 100)}%{opacity:${MOTION.values[i]}}`).join('');
@@ -386,7 +386,7 @@ function buildLogos() {
   writeSvg(
     'svg/mark-animated.svg',
     svg({
-      w: 108, h: 108, viewBox: MARK_VIEWBOX, title: 'BoltGet mark, animated',
+      w: 108, h: 108, viewBox: MARK_VIEWBOX, title: 'Boltget mark, animated',
       defs: linGrad('g', GRAD_DARK),
       style: `.r{fill:url(#g);opacity:${MOTION.values[0]};animation:arrive ${MOTION.dur}s linear infinite}@keyframes arrive{${kf}}@media (prefers-reduced-motion:reduce){.r{animation:none;opacity:1}}`,
       body: rowsSvg,
@@ -396,20 +396,20 @@ function buildLogos() {
   // App icons
   writeSvg(
     'svg/icon-light.svg',
-    svg({ w: ART, h: ART, title: 'BoltGet (light)', defs: linGrad('g', GRAD_LIGHT), body: `${tile(C.paper)}\n  <path fill="url(#g)" d="${d}"/>` }),
+    svg({ w: ART, h: ART, title: 'Boltget (light)', defs: linGrad('g', GRAD_LIGHT), body: `${tile(C.paper)}\n  <path fill="url(#g)" d="${d}"/>` }),
   );
   const k = 0.9375; // keeps the arrow inside the Android 66/108 safe circle (and the 80% PWA zone)
   writeSvg(
     'svg/icon-maskable.svg',
     svg({
-      w: ART, h: ART, title: 'BoltGet (maskable)', defs: linGrad('g', GRAD_DARK),
+      w: ART, h: ART, title: 'Boltget (maskable)', defs: linGrad('g', GRAD_DARK),
       body: `  <rect width="${ART}" height="${ART}" fill="${C.ink}"/>\n  <path fill="url(#g)" transform="matrix(${k} 0 0 ${k} ${fmt((ART / 2) * (1 - k))} ${fmt((ART / 2) * (1 - k))})" d="${d}"/>`,
     }),
   );
   // Full-bleed square at canonical proportions (apple-touch-icon, avatars).
   writeSvg(
     'svg/icon-square.svg',
-    svg({ w: ART, h: ART, title: 'BoltGet (square)', defs: linGrad('g', GRAD_DARK), body: `  <rect width="${ART}" height="${ART}" fill="${C.ink}"/>\n  <path fill="url(#g)" d="${d}"/>` }),
+    svg({ w: ART, h: ART, title: 'Boltget (square)', defs: linGrad('g', GRAD_DARK), body: `  <rect width="${ART}" height="${ART}" fill="${C.ink}"/>\n  <path fill="url(#g)" d="${d}"/>` }),
   );
 
   // Small-size icons
@@ -419,7 +419,7 @@ function buildLogos() {
     writeSvg(
       `svg/icon-${key}.svg`,
       svg({
-        w: s.size, h: s.size, title: `BoltGet (${key} px)`,
+        w: s.size, h: s.size, title: `Boltget (${key} px)`,
         defs: linGrad('g', GRAD_DARK, [b0, b0, b1, b1]),
         body: `${tile(C.ink, s.size, s.radius)}\n  <path fill="url(#g)" d="${steppedPath(s.rows)}"/>`,
       }),
@@ -433,7 +433,7 @@ function buildLogos() {
     writeSvg(
       `svg/icon-${size}.svg`,
       svg({
-        w: +size, h: +size, title: `BoltGet (${size} px)`,
+        w: +size, h: +size, title: `Boltget (${size} px)`,
         defs: gridGrad('g', GRAD_DARK, g),
         body: `${tile(C.ink, +size, Math.round((size * TILE_RADIUS) / ART))}
   <path fill="url(#g)" d="${markPathAt(g)}"/>`,
@@ -446,7 +446,7 @@ function buildLogos() {
   writeSvg(
     'web/favicon.svg',
     svg({
-      w: 16, h: 16, title: 'BoltGet',
+      w: 16, h: 16, title: 'Boltget',
       style: '.d{display:none}@media (prefers-color-scheme:dark){.l{display:none}.d{display:inline}}',
       defs: [linGrad('a', GRAD_DARK, [s16.box[0], s16.box[0], s16.box[1], s16.box[1]]), linGrad('b', GRAD_DARK, [bare.box[0], bare.box[0], bare.box[1], bare.box[1]])].join('\n'),
       body: [
@@ -466,7 +466,7 @@ function buildLogos() {
   for (const [variant, fill] of [['on-dark', NEUTRAL[50]], ['on-light', C.ink]]) {
     writeSvg(
       `svg/wordmark-${variant}.svg`,
-      svg({ w: fmt(bb.x2 - bb.x1), h: fmt(bb.y2 - bb.y1), viewBox: wmBox, title: 'BoltGet', body: `  <path fill="${fill}" d="${wm.d}"/>` }),
+      svg({ w: fmt(bb.x2 - bb.x1), h: fmt(bb.y2 - bb.y1), viewBox: wmBox, title: 'Boltget', body: `  <path fill="${fill}" d="${wm.d}"/>` }),
     );
   }
 
@@ -490,7 +490,7 @@ function buildLogos() {
       writeSvg(
         `svg/lockup-horizontal-${variant}.svg`,
         svg({
-          w: fmt(vb[2]), h: fmt(vb[3]), viewBox: vb.map(fmt).join(' '), title: 'BoltGet',
+          w: fmt(vb[2]), h: fmt(vb[3]), viewBox: vb.map(fmt).join(' '), title: 'Boltget',
           defs: linGrad('g', grad),
           body: `  <path fill="url(#g)" d="${d}"/>\n  <path fill="${fill}" d="${w2.d}"/>`,
         }),
@@ -512,7 +512,7 @@ function buildLogos() {
       writeSvg(
         `svg/lockup-stacked-${variant}.svg`,
         svg({
-          w: fmt(vb[2]), h: fmt(vb[3]), viewBox: vb.map(fmt).join(' '), title: 'BoltGet',
+          w: fmt(vb[2]), h: fmt(vb[3]), viewBox: vb.map(fmt).join(' '), title: 'Boltget',
           defs: linGrad('g', grad),
           body: `  <path fill="url(#g)" d="${d}"/>\n  <path fill="${fill}" d="${w4.d}"/>`,
         }),
@@ -596,7 +596,7 @@ function buildConstruction() {
   writeSvg(
     'svg/construction.svg',
     svg({
-      w: W, h: H, title: 'BoltGet mark construction',
+      w: W, h: H, title: 'Boltget mark construction',
       defs: linGrad('g', GRAD_DARK, [X(36), Y(36), X(144), Y(144)]),
       body: parts.join('\n'),
     }),
@@ -671,23 +671,23 @@ function socialSvg({ W, H, pitch, markX, markY, textX, textY, scale = 1, title, 
 
 function buildSocial() {
   // Open Graph 1200x630 (pitch 36 -> 324 px arrow)
-  const og = socialSvg({ W: 1200, H: 630, pitch: 36, markX: 762, markY: 171, textX: 88, textY: 196, title: 'BoltGet — every byte, at full speed' });
+  const og = socialSvg({ W: 1200, H: 630, pitch: 36, markX: 762, markY: 171, textX: 88, textY: 196, title: 'Boltget — every byte, at full speed' });
   writeSvg('social/og-image.svg', og);
   writePng('social/og-image.png', og, 1200, 630);
 
   // GitHub social preview 1280x640 (keep 40 px safe border)
-  const gh = socialSvg({ W: 1280, H: 640, pitch: 38, markX: 808, markY: 167, textX: 96, textY: 194, scale: 1.04, title: 'BoltGet — every byte, at full speed' });
+  const gh = socialSvg({ W: 1280, H: 640, pitch: 38, markX: 808, markY: 167, textX: 96, textY: 194, scale: 1.04, title: 'Boltget — every byte, at full speed' });
   writeSvg('social/github-social.svg', gh);
   writePng('social/github-social.png', gh, 1280, 640);
 
   // X / Twitter header 1500x500: content kept to the centre band and away from
   // the avatar, which overlaps the lower-left corner.
-  const x = socialSvg({ W: 1500, H: 500, pitch: 28, markX: 1112, markY: 124, textX: 470, textY: 136, scale: 0.92, title: 'BoltGet — every byte, at full speed' });
+  const x = socialSvg({ W: 1500, H: 500, pitch: 28, markX: 1112, markY: 124, textX: 470, textY: 136, scale: 0.92, title: 'Boltget — every byte, at full speed' });
   writeSvg('social/x-header.svg', x);
   writePng('social/x-header.png', x, 1500, 500);
 
   // Avatar: full bleed (platforms crop to a circle), arrow at canonical proportions.
-  const avatar = svgs['svg/icon-square.svg'].replace('BoltGet (square)', 'BoltGet avatar');
+  const avatar = svgs['svg/icon-square.svg'].replace('Boltget (square)', 'Boltget avatar');
   writeSvg('social/avatar.svg', avatar);
   writePng('social/avatar-400.png', avatar, 400, 400);
   writePng('social/avatar-512.png', avatar, 512, 512);
@@ -729,8 +729,8 @@ function buildRasters() {
     out('web/site.webmanifest'),
     JSON.stringify(
       {
-        name: 'BoltGet',
-        short_name: 'BoltGet',
+        name: 'Boltget',
+        short_name: 'Boltget',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -761,7 +761,7 @@ function buildTokens() {
     ...Object.entries(THEME[t]).map(([k, c]) => `  --bg-${k}: ${c};`.replace('--bg-bg', '--bg')),
     ...Object.entries(SEMANTIC).map(([k, c]) => `  --${k}: ${c[t]};`),
   ].join('\n');
-  const css = `/* BoltGet design tokens — generated by scripts/build.mjs */
+  const css = `/* Boltget design tokens — generated by scripts/build.mjs */
 :root {
 ${v(NEUTRAL, 'neutral')}
 ${v(EMERALD, 'emerald')}
@@ -821,7 +821,7 @@ function buildPreview() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BoltGet brand kit</title>
+<title>Boltget brand kit</title>
 <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
 <style>
 @font-face{font-family:Geist;src:url(fonts/Geist-Regular.woff2) format("woff2");font-weight:400}
@@ -873,7 +873,7 @@ figcaption{font:12px "Geist Mono",monospace;color:var(--subtle)}
 </head>
 <body>
 <main>
-<header><img src="icon-animated.svg" alt=""><div><h1>BoltGet brand kit</h1><p>Generated by <code>scripts/build.mjs</code>. Every asset on dark and light.</p></div></header>
+<header><img src="icon-animated.svg" alt=""><div><h1>Boltget brand kit</h1><p>Generated by <code>scripts/build.mjs</code>. Every asset on dark and light.</p></div></header>
 
 <h2>Mark</h2>
 ${both((t) => `<figure><img src="${t === 'dark' ? 'icon.svg' : 'svg/icon-light.svg'}" width="180" height="180" alt=""><figcaption>${t === 'dark' ? 'icon.svg' : 'svg/icon-light.svg'}</figcaption></figure><figure><img class="anim" src="icon-animated.svg" alt=""><figcaption>icon-animated.svg</figcaption></figure>`)}
@@ -928,7 +928,7 @@ ${scale('Neutral', NEUTRAL, 'neutral')}
 <div class="row"><code>Display 56/600</code><div style="font-size:56px;font-weight:600;letter-spacing:-.035em;line-height:1.05">Every byte, at full speed.</div></div>
 <div class="row"><code>H1 40/600</code><div style="font-size:40px;font-weight:600;letter-spacing:-.03em;line-height:1.1">Picks up exactly where it stopped.</div></div>
 <div class="row"><code>H2 28/600</code><div style="font-size:28px;font-weight:600;letter-spacing:-.02em">Every connection stays busy.</div></div>
-<div class="row"><code>Body 15/400</code><div>BoltGet splits each file into chunks and fetches them in parallel, then assembles them on disk.</div></div>
+<div class="row"><code>Body 15/400</code><div>Boltget splits each file into chunks and fetches them in parallel, then assembles them on disk.</div></div>
 <div class="row"><code>Mono 13/400</code><div class="mono" style="font-size:13px">4.2 GB · 16 connections · 98.4 MB/s · 00:43 left</div></div>
 </div>
 </main>
@@ -951,5 +951,5 @@ buildRasters();
 buildTokens();
 copyFonts();
 buildPreview();
-console.log(`BoltGet brand: wrote ${written.length} files`);
+console.log(`Boltget brand: wrote ${written.length} files`);
 for (const f of written.sort()) console.log('  ' + f);

@@ -1,6 +1,6 @@
 # Security policy
 
-BoltGet parses untrusted network data, writes files to disk, talks to a browser extension, runs helper binaries and updates itself. We take security reports seriously and appreciate responsible disclosure.
+Boltget parses untrusted network data, writes files to disk, talks to a browser extension, runs helper binaries and updates itself. We take security reports seriously and appreciate responsible disclosure.
 
 ## Reporting a vulnerability
 
@@ -30,22 +30,22 @@ In scope (once the code exists):
 - The download engine and CLI (`crates/`)
 - The desktop app, including its IPC (named pipe), native messaging host and updater (`apps/desktop`)
 - The browser extension (`apps/extension`)
-- How BoltGet downloads, verifies and runs yt-dlp and ffmpeg
+- How Boltget downloads, verifies and runs yt-dlp and ffmpeg
 - The release and update infrastructure (signing, update manifests)
 - boltget.app
 
-Examples of what we especially want to hear about: a web page or remote server causing BoltGet to write outside the chosen folder, execute code, or leak cookies/credentials to another site; another local user or a website talking to the native messaging host or IPC pipe; bypassing update or sidecar signature verification; Mark-of-the-Web not being applied.
+Examples of what we especially want to hear about: a web page or remote server causing Boltget to write outside the chosen folder, execute code, or leak cookies/credentials to another site; another local user or a website talking to the native messaging host or IPC pipe; bypassing update or sidecar signature verification; Mark-of-the-Web not being applied.
 
 Out of scope:
 
-- Vulnerabilities in yt-dlp, ffmpeg, browsers or the OS themselves (report to those projects), unless BoltGet's use of them makes things worse.
-- Downloading a malicious file that the user explicitly chose to download (BoltGet applies Mark of the Web so the OS can protect the user, but cannot judge file contents).
+- Vulnerabilities in yt-dlp, ffmpeg, browsers or the OS themselves (report to those projects), unless Boltget's use of them makes things worse.
+- Downloading a malicious file that the user explicitly chose to download (Boltget applies Mark of the Web so the OS can protect the user, but cannot judge file contents).
 - Attacks that require an already-compromised user account or administrator access.
 - Reports from automated scanners without a demonstrated impact.
 
 ## Supported versions
 
-BoltGet has no releases yet. After the first release, security fixes are made for the **latest stable release** only (and the current beta). Users are expected to stay updated; the app auto-updates by default.
+Boltget has no releases yet. After the first release, security fixes are made for the **latest stable release** only (and the current beta). Users are expected to stay updated; the app auto-updates by default.
 
 ## Safe harbor
 

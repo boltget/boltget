@@ -30,7 +30,7 @@ boltget remove 7 --delete-file
 
 Ctrl-C pauses the running download (exit code 130). If the file changed on the server in the meantime, `resume` stops with an error instead of mixing two versions; `--restart` downloads it again.
 
-The download list lives in `%LOCALAPPDATA%\BoltGet` on Windows and `$XDG_DATA_HOME/boltget` on Linux. `--state <dir>` or the `BOLTGET_DATA_DIR` variable choose another directory, and `boltget get --no-state` downloads without recording anything. One `boltget` at a time can use the list; `boltget list` works alongside.
+The download list lives in `%LOCALAPPDATA%\Boltget` on Windows and `$XDG_DATA_HOME/boltget` on Linux. `--state <dir>` or the `BOLTGET_DATA_DIR` variable choose another directory, and `boltget get --no-state` downloads without recording anything. One `boltget` at a time can use the list; `boltget list` works alongside.
 
 ## Give an expired link a new one
 
@@ -40,7 +40,7 @@ Signed download links often expire. When that happens, the download waits as `ne
 boltget refresh 7 https://example.com/new-signed-link
 ```
 
-BoltGet checks that the new link is the same file (same size, and the same ETag or matching sample bytes) before it writes anything, then continues. A link to a different file is refused with the reason.
+Boltget checks that the new link is the same file (same size, and the same ETag or matching sample bytes) before it writes anything, then continues. A link to a different file is refused with the reason.
 
 ## Limit the speed
 

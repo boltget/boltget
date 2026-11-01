@@ -17,12 +17,12 @@ export default defineConfig({
     // pages under /lab/ stay out of the sitemap. They are also noindex.
     sitemap({ filter: (page) => !new URL(page).pathname.startsWith("/lab/") }),
     starlight({
-      title: "BoltGet docs",
-      description: "How to install and use BoltGet, the download manager built for speed.",
+      title: "Boltget docs",
+      description: "How to install and use Boltget, the download manager built for speed.",
       logo: {
         dark: "../../brand/svg/lockup-horizontal-on-dark.svg",
         light: "../../brand/svg/lockup-horizontal-on-light.svg",
-        alt: "BoltGet",
+        alt: "Boltget",
         replacesTitle: true,
       },
       favicon: "/favicon.svg",

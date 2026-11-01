@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in BoltGet does not work as it should.
+description: Something in Boltget does not work as it should.
 title: "bug: "
 labels: ["type:bug", "status:needs-triage"]
 body:
@@ -15,7 +15,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: BoltGet version
+      label: Boltget version
       description: Settings → About, or `boltget --version`. For builds from source, the commit hash.
       placeholder: "0.2.0"
     validations:
@@ -49,7 +49,7 @@ body:
     id: browser
     attributes:
       label: Browser and version (if the extension is involved)
-      placeholder: "Chrome 140, BoltGet extension 0.3.0"
+      placeholder: "Chrome 140, Boltget extension 0.3.0"
 
   - type: textarea
     id: steps
@@ -59,7 +59,7 @@ body:
       placeholder: |
         1. Add a download of a ~2 GB file from ...
         2. Pause at ~50%
-        3. Close and reopen BoltGet
+        3. Close and reopen Boltget
         4. Resume
     validations:
       required: true
@@ -85,7 +85,7 @@ body:
       label: Logs
       description: |
         Settings → About → Open logs folder, or run the CLI with `--verbose`.
-        BoltGet redacts URL query strings by default, but please check logs for private information before pasting.
+        Boltget redacts URL query strings by default, but please check logs for private information before pasting.
       render: text
 
   - type: textarea

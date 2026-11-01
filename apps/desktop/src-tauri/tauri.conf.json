@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "BoltGet",
+  "productName": "Boltget",
   "identifier": "app.boltget.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "BoltGet",
+        "title": "Boltget",
         "width": 1280,
         "height": 800,
         "minWidth": 640,

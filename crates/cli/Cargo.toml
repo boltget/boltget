@@ -1,6 +1,6 @@
 [package]
 name = "boltget-cli"
-description = "BoltGet command-line downloader"
+description = "Boltget command-line downloader"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

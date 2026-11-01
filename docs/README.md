@@ -1,12 +1,12 @@
-# BoltGet documentation
+# Boltget documentation
 
-Design documents for BoltGet. They define what we are building and how; code that deviates from them must update them in the same pull request (see [CONTRIBUTING.md](../CONTRIBUTING.md#documentation)). User-facing documentation will live on [boltget.app/docs](https://boltget.app/docs).
+Design documents for Boltget. They define what we are building and how; code that deviates from them must update them in the same pull request (see [CONTRIBUTING.md](../CONTRIBUTING.md#documentation)). User-facing documentation will live on [boltget.app/docs](https://boltget.app/docs).
 
 ## Start here
 
 | Document | Read it if you want to know... |
 |---|---|
-| [VISION.md](VISION.md) | Why BoltGet exists, its principles and non-goals, and how "beating IDM" is measured |
+| [VISION.md](VISION.md) | Why Boltget exists, its principles and non-goals, and how "beating IDM" is measured |
 | [ROADMAP.md](ROADMAP.md) | What gets built in which milestone, and the exit criteria for each |
 | [FEATURES.md](FEATURES.md) | Every planned feature, its milestone, and how it compares with IDM, FDM, Motrix and aria2 |
 

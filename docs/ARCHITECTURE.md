@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how BoltGet is put together: the components, which process runs what, how they talk, what is stored where, how concurrency works, how errors flow, and the security model. The download engine itself is specified in [ENGINE.md](ENGINE.md); this document treats it as a component.
+This document describes how Boltget is put together: the components, which process runs what, how they talk, what is stored where, how concurrency works, how errors flow, and the security model. The download engine itself is specified in [ENGINE.md](ENGINE.md); this document treats it as a component.
 
 Status: design. Names of crates, types and tables are the intended names; they may be refined during implementation, but changes to the structure should go through an RFC (see [CONTRIBUTING.md](../CONTRIBUTING.md#rfcs)).
 
@@ -10,7 +10,7 @@ Status: design. Names of crates, types and tables are the intended names; they m
 |---|---|---|---|---|
 | Engine | `crates/engine` | Rust | library crate `boltget-engine` | Probing, segmentation, connections, disk I/O, rate limiting, persistence, integrity, events |
 | CLI | `crates/cli` | Rust | `boltget.exe` | Command-line front end; embeds the engine or talks to the running app |
-| Desktop backend | `apps/desktop/src-tauri` | Rust | inside `BoltGet.exe` | Hosts the engine, exposes Tauri commands/events, tray, single-instance, updater, IPC server |
+| Desktop backend | `apps/desktop/src-tauri` | Rust | inside `Boltget.exe` | Hosts the engine, exposes Tauri commands/events, tray, single-instance, updater, IPC server |
 | Desktop UI | `apps/desktop/src` | Svelte 5 + TS | bundled web assets | Everything the user sees in the window |
 | Native messaging host | `apps/desktop/src-tauri` (separate `[[bin]]`) | Rust | `boltget-native-host.exe` | Bridge spawned by the browser: stdio native messaging to the app's IPC pipe |
 | Browser extension | `apps/extension` | TS (WXT) | `.zip`/`.xpi` per store | Captures downloads, detects media, forwards cookies/headers |
@@ -25,12 +25,12 @@ The engine is a **library, not a daemon**. There is exactly one engine instance 
 ```mermaid
 flowchart LR
   subgraph Browser["Browser (Chrome / Edge / Firefox)"]
-    EXT["BoltGet extension<br/>(MV3 service worker)"]
+    EXT["Boltget extension<br/>(MV3 service worker)"]
   end
 
   subgraph User session
     NH["boltget-native-host.exe<br/>(spawned by browser, stdio)"]
-    subgraph APP["BoltGet.exe (Tauri)"]
+    subgraph APP["Boltget.exe (Tauri)"]
       UI["WebView2 UI<br/>Svelte 5"]
       BE["Rust backend<br/>commands / events / tray"]
       ENG["boltget-engine<br/>(library)"]
@@ -57,7 +57,7 @@ flowchart LR
   YT <--> NET
 ```
 
-### The desktop app (`BoltGet.exe`)
+### The desktop app (`Boltget.exe`)
 
 - Single instance per user session (`tauri-plugin-single-instance`). A second launch forwards its arguments (for example a URL passed by a shell association) to the running instance and exits.
 - Can start hidden in the tray (`--background`), which is how the native host and autostart launch it.
@@ -70,10 +70,10 @@ Browsers start native messaging hosts as a **new process per connection** (`runt
 
 1. Read a native message from stdin (4-byte length prefix in native byte order, then UTF-8 JSON).
 2. Validate it against the schema (see [Security](#security)).
-3. Connect to the app's named pipe. If the pipe does not exist, launch `BoltGet.exe --background` and retry with backoff for a few seconds.
+3. Connect to the app's named pipe. If the pipe does not exist, launch `Boltget.exe --background` and retry with backoff for a few seconds.
 4. Forward the message, relay the reply to stdout, and repeat until stdin closes.
 
-It never touches the database or the network itself. Keeping it a separate tiny binary (rather than making `BoltGet.exe` the host) means the browser does not start a full WebView process every time the extension sends a message. Details of registration: [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#native-messaging-host-registration-on-windows).
+It never touches the database or the network itself. Keeping it a separate tiny binary (rather than making `Boltget.exe` the host) means the browser does not start a full WebView process every time the extension sends a message. Details of registration: [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#native-messaging-host-registration-on-windows).
 
 ### The CLI (`boltget.exe`)
 
@@ -94,7 +94,7 @@ Exactly one process at a time may own the engine state for a given database:
 
 - Ownership is a lock file (`boltget.db.lock`, held with an exclusive OS file lock for the lifetime of the owner) next to the database.
   - *Implemented (v0.1)* with `std::fs::File::try_lock` (`LockFileEx` on Windows, `flock` on Unix), taken before the database is opened and released only after it is closed. The OS drops the lock when the owner dies, so a crash never leaves a stale lock. A second owner gets `Error::DatabaseLocked`.
-- The desktop app takes it on start. If it cannot (a standalone CLI is running), the app shows a "BoltGet CLI is running a download" state and becomes a client until the lock is released.
+- The desktop app takes it on start. If it cannot (a standalone CLI is running), the app shows a "Boltget CLI is running a download" state and becomes a client until the lock is released.
 - Clients talk to the owner over IPC. This is simpler and safer than having multiple processes coordinate on SQLite rows.
 
 ## Engine internals at a glance
@@ -165,7 +165,7 @@ Request/response JSON with a `v` (protocol version) and `type`:
 | `status` | ext → app | Lightweight query for the popup (active count, speed) |
 | `settings` | app → ext (reply to `hello`) | Capture rules so the extension and app agree |
 
-Versioning: the protocol version is an integer. The app supports the current and previous version; the extension shows an "update BoltGet" message if the app is older.
+Versioning: the protocol version is an integer. The app supports the current and previous version; the extension shows an "update Boltget" message if the app is older.
 
 ### 3. CLI to app (named pipe)
 
@@ -175,7 +175,7 @@ Same framing as native messaging (4-byte little-endian length prefix + JSON) so 
 
 All persistent state lives in one SQLite database per user:
 
-- Windows: `%LOCALAPPDATA%\BoltGet\boltget.db`
+- Windows: `%LOCALAPPDATA%\Boltget\boltget.db`
 - macOS (post-1.0): `~/Library/Application Support/app.boltget/boltget.db`
 - Linux (post-1.0): `$XDG_DATA_HOME/boltget/boltget.db`
 
@@ -328,14 +328,14 @@ stateDiagram-v2
 
 - **Library:** `rusqlite` with the bundled SQLite build, accessed only from a dedicated **DB actor thread**. Async code sends commands over a channel and awaits a oneshot reply. This keeps SQLite usage single-threaded and off the Tokio worker threads. (Rationale and the sqlx alternative: [TECH-STACK.md](TECH-STACK.md#adr-005-sqlite-via-rusqlite-on-a-dedicated-thread).)
 - **Pragmas:** `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`.
-  - With WAL + `NORMAL`, a power loss can lose the most recent commits but never corrupts the database. For BoltGet this is the safe direction: the DB can only lag behind the data file, never run ahead of it (see [ENGINE.md, Checkpointing](ENGINE.md#checkpointing-and-crash-safe-resume)).
+  - With WAL + `NORMAL`, a power loss can lose the most recent commits but never corrupts the database. For Boltget this is the safe direction: the DB can only lag behind the data file, never run ahead of it (see [ENGINE.md, Checkpointing](ENGINE.md#checkpointing-and-crash-safe-resume)).
 - **Migrations:** plain SQL files embedded in the binary (`include_str!`), applied in order, tracked with `PRAGMA user_version`. Migrations are forward-only. Before applying a migration, the DB file is copied to `boltget.db.bak-<version>`.
   - *Implemented (v0.1):* each migration runs in one transaction together with its `user_version` bump, so a failing migration leaves the previous version intact. The backup is written with `VACUUM INTO` (a consistent copy that includes WAL content) and only for an existing database, not a new one. A database with a higher version than the build knows is refused rather than opened.
 - **Write batching:** segment checkpoints for all active downloads are written in one transaction per checkpoint interval, not one transaction per segment update.
   - *v0.1 deviation:* one transaction per download per writer flush (see [ENGINE.md, Checkpointing](ENGINE.md#checkpointing-and-crash-safe-resume)); still never one per segment update.
 - **Secrets in the DB:** `request_ctx` (cookies, Authorization header, proxy credentials) is encrypted with Windows DPAPI (`CryptProtectData`, current-user scope) before storage. It is deleted when the download completes, unless the user opts to keep it for re-downloads. On other platforms: the OS keychain via the `keyring` crate holds a per-install key used to encrypt this column.
   - *v0.1 deviation:* no secret is stored yet, so nothing needs encrypting: cookies come from a `cookies.txt` whose path is saved and which is read again on resume; `Authorization`, `--cookie` values and proxy passwords are passed again to `resume`. DPAPI arrives with browser-captured cookies (v0.2/v0.3). See [ENGINE.md, Request context](ENGINE.md#request-context).
-- **Logs:** rotating files in `%LOCALAPPDATA%\BoltGet\logs` via `tracing` + `tracing-appender`. URLs are logged with query strings redacted by default (signed URLs are credentials).
+- **Logs:** rotating files in `%LOCALAPPDATA%\Boltget\logs` via `tracing` + `tracing-appender`. URLs are logged with query strings redacted by default (signed URLs are credentials).
 
 ## Threading and async model
 
@@ -377,7 +377,7 @@ The attack surface of a download manager is real: it parses untrusted network da
 ### Browser ↔ app channel
 
 - **Native messaging only.** No localhost HTTP/WebSocket server. A localhost server can be reached by any website the user visits (CSRF, DNS rebinding); native messaging can only be used by the extension IDs we list.
-- **Allowlisted origins.** The host manifest's `allowed_origins` (Chrome/Edge) and `allowed_extensions` (Firefox) contain only the published BoltGet extension IDs. Development IDs are registered only by development builds.
+- **Allowlisted origins.** The host manifest's `allowed_origins` (Chrome/Edge) and `allowed_extensions` (Firefox) contain only the published Boltget extension IDs. Development IDs are registered only by development builds.
 - **Schema validation.** Every message is deserialized into a strict Rust type (`#[serde(deny_unknown_fields)]`), with size limits (URLs ≤ 32 KiB, cookie headers ≤ 64 KiB, whole message ≤ 1 MiB). Invalid messages are rejected and logged.
 - **No privileged verbs.** Messages can only *propose* downloads. There is no message that runs a command, changes the destination to an arbitrary path outside the configured folders without user confirmation, or alters settings.
 - **Named pipe hardening.** The pipe is created with a DACL granting access only to the current user's SID, with `PIPE_REJECT_REMOTE_CLIENTS`, and the server verifies the client process belongs to the same session.
@@ -394,19 +394,19 @@ The attack surface of a download manager is real: it parses untrusted network da
 - Destination paths are canonicalized and must resolve inside the chosen directory (no `..` escapes from server-provided filenames). Filenames from `Content-Disposition` are sanitized (see [ENGINE.md](ENGINE.md#filename-resolution-content-disposition)).
 - In-progress files use a `.boltget` suffix and are renamed atomically on completion.
 - Completed files get the Windows **Mark of the Web** (`Zone.Identifier` alternate data stream with `ZoneId=3` and the `ReferrerUrl`/`HostUrl`), exactly as browsers do, so SmartScreen and Office Protected View keep working. This is a deliberate choice: bypassing MotW would be a security regression compared with downloading in the browser.
-- BoltGet never auto-opens or auto-executes a downloaded file unless the user asked for it.
+- Boltget never auto-opens or auto-executes a downloaded file unless the user asked for it.
 
 ### Sidecars
 
 - yt-dlp and ffmpeg are downloaded only from pinned sources and verified against pinned signatures or SHA-256 hashes before they are made executable. See [VIDEO.md](VIDEO.md#install-verification-and-updates).
-- They are started with an explicit argument vector (`std::process::Command`, never `cmd /c`), a fixed working directory, a sanitized environment, and inside a Windows **Job Object** with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` so they cannot outlive BoltGet.
+- They are started with an explicit argument vector (`std::process::Command`, never `cmd /c`), a fixed working directory, a sanitized environment, and inside a Windows **Job Object** with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` so they cannot outlive Boltget.
 - User-supplied values passed to yt-dlp (URLs, output templates) are validated and passed after `--` where applicable. Options that execute commands (`--exec`, and similar) are never passed.
 - "Sandboxed" in v1 means the above isolation, not an OS sandbox. Running sidecars in an AppContainer or with a restricted token is a post-1.0 hardening item.
 
 ### Updates and binaries
 
 - Release binaries are Authenticode-signed (Azure Trusted Signing).
-- Updates are verified by the Tauri updater against the BoltGet updater public key embedded in the app before anything is executed. A compromised download host cannot push an update. See [RELEASE.md](RELEASE.md).
+- Updates are verified by the Tauri updater against the Boltget updater public key embedded in the app before anything is executed. A compromised download host cannot push an update. See [RELEASE.md](RELEASE.md).
 - TLS uses rustls with the platform certificate verifier, so corporate root CAs in the Windows store work, and there is no option to globally disable certificate validation. A per-download "ignore certificate errors" is deliberately not offered in v1.
 
 ### Privacy

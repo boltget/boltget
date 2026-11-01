@@ -2,7 +2,7 @@
   "name": "@boltget/ui",
   "private": true,
   "version": "0.0.0",
-  "description": "BoltGet UI: design tokens, fonts, the string catalog and Svelte 5 primitives for the desktop app.",
+  "description": "Boltget UI: design tokens, fonts, the string catalog and Svelte 5 primitives for the desktop app.",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "exports": {

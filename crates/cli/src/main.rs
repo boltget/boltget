@@ -1,4 +1,4 @@
-//! `boltget`: the BoltGet command-line downloader.
+//! `boltget`: the Boltget command-line downloader.
 //!
 //! ```text
 //! boltget get <url> [-o <path>] [-c <connections>] [--limit <rate>] [--json] [--header 'Name: value']
@@ -11,7 +11,7 @@
 //! boltget bench [<url>...] [--targets bench/targets.toml] [--runs 5] [-c auto,8] [--json]
 //! ```
 //!
-//! Downloads are kept in a database (`--state`, default `%LOCALAPPDATA%\BoltGet`)
+//! Downloads are kept in a database (`--state`, default `%LOCALAPPDATA%\Boltget`)
 //! so they can be paused and resumed. See `boltget help get` for the exit codes
 //! and the `--json` event format.
 // A CLI prints to stdout by design.
@@ -87,11 +87,11 @@ failed line when the download never got an id (a bad command line).";
 
 const STATE_HELP: &str = "\
 Downloads are recorded in a database in the state directory (default
-%LOCALAPPDATA%\\BoltGet on Windows, $XDG_DATA_HOME/boltget on Linux; override
+%LOCALAPPDATA%\\Boltget on Windows, $XDG_DATA_HOME/boltget on Linux; override
 with --state or BOLTGET_DATA_DIR). Only one boltget process at a time can use
 it; `boltget list` works alongside.";
 
-/// BoltGet: a fast, segmented download manager.
+/// Boltget: a fast, segmented download manager.
 #[derive(Debug, Parser)]
 #[command(
     name = "boltget",

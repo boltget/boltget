@@ -1,6 +1,6 @@
 # Design principles
 
-How BoltGet looks, moves, reads and behaves, in the desktop app, the extension and on boltget.app. Visual tokens (colors, type scale, spacing, radii, the icon grid) are defined in [brand/BRAND.md](../brand/BRAND.md); this document is about how to use them and the product decisions behind them. How these principles apply to the desktop app, screen by screen, is in [APP-DESIGN.md](APP-DESIGN.md).
+How Boltget looks, moves, reads and behaves, in the desktop app, the extension and on boltget.app. Visual tokens (colors, type scale, spacing, radii, the icon grid) are defined in [brand/BRAND.md](../brand/BRAND.md); this document is about how to use them and the product decisions behind them. How these principles apply to the desktop app, screen by screen, is in [APP-DESIGN.md](APP-DESIGN.md).
 
 The ethos in one line: **simple, but makes you say wow.** The wow comes from restraint, great typography and motion that explains the product, never from decoration.
 
@@ -9,7 +9,7 @@ The ethos in one line: **simple, but makes you say wow.** The wow comes from res
 - **One primary action per view.** In the main window it is "Add download". In the add sheet it is "Download". Everything else is secondary or behind a disclosure.
 - **Defaults that are right for 90% of people.** Settings exist for the other 10%, grouped and searchable, never in the first-run flow. Every new setting needs a reason it cannot be a good default.
 - **No chrome for its own sake.** No toolbar of twenty icons, no status bar repeating what the list shows, no splash screen.
-- **Color is information.** The brand gradient is reserved for the BoltGet mark and the active-download indicator; the primary button is solid emerald. Status colors (paused, error, done) are used only on status, never decoratively.
+- **Color is information.** The brand gradient is reserved for the Boltget mark and the active-download indicator; the primary button is solid emerald. Status colors (paused, error, done) are used only on status, never decoratively.
 - **Say less.** If a label needs a tooltip to be understood, rewrite the label.
 
 ## 2. Information density done right
@@ -25,7 +25,7 @@ A download manager is a list of things that change. Power users want many rows o
 
 ## 3. Motion that explains
 
-Motion is how BoltGet shows what the engine is doing. It is never ambient decoration.
+Motion is how Boltget shows what the engine is doing. It is never ambient decoration.
 
 **Signature motion:** the animated pixel arrow, rows lighting up top to bottom like chunks arriving (see [brand/BRAND.md](../brand/BRAND.md)). It appears in exactly these places:
 

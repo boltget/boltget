@@ -1,10 +1,10 @@
 # Governance
 
-BoltGet is a young project with a strong point of view. Its governance is designed to keep it coherent while it grows, and to become more distributed as the contributor base does.
+Boltget is a young project with a strong point of view. Its governance is designed to keep it coherent while it grows, and to become more distributed as the contributor base does.
 
 ## Model
 
-BoltGet uses a **BDFL-style model** ("benevolent dictator for life", in practice "project lead with final say") with a group of maintainers.
+Boltget uses a **BDFL-style model** ("benevolent dictator for life", in practice "project lead with final say") with a group of maintainers.
 
 ## Roles
 
@@ -57,7 +57,7 @@ Some things are **not up for a vote**: the [principles in VISION.md](docs/VISION
 
 ## Money
 
-BoltGet does not currently accept donations. If it does (for example via GitHub Sponsors), funds pay for project costs first (code signing, domain, hosting, test hardware), and how they are spent is published. Money never buys features, priority or roadmap influence.
+Boltget does not currently accept donations. If it does (for example via GitHub Sponsors), funds pay for project costs first (code signing, domain, hosting, test hardware), and how they are spent is published. Money never buys features, priority or roadmap influence.
 
 ## Changes to this document
 

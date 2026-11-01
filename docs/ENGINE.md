@@ -1,6 +1,6 @@
 # Engine specification
 
-The engine (`crates/engine`, crate name `boltget-engine`) is the heart of BoltGet. It is a Rust library used by the desktop app and by the CLI. This document specifies its behaviour in enough detail to implement it and to review implementations against it.
+The engine (`crates/engine`, crate name `boltget-engine`) is the heart of Boltget. It is a Rust library used by the desktop app and by the CLI. This document specifies its behaviour in enough detail to implement it and to review implementations against it.
 
 Conventions used here:
 
@@ -92,7 +92,7 @@ Every download carries a `RequestContext`, captured when the download is created
 Every request the engine sends adds:
 
 - `Accept-Encoding: identity`. Byte ranges apply to the *encoded* representation. If a server compresses on the fly, ranges and sizes become meaningless. We always request the raw bytes.
-- `User-Agent`: the browser's if provided, otherwise `BoltGet/<version>`. (Some servers block non-browser agents; the browser-provided value is preferred for that reason, not to impersonate.)
+- `User-Agent`: the browser's if provided, otherwise `Boltget/<version>`. (Some servers block non-browser agents; the browser-provided value is preferred for that reason, not to impersonate.)
 
 > **Implementation note (v0.1 phase 1):** `RequestContext` carries the URL, the allowlisted headers and the browser-suggested name. Cookies, proxy and auth fields arrive with their features in later phases.
 >
@@ -374,7 +374,7 @@ The engine creates the output file as `<final name>.boltget` in the destination 
 
 On NTFS, extending a file with `SetEndOfFile` (Rust `File::set_len`) is cheap: it does not write zeros. But NTFS tracks a **valid data length (VDL)** per file. A write at an offset beyond the VDL forces NTFS to zero-fill everything between the VDL and the write offset first, synchronously, inside the write call. With segmented downloading, the first write by the last segment's worker lands near the end of the file, so a 50 GB download can trigger a write that blocks until tens of gigabytes of zeros are written. That stall looks exactly like a hung download.
 
-`SetFileValidData` avoids this but requires the `SE_MANAGE_VOLUME_NAME` privilege (administrator) and exposes stale disk contents; BoltGet will not use it.
+`SetFileValidData` avoids this but requires the `SE_MANAGE_VOLUME_NAME` privilege (administrator) and exposes stale disk contents; Boltget will not use it.
 
 ### Strategy on Windows
 
@@ -509,7 +509,7 @@ delay = random_uniform(0, min(max_delay, base × 2^attempt))
 
 ## Link refresh
 
-Download links often expire: pre-signed cloud storage URLs, file-host session links, tokens in the query string. IDM's "refresh download address" lets the user supply a new link and continue; BoltGet does the same, with stricter validation.
+Download links often expire: pre-signed cloud storage URLs, file-host session links, tokens in the query string. IDM's "refresh download address" lets the user supply a new link and continue; Boltget does the same, with stricter validation.
 
 ### Detecting expiry
 
@@ -616,7 +616,7 @@ Queues and the scheduler (v0.5) can change limits by time of day ("unlimited fro
 A whole-file hash says *that* the file is wrong, not *where*. Targeted repair needs piece-level hashes:
 
 - **Metalink** (RFC 5854) `<pieces>` hashes, and other formats that provide per-piece hashes, allow verifying each piece independently and re-fetching only bad pieces. Supported when Metalink support lands (post-1.0).
-- **Without piece hashes,** BoltGet can offer "Repair": re-download the file in segments while comparing each range with the existing bytes, rewriting only ranges that differ. This re-uses bandwidth but avoids discarding the file, and it reports which ranges were wrong, which is valuable for bug reports. Repair is a v0.5 feature.
+- **Without piece hashes,** Boltget can offer "Repair": re-download the file in segments while comparing each range with the existing bytes, rewriting only ranges that differ. This re-uses bandwidth but avoids discarding the file, and it reports which ranges were wrong, which is valuable for bug reports. Repair is a v0.5 feature.
 
 ### Internal checks
 
@@ -628,7 +628,7 @@ A whole-file hash says *that* the file is wrong, not *where*. Targeted repair ne
 - Supported: HTTP proxy (plain HTTP via absolute-form requests; HTTPS via `CONNECT`), HTTPS proxy (TLS to the proxy), SOCKS5 with remote DNS resolution (the equivalent of `socks5h`), SOCKS5 username/password auth. SOCKS4 is not planned.
 - Proxy auth: Basic and Digest for HTTP proxies. NTLM/Negotiate (common in corporate environments) is post-1.0 and needs investigation.
 - Configuration precedence: per-download override → per-category → global setting → system proxy (desktop app) / environment variables `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` (CLI).
-- **System proxy on Windows (v0.2):** read the current user's WinINet proxy settings (static proxy and bypass list). PAC/WPAD support is post-1.0; when a PAC URL is configured and unsupported, BoltGet shows that it is ignoring it rather than failing silently.
+- **System proxy on Windows (v0.2):** read the current user's WinINet proxy settings (static proxy and bypass list). PAC/WPAD support is post-1.0; when a PAC URL is configured and unsupported, Boltget shows that it is ignoring it rather than failing silently.
 - The extension can also tell the app which proxy the browser used, but browsers do not expose this reliably; v1 relies on system and app settings.
 
 > **Implementation notes (v0.1 phase 3)** (`crates/engine/src/proxy.rs`):
@@ -743,8 +743,8 @@ The v0.1 milestone ships with a published benchmark. The goal is a fair, reprodu
 ### Principles
 
 - Same machine, same network, same time window, same file, same connection count.
-- Alternate the order of runs (IDM, BoltGet, IDM, BoltGet, ...) to cancel out drift in network conditions.
-- Publish everything: scripts, raw timings, system info, and the scenarios BoltGet loses.
+- Alternate the order of runs (IDM, Boltget, IDM, Boltget, ...) to cancel out drift in network conditions.
+- Publish everything: scripts, raw timings, system info, and the scenarios Boltget loses.
 - The person running the benchmark records the IDM version and settings. (We should check IDM's license terms regarding publishing benchmark results before publishing; see [open questions](#open-questions).)
 
 ### Environments
@@ -766,10 +766,10 @@ The v0.1 milestone ships with a published benchmark. The goal is a fair, reprodu
 
 | Metric | How |
 |---|---|
-| Wall-clock time to complete | From the moment the download is started to the file being complete on disk. For IDM, measured externally: start via `idman.exe` command-line switches, detect completion by the final file appearing with the expected size and hash. For BoltGet, the same external measurement, plus internal timestamps. |
+| Wall-clock time to complete | From the moment the download is started to the file being complete on disk. For IDM, measured externally: start via `idman.exe` command-line switches, detect completion by the final file appearing with the expected size and hash. For Boltget, the same external measurement, plus internal timestamps. |
 | Average throughput | size / time |
-| Throughput over time | BoltGet internal 100 ms samples; for IDM, sample the partial file's growth (IDM writes to temporary files, so this may not be possible; see open questions) or NIC counters on a dedicated machine |
-| Time to first byte | BoltGet internal; IDM n/a |
+| Throughput over time | Boltget internal 100 ms samples; for IDM, sample the partial file's growth (IDM writes to temporary files, so this may not be possible; see open questions) or NIC counters on a dedicated machine |
+| Time to first byte | Boltget internal; IDM n/a |
 | Tail time | Time from 95% to 100%, which is where dynamic segmentation pays off |
 | Connections used | Server-side connection log in the lab |
 | CPU and RAM | Process counters sampled at 1 Hz (Windows performance counters) |
@@ -781,13 +781,13 @@ The v0.1 milestone ships with a published benchmark. The goal is a fair, reprodu
 - Warm-up run discarded for each tool and scenario.
 - At least 5 measured runs per tool per scenario (more on the real-world targets, where variance is higher).
 - Report median and interquartile range; show every run in the raw data.
-- Configurations: IDM default settings (8 connections), IDM at maximum connections (32), BoltGet default (adaptive), and BoltGet fixed at the same counts as IDM.
+- Configurations: IDM default settings (8 connections), IDM at maximum connections (32), Boltget default (adaptive), and Boltget fixed at the same counts as IDM.
 - A difference is only claimed if it is larger than the run-to-run spread.
 
 ### Deliverables
 
 - `bench/` directory with the harness (Rust or PowerShell scripts), scenario definitions and the server-side shaping scripts.
-- `boltget bench` command for users to run BoltGet-only measurements on their own network.
+- `boltget bench` command for users to run Boltget-only measurements on their own network.
 - A results page on the website, dated, with the exact versions tested.
 
 > **Implementation notes (v0.1 benchmark):** the method as built, and where it differs from the plan above. Results and their limitations are in [BENCHMARK.md](BENCHMARK.md).
@@ -801,7 +801,7 @@ The v0.1 milestone ships with a published benchmark. The goal is a fair, reprodu
 >   - HTTP/2: `--tls-port N` adds an HTTPS listener (ALPN `h2` + `http/1.1`, `--alpn h2|http1` for one) sharing routes and `/_stats`, and `{lab}/tls/...` redirects to it, so plain `{lab}` targets can reach it; `--ca-out FILE` writes the CA for `boltget bench --ca-cert FILE`. `/_stats` also reports `max_streams` (streams in flight on one connection) and `refused` (requests turned away by `conn_limit`).
 >
 >   Not covered: packet loss (0.5%, 2%) cannot be modelled faithfully on loopback at the application layer, since TCP hides it from the server, so it is deferred to the real second-machine lab with `tc netem`, as are kernel-level latency (which also slows TCP's ramp-up) and a wired-LAN bottleneck. IDM does not trust the lab CA, so `bench/idm-compare.ps1` comparisons over HTTPS need that CA in the Windows store, which the script does not do.
-> - **IDM** is driven by `bench/idm-compare.ps1`. On the machine used, `IDMan.exe /d <url> /p <dir> /f <file> /n` returned exit code 0 and never started a download (also outside any sandbox), so the script uses IDM's COM interface `ICIDMLinkTransmitter::SendLinkToIDM` with flag 1 (no dialogs), the interface browser integrations use. Completion is the final file existing with the expected size and openable exclusively (IDM has closed it). BoltGet is measured the same way from outside (`boltget get --no-state` start to process exit), with its internal `elapsed_ms` recorded too. Each file's SHA-256 is checked after the clock stops. IDM's settings are read from `HKCU\Software\DownloadManager` and recorded, never changed; the "IDM at 32 connections" configuration needs a manual settings change and was not run.
+> - **IDM** is driven by `bench/idm-compare.ps1`. On the machine used, `IDMan.exe /d <url> /p <dir> /f <file> /n` returned exit code 0 and never started a download (also outside any sandbox), so the script uses IDM's COM interface `ICIDMLinkTransmitter::SendLinkToIDM` with flag 1 (no dialogs), the interface browser integrations use. Completion is the final file existing with the expected size and openable exclusively (IDM has closed it). Boltget is measured the same way from outside (`boltget get --no-state` start to process exit), with its internal `elapsed_ms` recorded too. Each file's SHA-256 is checked after the clock stops. IDM's settings are read from `HKCU\Software\DownloadManager` and recorded, never changed; the "IDM at 32 connections" configuration needs a manual settings change and was not run.
 > - Not measured yet: throughput over time for IDM (open question 7), CPU and RAM, resume correctness against IDM.
 
 ## Open questions

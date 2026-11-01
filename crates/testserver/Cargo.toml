@@ -1,6 +1,6 @@
 [package]
 name = "boltget-testserver"
-description = "Misbehaving local HTTP server used by BoltGet's integration tests"
+description = "Misbehaving local HTTP server used by Boltget's integration tests"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

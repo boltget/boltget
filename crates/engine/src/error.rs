@@ -188,7 +188,7 @@ pub enum Error {
 
     /// Another process holds the owner lock of the download database.
     #[error(
-        "the download database in {} is in use by another BoltGet process",
+        "the download database in {} is in use by another Boltget process",
         dir.display()
     )]
     DatabaseLocked {

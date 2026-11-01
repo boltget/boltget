@@ -12,7 +12,7 @@ rust-version = "1.89"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/boltget/boltget"
 homepage = "https://boltget.app"
-authors = ["BoltGet contributors"]
+authors = ["Boltget contributors"]
 publish = false
 
 [workspace.dependencies]

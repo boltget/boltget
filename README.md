@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="brand/icon.svg" width="120" height="120" alt="BoltGet icon: a pixel down-arrow in a mint-to-emerald gradient on near-black">
+  <img src="brand/icon.svg" width="120" height="120" alt="Boltget icon: a pixel down-arrow in a mint-to-emerald gradient on near-black">
 </p>
 
-<h1 align="center">BoltGet</h1>
+<h1 align="center">Boltget</h1>
 
 <p align="center">
   <strong>Every byte, at full speed.</strong>
@@ -31,11 +31,11 @@
 
 ## What it does
 
-BoltGet splits every file across several connections and keeps them all busy until the last byte. Its engine is written in Rust and built around three goals: speed, reliability and craft.
+Boltget splits every file across several connections and keeps them all busy until the last byte. Its engine is written in Rust and built around three goals: speed, reliability and craft.
 
 - **Dynamic segmentation.** A download starts with 4 connections and adds more only while they make it faster. When a connection finishes early, it takes over half of the largest remaining part, so all connections finish together. A slow or stalled connection is replaced within about a second. [Engine spec](docs/ENGINE.md)
 - **Crash-safe resume.** Progress is recorded only after the bytes are on disk. Kill the process or lose power, and `boltget resume` continues where it stopped. Our test harness has run 1,000 kill-and-resume cycles; every file came out byte-identical.
-- **Link refresh.** Signed link expired at 97%? Give BoltGet a new one. It checks that the file is the same (size, ETag or sample bytes) and continues instead of starting over.
+- **Link refresh.** Signed link expired at 97%? Give Boltget a new one. It checks that the file is the same (size, ETag or sample bytes) and continues instead of starting over.
 - **Bandwidth limits.** Per download and global, changed without reconnecting.
 - **Checksum verification.** SHA-256, SHA-512, SHA-1 or MD5, plus digests the server sends. The file is hashed while it downloads, so there is no wait at the end.
 - **Proxies and cookies.** HTTP, HTTPS and SOCKS5 proxies; browser `cookies.txt` files matched per request; HTTP Basic auth.
@@ -118,7 +118,7 @@ The complete index is [docs/README.md](docs/README.md).
 
 ## Contributing
 
-The best time to shape BoltGet is now, while most of it is still being designed. Start with [CONTRIBUTING.md](CONTRIBUTING.md). It is the rulebook for everything: Conventional Commits, branching, PR rules, the RFC process, code style, the string catalog and our policy on AI-assisted contributions.
+The best time to shape Boltget is now, while most of it is still being designed. Start with [CONTRIBUTING.md](CONTRIBUTING.md). It is the rulebook for everything: Conventional Commits, branching, PR rules, the RFC process, code style, the string catalog and our policy on AI-assisted contributions.
 
 - Questions and ideas: [GitHub Discussions](https://github.com/boltget/boltget/discussions) (see [SUPPORT.md](SUPPORT.md))
 - Bugs and concrete feature requests: [Issues](https://github.com/boltget/boltget/issues)
@@ -128,6 +128,6 @@ The best time to shape BoltGet is now, while most of it is still being designed.
 
 ## License
 
-BoltGet is free and open source under the **GNU General Public License v3.0 or later** ([LICENSE](LICENSE)). Copyleft keeps it that way: anyone can use, study, modify and share it, and any distributed fork stays open too.
+Boltget is free and open source under the **GNU General Public License v3.0 or later** ([LICENSE](LICENSE)). Copyleft keeps it that way: anyone can use, study, modify and share it, and any distributed fork stays open too.
 
-"BoltGet" and the BoltGet icon identify this project. Please do not use them to brand a modified build in a way that suggests it is the official one.
+"Boltget" and the Boltget icon identify this project. Please do not use them to brand a modified build in a way that suggests it is the official one.

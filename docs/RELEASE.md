@@ -1,10 +1,10 @@
 # Release process
 
-How BoltGet is versioned, built, signed, published and updated. This is the design the CI workflows implement step by step: v0.1 for the CLI (in place, see below), v0.2 for app previews, v1.0 for signed, auto-updating releases.
+How Boltget is versioned, built, signed, published and updated. This is the design the CI workflows implement step by step: v0.1 for the CLI (in place, see below), v0.2 for app previews, v1.0 for signed, auto-updating releases.
 
 ## Versioning
 
-BoltGet follows [Semantic Versioning 2.0.0](https://semver.org).
+Boltget follows [Semantic Versioning 2.0.0](https://semver.org).
 
 - **One product version** for the desktop app, the bundled CLI and the native messaging host, tagged in git as `vX.Y.Z` (for example `v0.2.0`, `v1.0.0-beta.3`).
 - **Before 1.0:** a minor bump (`0.2` → `0.3`) may contain breaking changes (database schema migrations, CLI flags, protocol). Patch releases are fixes only.
@@ -45,7 +45,7 @@ Workflows (planned):
    - `tauri build` producing the NSIS installer (and MSI for stable), with updater artifacts enabled (`bundle.createUpdaterArtifacts`).
    - The standalone CLI zip (`boltget-<version>-windows-x64.zip`).
    - Extension packages for each store (`wxt zip` per browser).
-3. **Sign** every executable we produce (`BoltGet.exe`, `boltget.exe`, `boltget-native-host.exe`, the installer itself) with Authenticode via Azure Trusted Signing (see [Code signing](#code-signing)). Tauri invokes the signing tool for its outputs through `bundle.windows.signCommand`; the CLI is signed by an explicit workflow step.
+3. **Sign** every executable we produce (`Boltget.exe`, `boltget.exe`, `boltget-native-host.exe`, the installer itself) with Authenticode via Azure Trusted Signing (see [Code signing](#code-signing)). Tauri invokes the signing tool for its outputs through `bundle.windows.signCommand`; the CLI is signed by an explicit workflow step.
 4. **Updater signatures:** the Tauri bundler signs updater artifacts with the updater private key (from secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), producing `.sig` files.
 5. **Checksums and provenance:** generate `SHA256SUMS` for all assets, an SBOM (CycloneDX, for example via `cargo-cyclonedx` plus a JS SBOM tool), and GitHub artifact attestations (`actions/attest-build-provenance`).
 6. **Publish:** create a **draft** GitHub Release with all assets and the changelog section for the version.
@@ -66,24 +66,24 @@ Setup:
 3. Sign with the Trusted Signing tooling (signtool with the Trusted Signing dlib, or a wrapper such as `trusted-signing-cli`, which Tauri's documentation describes for `signCommand`), with RFC 3161 timestamping so signatures stay valid after the certificate rotates.
 4. The `release` environment in GitHub requires maintainer approval before the signing job runs.
 
-**Eligibility risk:** Trusted Signing's public-trust certificates have had eligibility restrictions (organization age, organization vs individual, supported countries) that have changed over time. Confirm eligibility for the BoltGet entity early (before v0.5). Fallbacks, in order:
+**Eligibility risk:** Trusted Signing's public-trust certificates have had eligibility restrictions (organization age, organization vs individual, supported countries) that have changed over time. Confirm eligibility for the Boltget entity early (before v0.5). Fallbacks, in order:
 
 1. **SignPath Foundation**, which offers free code signing to qualifying open-source projects, with signing happening on their infrastructure from CI artifacts.
 2. A standard OV code signing certificate on a cloud HSM.
 
 **SmartScreen:** a new signing identity still starts with little reputation. Expect SmartScreen prompts for early downloads; reputation builds with download volume. Do not rotate signing identities without need.
 
-**What is not signed by us:** yt-dlp and ffmpeg are third-party binaries downloaded at runtime and verified by hash/signature, not re-signed by BoltGet (see [VIDEO.md](VIDEO.md#verification)).
+**What is not signed by us:** yt-dlp and ffmpeg are third-party binaries downloaded at runtime and verified by hash/signature, not re-signed by Boltget (see [VIDEO.md](VIDEO.md#verification)).
 
 ## Installer
 
 Built by the Tauri bundler.
 
-- **NSIS (default):** per-user install (`installMode: currentUser`) into `%LOCALAPPDATA%\Programs\BoltGet`. No admin rights needed, which also fits per-user native messaging registration (HKCU) and per-user autostart.
+- **NSIS (default):** per-user install (`installMode: currentUser`) into `%LOCALAPPDATA%\Programs\Boltget`. No admin rights needed, which also fits per-user native messaging registration (HKCU) and per-user autostart.
 - **MSI (WiX), stable only:** per-machine install for managed environments, registering native messaging hosts under HKLM.
 - **WebView2:** the installer bootstraps the Evergreen WebView2 runtime if it is missing (Tauri's default download-bootstrapper mode). An offline installer variant with the WebView2 offline installer embedded can be added if needed for air-gapped environments.
 - The installer registers: Start menu shortcut, optional autostart (off by default, offered in onboarding), native messaging hosts for Chrome, Edge and Firefox ([BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#native-messaging-host-registration-on-windows)), optional `boltget` on `PATH`.
-- The uninstaller removes everything it added. User data (database, settings, downloaded files) is kept unless the user ticks "Also remove my BoltGet data". Downloaded files are never removed.
+- The uninstaller removes everything it added. User data (database, settings, downloaded files) is kept unless the user ticks "Also remove my Boltget data". Downloaded files are never removed.
 
 ## Auto-update
 
@@ -114,7 +114,7 @@ Full bit-for-bit reproducible builds are a goal, not a v1.0 guarantee (Authentic
 - **Locked dependencies:** `Cargo.lock` and `pnpm-lock.yaml` are committed; release builds use `--locked` / `--frozen-lockfile`.
 - **Pinned CI:** actions pinned to tagged versions at minimum (commit SHAs for actions that touch secrets or signing).
 - **`SOURCE_DATE_EPOCH`** set from the tagged commit's timestamp where tools support it.
-- **Published:** `SHA256SUMS`, SBOMs, and GitHub build provenance attestations for every release asset, so anyone can verify an asset was built by the BoltGet workflow from a specific commit.
+- **Published:** `SHA256SUMS`, SBOMs, and GitHub build provenance attestations for every release asset, so anyone can verify an asset was built by the Boltget workflow from a specific commit.
 - **Documented build:** `docs/BUILDING.md` (written in v0.1) describes how to build the exact release from source.
 
 ## Release checklist

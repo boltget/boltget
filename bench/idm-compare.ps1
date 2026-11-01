@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Compares BoltGet with Internet Download Manager (IDM) on the targets in
+    Compares Boltget with Internet Download Manager (IDM) on the targets in
     bench/targets.toml: same machine, same files, interleaved runs.
 
 .DESCRIPTION
@@ -11,7 +11,7 @@
       IDM      from handing the link to IDM (its COM interface, the one browser
                integrations use) until the final file exists with the expected
                size and IDM has closed it (an exclusive open succeeds).
-      BoltGet  from starting `boltget get --no-state` until the process exits
+      Boltget  from starting `boltget get --no-state` until the process exits
                (the file is complete under its final name by then).
 
     Every file's SHA-256 is checked after the clock stops, then the file is
@@ -30,8 +30,8 @@
     Measured rounds per target.
 .PARAMETER Warmup
     Warm-up rounds per target (recorded, not counted).
-.PARAMETER BoltGetSettings
-    BoltGet connection settings: 'auto' (the default of boltget get) or a count.
+.PARAMETER BoltgetSettings
+    Boltget connection settings: 'auto' (the default of boltget get) or a count.
 .PARAMETER Dir
     Scratch directory for the downloads (emptied of payloads afterwards).
 .PARAMETER Out
@@ -47,7 +47,7 @@ param(
     [string[]]$Targets = @('cachefly-10mb', 'cachefly-100mb', 'nforce-100mb', 'lab-throttled-100mib', 'lab-1gib'),
     [int]$Runs = 5,
     [int]$Warmup = 1,
-    [string[]]$BoltGetSettings = @('auto', '8'),
+    [string[]]$BoltgetSettings = @('auto', '8'),
     [Parameter(Mandatory = $true)][string]$Dir,
     [Parameter(Mandatory = $true)][string]$Out,
     [int]$TimeoutSec = 600,
@@ -62,7 +62,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3
 # `powershell -File` passes 'a,b' as one string.
 $Targets = @($Targets | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
-$BoltGetSettings = @($BoltGetSettings | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+$BoltgetSettings = @($BoltgetSettings | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 
 $repo = Split-Path -Parent $PSScriptRoot
 $boltget = Join-Path $repo 'target\release\boltget.exe'
@@ -144,7 +144,7 @@ function Invoke-Idm($t, [string]$name) {
     @{ ok = $false; wall_ms = $sw.Elapsed.TotalMilliseconds; internal_ms = $null; max_connections = $null; error = "timeout after $TimeoutSec s"; path = $path }
 }
 
-function Invoke-BoltGet($t, [string]$name, [string]$setting) {
+function Invoke-Boltget($t, [string]$name, [string]$setting) {
     $path = Join-Path $Dir $name
     Remove-Payload $path
     $log = Join-Path $Dir 'boltget-last.jsonl'
@@ -202,7 +202,7 @@ $info = [ordered]@{
     targets         = $Targets
     runs            = $Runs
     warmup          = $Warmup
-    boltget_settings = $BoltGetSettings
+    boltget_settings = $BoltgetSettings
     lab_port        = $LabPort
 }
 $info | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $Out 'environment.json')
@@ -215,7 +215,7 @@ Start-Sleep -Milliseconds 500
 $csvPath = Join-Path $Out 'runs.csv'
 'target,tool,setting,phase,round,order,ok,wall_ms,internal_ms,max_connections,server_max_concurrent,server_connections,server_requests,server_body_bytes,sha256_ok,error,started' |
     Set-Content -Encoding utf8 $csvPath
-$tools = @(@{ tool = 'idm'; setting = 'default' }) + ($BoltGetSettings | ForEach-Object { @{ tool = 'boltget'; setting = $_ } })
+$tools = @(@{ tool = 'idm'; setting = 'default' }) + ($BoltgetSettings | ForEach-Object { @{ tool = 'boltget'; setting = $_ } })
 $results = New-Object System.Collections.Generic.List[object]
 try {
     foreach ($t in $targetList) {
@@ -231,7 +231,7 @@ try {
                 $name = "$($t.name).$($tool.tool)-$($tool.setting).bin"
                 if ($lab) { $null = Get-LabStats -Reset }
                 $started = (Get-Date).ToString('o')
-                $r = if ($tool.tool -eq 'idm') { Invoke-Idm $t $name } else { Invoke-BoltGet $t $name $tool.setting }
+                $r = if ($tool.tool -eq 'idm') { Invoke-Idm $t $name } else { Invoke-Boltget $t $name $tool.setting }
                 $st = if ($lab) { Get-LabStats } else { $null }
                 $shaOk = $null
                 if ($r.ok -and (Test-Path -LiteralPath $r.path)) {

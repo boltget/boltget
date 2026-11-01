@@ -1,11 +1,15 @@
 # Changelog
 
-All notable changes to BoltGet will be documented in this file.
+All notable changes to Boltget will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- The name is now written Boltget, with one capital, everywhere: the CLI's messages, the website, the logo and the documentation. Commands, paths and settings (`boltget`, `BOLTGET_DATA_DIR`) do not change.
 
 ## [0.1.0] - 2026-10-31
 
@@ -13,15 +17,15 @@ The first release: the download engine and the `boltget` command-line downloader
 
 ### Changed
 
-- Faster on servers that limit the speed of each connection: the adaptive connection count reaches 16 connections in about 1.3 s (it took about 6 s before). On a local server limited to 2 MiB/s per connection, a 100 MiB download now takes 4.3 s instead of 6.8 s (8 fixed connections: 6.6 s; 16 fixed: 4.0 s). BoltGet also remembers such a server for 24 hours, and the next download from it starts with the number of connections that paid off: a 10 MiB file from that server then takes 1.0 s instead of 1.4 s. Servers that do not reward more connections, and those that answer `429`/`503`, are handled as before.
+- Faster on servers that limit the speed of each connection: the adaptive connection count reaches 16 connections in about 1.3 s (it took about 6 s before). On a local server limited to 2 MiB/s per connection, a 100 MiB download now takes 4.3 s instead of 6.8 s (8 fixed connections: 6.6 s; 16 fixed: 4.0 s). Boltget also remembers such a server for 24 hours, and the next download from it starts with the number of connections that paid off: a 10 MiB file from that server then takes 1.0 s instead of 1.4 s. Servers that do not reward more connections, and those that answer `429`/`503`, are handled as before.
 
 ### Added
 
-- Downloads to exFAT and FAT32 USB drives and SD cards no longer stall on large files. These file systems cannot skip ahead in a file, so a connection that starts writing far into it makes Windows fill everything before it with zeros first, which could freeze a multi-gigabyte download for minutes. BoltGet now keeps new connections within 64 MiB of the earliest missing byte there, so the file fills from the front and the pause is short. Drives that support sparse files (NTFS, ReFS) are unchanged.
+- Downloads to exFAT and FAT32 USB drives and SD cards no longer stall on large files. These file systems cannot skip ahead in a file, so a connection that starts writing far into it makes Windows fill everything before it with zeros first, which could freeze a multi-gigabyte download for minutes. Boltget now keeps new connections within 64 MiB of the earliest missing byte there, so the file fills from the front and the pause is short. Drives that support sparse files (NTFS, ReFS) are unchanged.
 - `--ca-cert FILE` (PEM or DER, repeatable) on `get`, `resume`, `refresh` and `bench` trusts extra root certificates on top of the system's trust store, for example a company CA that is not installed in Windows. Not saved: pass it again to `resume`.
 - `boltget-testserver` can now serve HTTPS with HTTP/2 (`--tls`, or `--tls-port N` next to the plain port, `--alpn`, `--ca-out FILE` for its generated CA) and shape lab scenarios: added latency (`latency_ms=`) and a server-side connection limit (`conn_limit=`). New lab targets in `bench/targets.toml` cover 100 ms latency, a 4-connection limit and HTTP/2.
 - `boltget bench`: measures download times on your own network. It runs each URL, or the targets in a TOML file such as `bench/targets.toml`, several times (`--runs`, `--warmup`), compares connection settings in rotating order (`-c auto,8`), checks size and SHA-256, and reports the median, interquartile range, min-max, MiB/s, time to first byte and tail time as a table, line-delimited JSON (`--json`) or CSV (`--csv`). Downloaded files are deleted after each run.
-- A first benchmark against Internet Download Manager, with method, raw data and limitations: `docs/BENCHMARK.md`. The harness (`bench/`) includes a versioned target list, a PowerShell script that drives IDM and BoltGet on the same files, and `boltget-testserver`, a local server for reproducible lab scenarios.
+- A first benchmark against Internet Download Manager, with method, raw data and limitations: `docs/BENCHMARK.md`. The harness (`bench/`) includes a versioned target list, a PowerShell script that drives IDM and Boltget on the same files, and `boltget-testserver`, a local server for reproducible lab scenarios.
 
 - The number of connections adapts: a download starts with 4 and adds connections only while they make it faster, reverts ones that do not, and halves when the server answers `429`/`503`, remembering that host's limit for 24 hours. `-c N` still fixes the count; `--max-connections` caps the adaptive one.
 - Slow connections no longer hold up the end of a download: a slow connection's remaining bytes are split with an idle connection down to 64 KiB, and a stalled or very slow last connection is replaced within about a second.
@@ -32,7 +36,7 @@ The first release: the download engine and the `boltget` command-line downloader
 - Cookies and logins: `--cookie-file cookies.txt` (Netscape format, as exported from browsers) sends each request only the cookies that match it, also across redirects, and cookies set by the server are kept for the download; `--cookie name=value` and `--user user:password` (HTTP Basic) are also available. Only the cookie file's path is saved; it is read again on `resume`.
 - Downloads can be paused and resumed, and survive crashes. `boltget get` records every download under a numeric id; Ctrl-C pauses it (exit code 130) and `boltget resume <id>` continues where it stopped, even after the process was killed or the machine lost power. Progress is saved only once the bytes are on disk, so a resumed file is always byte-identical to the original. If the file changed on the server in the meantime, `resume` stops with a clear error instead of mixing two versions; `boltget resume <id> --restart` downloads it again.
 - `boltget list [--json]` shows recorded downloads with their state and progress (it also works while another `boltget` is downloading), `boltget pause <id>` marks a download that is not running as paused, and `boltget remove <id> [--delete-file]` forgets a download and optionally deletes its file.
-- The download database lives in `%LOCALAPPDATA%\BoltGet` (Linux: `$XDG_DATA_HOME/boltget`); `--state <dir>` or `BOLTGET_DATA_DIR` choose another directory, and `boltget get --no-state` downloads without recording anything. `Authorization` headers are never saved: pass `-H` again to `resume`. Only one `boltget` at a time can use the database; a second one says so and exits with code 7. Exit code 8 means no such download, or the command does not apply to it (for example resuming a completed download).
+- The download database lives in `%LOCALAPPDATA%\Boltget` (Linux: `$XDG_DATA_HOME/boltget`); `--state <dir>` or `BOLTGET_DATA_DIR` choose another directory, and `boltget get --no-state` downloads without recording anything. `Authorization` headers are never saved: pass `-H` again to `resume`. Only one `boltget` at a time can use the database; a second one says so and exits with code 7. Exit code 8 means no such download, or the command does not apply to it (for example resuming a completed download).
 - `--json` output: every line now carries the download `id`, a `resumed` event reports the progress a resume continues from, and a `paused` line ends a download stopped with Ctrl-C.
 - `boltget get <url>`: a command-line downloader that splits a file across several connections (adaptive, or a fixed `-c N`) and keeps re-splitting the largest remaining part, so connections finish together. It shows a live progress bar with speed, ETA and a segment map, prints line-delimited JSON events with `--json`, and documents its exit codes in `boltget get --help`.
 - Downloads recover on their own: retries with backoff, `Retry-After` respected, stalled or very slow connections reconnected, redirects followed, and expiring signed download links re-resolved from the original URL.

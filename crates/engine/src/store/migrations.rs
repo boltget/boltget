@@ -66,8 +66,8 @@ pub(crate) fn migrate(
     let to = latest(migrations);
     if from > to {
         return Err(Error::Database(format!(
-            "{} has schema version {from}, but this BoltGet only knows up to {to}; \
-             it was written by a newer BoltGet",
+            "{} has schema version {from}, but this Boltget only knows up to {to}; \
+             it was written by a newer Boltget",
             db_path.display()
         )));
     }
@@ -199,7 +199,7 @@ mod tests {
         let (mut c, p) = open(dir.path());
         c.pragma_update(None, "user_version", 99).unwrap();
         let e = migrate(&mut c, &p, MIGRATIONS).unwrap_err();
-        assert!(e.to_string().contains("newer BoltGet"), "{e}");
+        assert!(e.to_string().contains("newer Boltget"), "{e}");
         assert_eq!(current(&c).unwrap(), 99);
     }
 }

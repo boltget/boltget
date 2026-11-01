@@ -1,6 +1,6 @@
-# Contributing to BoltGet
+# Contributing to Boltget
 
-Thanks for your interest in BoltGet. This document is the rulebook for contributing: how we talk, how we decide, how code gets in, and what "done" means. It is long because it is meant to be authoritative; the [quick version](#quick-version) fits on one screen.
+Thanks for your interest in Boltget. This document is the rulebook for contributing: how we talk, how we decide, how code gets in, and what "done" means. It is long because it is meant to be authoritative; the [quick version](#quick-version) fits on one screen.
 
 By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). How decisions are made and who maintains what is described in [GOVERNANCE.md](GOVERNANCE.md). Where to ask questions is in [SUPPORT.md](SUPPORT.md).
 
@@ -43,9 +43,9 @@ By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). 
 - **Report bugs** (once there is something to break) using the bug report form.
 - **Propose features** using the feature request form. Check [docs/FEATURES.md](docs/FEATURES.md) and [docs/ROADMAP.md](docs/ROADMAP.md) first, and the [non-goals](docs/VISION.md#non-goals).
 - **Fix things.** Issues labelled [`good first issue`](https://github.com/boltget/boltget/labels/good%20first%20issue) and [`help wanted`](https://github.com/boltget/boltget/labels/help%20wanted) are the best entry points.
-- **Benchmark.** Run BoltGet (and IDM, if you have it) on your network with the published harness and share results. Real-world data is gold.
+- **Benchmark.** Run Boltget (and IDM, if you have it) on your network with the published harness and share results. Real-world data is gold.
 - **Correct comparisons.** If [FEATURES.md](docs/FEATURES.md) says something wrong about another product, a PR with a source is very welcome.
-- **Translate?** Not yet. BoltGet ships in English only; see [User-facing strings](#user-facing-strings).
+- **Translate?** Not yet. Boltget ships in English only; see [User-facing strings](#user-facing-strings).
 
 ## Discuss before big changes
 
@@ -114,7 +114,7 @@ pnpm --filter @boltget/extension dev
 pnpm --filter @boltget/web dev
 ```
 
-Never point development builds at your real BoltGet data: development builds use a separate data directory and a separate native messaging host name automatically.
+Never point development builds at your real Boltget data: development builds use a separate data directory and a separate native messaging host name automatically.
 
 ## Branching and merging
 
@@ -175,7 +175,7 @@ Individual commits inside a PR should follow the format too (it makes review eas
 
 ## License of contributions
 
-BoltGet is GPL-3.0-or-later. Contributions are accepted under the same license ("inbound = outbound"): by opening a pull request you confirm that you have the right to submit the change and that it is licensed under GPL-3.0-or-later. There is no CLA and no sign-off line to add to your commits. Contributors keep the copyright in their work.
+Boltget is GPL-3.0-or-later. Contributions are accepted under the same license ("inbound = outbound"): by opening a pull request you confirm that you have the right to submit the change and that it is licensed under GPL-3.0-or-later. There is no CLA and no sign-off line to add to your commits. Contributors keep the copyright in their work.
 
 ## Pull requests
 
@@ -242,7 +242,7 @@ Formatting is never discussed in review: the tools decide.
 
 ## User-facing strings
 
-BoltGet is **English only** (app, extension and website). To keep wording consistent and leave the door open for community translations after 1.0:
+Boltget is **English only** (app, extension and website). To keep wording consistent and leave the door open for community translations after 1.0:
 
 - **All user-facing strings live in the central string catalog** and are referenced by key. No string literals for UI text in components, no user-facing messages built in Rust (the engine returns message keys and parameters; see [docs/ARCHITECTURE.md, Error handling](docs/ARCHITECTURE.md#error-handling)).
 - Whole messages with named placeholders (`"{count} downloads paused"`), never sentences assembled by concatenation. Use plural-aware messages for counts.
@@ -253,7 +253,7 @@ Localization is a possible post-1.0, community-driven effort, not a current goal
 
 ## Documentation
 
-- Design docs live in [docs/](docs/README.md) and are the source of truth for how BoltGet works. Code that deviates from a doc must update the doc in the same PR.
+- Design docs live in [docs/](docs/README.md) and are the source of truth for how Boltget works. Code that deviates from a doc must update the doc in the same PR.
 - User docs live in the website's Starlight docs (`apps/web`) once it exists.
 - Write in plain, direct English. Prefer concrete examples and tables over prose. Mark design targets as such; do not present unmeasured numbers as facts.
 - Repository Markdown is English only.
@@ -276,7 +276,7 @@ Localization is a possible post-1.0, community-driven effort, not a current goal
 
 ## Versioning
 
-BoltGet follows [Semantic Versioning](https://semver.org). Before 1.0, minor versions may contain breaking changes. What counts as public API, how channels work and how the extension's version maps to the product version is defined in [docs/RELEASE.md](docs/RELEASE.md#versioning). Contributors do not bump versions in PRs; maintainers do at release time.
+Boltget follows [Semantic Versioning](https://semver.org). Before 1.0, minor versions may contain breaking changes. What counts as public API, how channels work and how the extension's version maps to the product version is defined in [docs/RELEASE.md](docs/RELEASE.md#versioning). Contributors do not bump versions in PRs; maintainers do at release time.
 
 ## Issues and triage
 
@@ -323,4 +323,4 @@ Using AI tools (code assistants, chat models, agents) to help write code, tests 
 
 ---
 
-Thank you for helping build BoltGet.
+Thank you for helping build Boltget.

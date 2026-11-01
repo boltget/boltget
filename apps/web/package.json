@@ -2,7 +2,7 @@
   "name": "@boltget/web",
   "private": true,
   "version": "0.0.0",
-  "description": "boltget.app: the BoltGet website and user docs (Astro, Svelte islands, Starlight).",
+  "description": "boltget.app: the Boltget website and user docs (Astro, Svelte islands, Starlight).",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {

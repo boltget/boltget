@@ -1,4 +1,4 @@
-//! A deliberately misbehaving local HTTP server for BoltGet's tests.
+//! A deliberately misbehaving local HTTP server for Boltget's tests.
 //!
 //! It speaks plain HTTP/1.1 ([`TestServer::start`]) or HTTPS with HTTP/2 and
 //! HTTP/1.1 chosen through ALPN ([`TestServer::start_tls`]). The TLS server

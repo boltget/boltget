@@ -1,5 +1,5 @@
 <!--
-  The BoltGet mark, the canonical geometry of brand/svg/mark.svg, coloured
+  The Boltget mark, the canonical geometry of brand/svg/mark.svg, coloured
   with the theme's mark gradient. With `arrive`, the rows light up once, top to
   bottom, in the brand rhythm (BRAND.md, Motion: linear, 0.12 s stagger, the
   0.31 s rise) and stay lit; `paused` holds them dim until the moment it

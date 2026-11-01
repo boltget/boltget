@@ -34,7 +34,7 @@ export interface SummaryRow {
   medianMibS: number;
   /** Most simultaneous connections the lab server saw (lab targets only). */
   serverConnections: number | null;
-  /** Connections BoltGet reported (BoltGet only). */
+  /** Connections Boltget reported (Boltget only). */
   reportedConnections: number | null;
 }
 
@@ -209,7 +209,7 @@ export function latestRun(): Run {
   return run;
 }
 
-/** The configurations of one target, in the order IDM, BoltGet adaptive, BoltGet fixed. */
+/** The configurations of one target, in the order IDM, Boltget adaptive, Boltget fixed. */
 export function rowsFor(run: Run, target: string): SummaryRow[] {
   const rank = (r: SummaryRow) => (r.tool === "idm" ? 0 : r.setting === "auto" ? 1 : 2);
   return run.rows.filter((r) => r.target === target).sort((a, b) => rank(a) - rank(b));
@@ -228,7 +228,7 @@ export function targetsOf(run: Run): string[] {
 }
 
 /**
- * Compares BoltGet's adaptive default with IDM's default the way
+ * Compares Boltget's adaptive default with IDM's default the way
  * docs/BENCHMARK.md does: a difference only when every run of one is faster
  * than every run of the other (the min-to-max spreads do not overlap).
  */

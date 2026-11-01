@@ -1,5 +1,5 @@
 //! `boltget-testserver`: serves the test server's routes on a fixed address, for
-//! benchmarks that compare BoltGet with other download managers on a local,
+//! benchmarks that compare Boltget with other download managers on a local,
 //! reproducible server (see `bench/README.md`).
 //!
 //! ```text

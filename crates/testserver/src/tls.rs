@@ -76,7 +76,7 @@ impl TestCa {
         ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca.distinguished_name = DistinguishedName::new();
         ca.distinguished_name
-            .push(DnType::CommonName, "BoltGet test CA (boltget-testserver)");
+            .push(DnType::CommonName, "Boltget test CA (boltget-testserver)");
         ca.key_usages = vec![
             KeyUsagePurpose::KeyCertSign,
             KeyUsagePurpose::CrlSign,

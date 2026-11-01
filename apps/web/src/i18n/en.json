@@ -1,6 +1,6 @@
 {
   "site": {
-    "name": "BoltGet",
+    "name": "Boltget",
     "description": "A download manager built for speed. Splits every file across many connections and resumes where it stopped, even after a crash.",
     "skip": "Skip to content",
     "repo": "https://github.com/boltget/boltget",
@@ -9,7 +9,7 @@
   },
   "nav": {
     "label": "Main",
-    "home": "BoltGet home",
+    "home": "Boltget home",
     "benchmarks": "Benchmarks",
     "compare": "Compare",
     "docs": "Docs",
@@ -22,7 +22,7 @@
     "product": "Product",
     "download": "Download",
     "benchmarks": "Benchmarks",
-    "compare": "BoltGet and IDM",
+    "compare": "Boltget and IDM",
     "changelog": "Changelog",
     "docs": "Docs",
     "install": "Install",
@@ -32,11 +32,11 @@
     "source": "Open source on GitHub",
     "security": "Security",
     "privacy": "Privacy",
-    "credit": "© 2026 the BoltGet contributors.",
+    "credit": "© 2026 the Boltget contributors.",
     "facts": "v{version} · benchmarks {bench} · build {commit}"
   },
   "home": {
-    "title": "BoltGet: every byte, at full speed",
+    "title": "Boltget: every byte, at full speed",
     "description": "A download manager built for speed. Splits every file across many connections and keeps each one busy until the last byte.",
     "headline": "Every byte, at full speed.",
     "sentence": "Splits every file across many connections and keeps each one busy until the last byte.",
@@ -44,7 +44,7 @@
     "secondary": "See the benchmark",
     "demo": {
       "preview": "Preview · v0.2 app",
-      "appName": "BoltGet",
+      "appName": "Boltget",
       "nav": {
         "all": "All downloads",
         "active": "Active",
@@ -72,7 +72,7 @@
       "done": "Done. {size} in {time} s.",
       "verified": "SHA-256 verified",
       "open": "Show in folder",
-      "label": "A simulated preview of the planned BoltGet desktop app: a link is pasted, the file is split across connections that come online one by one, and the download finishes with a verified checksum.",
+      "label": "A simulated preview of the planned Boltget desktop app: a link is pasted, the file is split across connections that come online one by one, and the download finishes with a verified checksum.",
       "note": "Simulated preview of the desktop app planned for v0.2.",
       "noteLink": "Measured results",
       "recent": {
@@ -209,14 +209,14 @@
       "heading": "Build it, run it, measure it.",
       "primary": "Try the CLI preview",
       "secondary": "Read the docs",
-      "mark": "The BoltGet mark lighting up row by row."
+      "mark": "The Boltget mark lighting up row by row."
     }
   },
   "bench": {
     "title": "Benchmarks",
-    "description": "How BoltGet's download times are measured, with dated results, the comparison with IDM and links to the raw data.",
+    "description": "How Boltget's download times are measured, with dated results, the comparison with IDM and links to the raw data.",
     "label": "Measured {date}",
-    "lede": "Every number on this page is read from a published run, with the raw data in the repository. Nothing is estimated or rounded in BoltGet's favour. A difference is claimed only when the run-to-run spreads do not overlap.",
+    "lede": "Every number on this page is read from a published run, with the raw data in the repository. Nothing is estimated or rounded in Boltget's favour. A difference is claimed only when the run-to-run spreads do not overlap.",
     "setupHeading": "Setup",
     "resultsHeading": "Results",
     "resultsNote": "Wall-clock seconds, {runs} measured runs per configuration after {warmup} warm-up run.",
@@ -228,7 +228,7 @@
       "networkValue": "{nic}, {speed} link, wired",
       "idm": "IDM",
       "idmValue": "{version}, settings as installed",
-      "boltget": "BoltGet",
+      "boltget": "Boltget",
       "boltgetValue": "{version}, engine at commit {commit}, release build"
     },
     "table": {
@@ -245,12 +245,12 @@
     },
     "tools": {
       "idm": "IDM, default",
-      "boltget-auto": "BoltGet, adaptive",
-      "boltget-8": "BoltGet, 8 connections"
+      "boltget-auto": "Boltget, adaptive",
+      "boltget-8": "Boltget, 8 connections"
     },
     "verdict": {
-      "faster": "Every adaptive BoltGet run was faster than every IDM run.",
-      "slower": "Every IDM run was faster than every adaptive BoltGet run.",
+      "faster": "Every adaptive Boltget run was faster than every IDM run.",
+      "slower": "Every IDM run was faster than every adaptive Boltget run.",
       "overlap": "The spreads overlap, so no difference is claimed."
     },
     "targets": {
@@ -260,7 +260,7 @@
       "lab-throttled-100mib": "100 MiB from a local server that limits every connection to 2 MiB/s",
       "lab-1gib": "1 GiB from a local server over loopback, no limit"
     },
-    "connectionsNote": "Connections: for local targets, the most simultaneous connections the server saw; for public targets, BoltGet's own count (IDM's is not visible from outside).",
+    "connectionsNote": "Connections: for local targets, the most simultaneous connections the server saw; for public targets, Boltget's own count (IDM's is not visible from outside).",
     "raw": {
       "heading": "Raw data",
       "body": "Every run, including warm-ups, with the environment and the target list used:",
@@ -270,17 +270,17 @@
     }
   },
   "compare": {
-    "title": "BoltGet and IDM",
-    "description": "What BoltGet and Internet Download Manager each do today, what BoltGet has measured against IDM, and how IDM concepts map to BoltGet.",
+    "title": "Boltget and IDM",
+    "description": "What Boltget and Internet Download Manager each do today, what Boltget has measured against IDM, and how IDM concepts map to Boltget.",
     "label": "Comparison",
     "lede": "Internet Download Manager is a mature, capable download manager. This page sets out what each one does and what has been measured, so the facts can speak.",
     "reviewed": "Last reviewed: {date}, IDM version {idm}.",
-    "statusNote": "BoltGet is at v0.1: the engine and the command-line tool. Rows with a milestone are planned, not shipped.",
+    "statusNote": "Boltget is at v0.1: the engine and the command-line tool. Rows with a milestone are planned, not shipped.",
     "unknownNote": "Unknown: we could not confirm it either way. If you know, please open an issue with a source.",
     "features": {
       "heading": "Features",
       "feature": "Feature",
-      "boltget": "BoltGet",
+      "boltget": "Boltget",
       "status": "Status",
       "idm": "IDM",
       "now": "Available now",
@@ -295,21 +295,21 @@
     },
     "bench": {
       "heading": "Measured download times",
-      "body": "Both tools at their defaults, medians of {runs} runs on {date}. The benchmark page has the spreads, a fixed 8-connection BoltGet configuration and the raw data.",
+      "body": "Both tools at their defaults, medians of {runs} runs on {date}. The benchmark page has the spreads, a fixed 8-connection Boltget configuration and the raw data.",
       "target": "Target",
       "idm": "IDM",
-      "boltget": "BoltGet",
+      "boltget": "Boltget",
       "result": "Result",
-      "faster": "BoltGet faster in every run",
+      "faster": "Boltget faster in every run",
       "slower": "IDM faster in every run",
       "overlap": "No difference claimed",
       "link": "Full benchmark"
     },
     "moving": {
       "heading": "Moving from IDM",
-      "body": "How IDM's concepts map to BoltGet, and when each one arrives.",
+      "body": "How IDM's concepts map to Boltget, and when each one arrives.",
       "idm": "In IDM",
-      "boltget": "In BoltGet",
+      "boltget": "In Boltget",
       "rows": {
         "connections": {
           "idm": "Max. connections number",
@@ -333,7 +333,7 @@
         },
         "browser": {
           "idm": "Browser integration",
-          "boltget": "The BoltGet extension for Chrome, Edge and Firefox (v0.3)."
+          "boltget": "The Boltget extension for Chrome, Edge and Firefox (v0.3)."
         },
         "import": {
           "idm": "Your download list and settings",
@@ -343,13 +343,13 @@
     },
     "license": {
       "heading": "License",
-      "body": "BoltGet is free and open source under GPL-3.0-or-later. IDM is proprietary software, sold after a trial period."
+      "body": "Boltget is free and open source under GPL-3.0-or-later. IDM is proprietary software, sold after a trial period."
     }
   },
   "download": {
     "title": "Download",
-    "description": "Download the BoltGet command-line downloader for Windows, with SHA-256 checksums and build provenance for every file.",
-    "heading": "Download BoltGet",
+    "description": "Download the Boltget command-line downloader for Windows, with SHA-256 checksums and build provenance for every file.",
+    "heading": "Download Boltget",
     "label": "v{version} · {date}",
     "labelPreview": "v{version} · Preview · {date}",
     "labelFallback": "Latest release",
@@ -405,7 +405,7 @@
   },
   "changelog": {
     "title": "Changelog",
-    "description": "Every notable change to BoltGet, rendered from CHANGELOG.md in the repository."
+    "description": "Every notable change to Boltget, rendered from CHANGELOG.md in the repository."
   },
   "notFound": {
     "title": "Page not found",
@@ -435,7 +435,7 @@
       "title": "Lab A: Daylight",
       "description": "Design lab, direction A: a light, atmospheric home page with a live preview of the desktop app.",
       "preview": "Preview · v0.2 app",
-      "appName": "BoltGet",
+      "appName": "Boltget",
       "nav": {
         "all": "All downloads",
         "active": "Active",
@@ -463,7 +463,7 @@
       "done": "Done. {size} in {time} s.",
       "verified": "SHA-256 verified",
       "open": "Show in folder",
-      "demoLabel": "A simulated preview of the planned BoltGet desktop app: a link is pasted, the file is split across connections that come online one by one, and the download finishes with a verified checksum.",
+      "demoLabel": "A simulated preview of the planned Boltget desktop app: a link is pasted, the file is split across connections that come online one by one, and the download finishes with a verified checksum.",
       "demoNote": "Simulated preview of the desktop app planned for v0.2. The numbers are illustrative.",
       "statement": {
         "label": "How it works",
@@ -491,7 +491,7 @@
       "description": "Design lab, direction B: a dark home page where the whole hero is the map of a file being downloaded by the real command-line tool.",
       "prompt": "PS C:\\Users\\ada>",
       "terminalTitle": "Windows PowerShell",
-      "demoLabel": "A simulated run of the BoltGet command-line tool: boltget get downloads a file over several connections while the page behind it fills in like a map of the file, then reports the time and a verified checksum.",
+      "demoLabel": "A simulated run of the Boltget command-line tool: boltget get downloads a file over several connections while the page behind it fills in like a map of the file, then reports the time and a verified checksum.",
       "demoNote": "Simulated run in the real output format of the v0.1 CLI. The numbers are illustrative.",
       "mapLegend": "The page is the file. Each square is a slice; each bright edge is a connection writing.",
       "measured": {

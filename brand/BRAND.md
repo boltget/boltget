@@ -1,8 +1,8 @@
-# BoltGet brand guidelines
+# Boltget brand guidelines
 
-BoltGet is a download manager built for speed. The brand is built the way the
+Boltget is a download manager built for speed. The brand is built the way the
 product works: quietly, precisely, and fast. This document is the reference for
-anyone who puts the BoltGet name or mark on something — the app, the website
+anyone who puts the Boltget name or mark on something — the app, the website
 (boltget.app), the README, release notes, social media, slides.
 
 Everything in this folder except this file and the two canonical icons is
@@ -15,7 +15,7 @@ on one page.
 ## 1. Concept
 
 **Each pixel is a chunk.** A download manager splits a file into pieces, fetches
-them in parallel, and assembles them on disk. The BoltGet mark is that idea drawn
+them in parallel, and assembles them on disk. The Boltget mark is that idea drawn
 literally: a down-arrow built from 37 square pixels on a 9 × 9 grid. Each pixel is
 a chunk; together they make the arrow, the way chunks make the file.
 
@@ -99,7 +99,7 @@ small sizes. Do not use them above 48 px.
 
 ## 3. Wordmark and lockups
 
-The wordmark is **BoltGet** in **Geist SemiBold** at −0.025 em tracking, converted
+The wordmark is **Boltget** in **Geist SemiBold** at −0.025 em tracking, converted
 to outlines. On top of Geist's own kerning it has three optical adjustments, in
 font units: **B·o −6, l·t +12, t·G +8**. They open the tight `lt` junction and
 balance the space before the second capital, so the two capitals read as one word
@@ -340,15 +340,15 @@ Rules:
 - Don't recolour the gradient, reverse it, or put other hues in it.
 - Don't rearrange, add or remove pixels, or close the gaps on the canonical mark. Only the official small-size files are gapless.
 - Don't stretch, skew or crop the mark. (The only exception is the deliberate large-format crop on social and hero art, where the full arrow stays visible.)
-- Don't retype "BoltGet", change its weight, or make the two capitals different colours.
+- Don't retype "Boltget", change its weight, or colour its letters differently. Write it with one capital: Boltget, never BoltGet (the camel-case spelling was retired on 2026-11-01).
 - Don't put the mark on a busy photo without the white one-colour version.
 
 ## 8. Voice and tone
 
-BoltGet speaks like a good command-line tool's documentation: short, exact and
+Boltget speaks like a good command-line tool's documentation: short, exact and
 calm. It's confident because it's specific, not because it's loud.
 
-- **Lead with capability.** Open with what BoltGet does and what it aims for:
+- **Lead with capability.** Open with what Boltget does and what it aims for:
   speed, reliability, craft. Concrete capabilities over adjectives.
 - **Plain over clever.** Say what it does.
 - **Specific over superlative.** "16 connections per file" beats "blazing fast".
@@ -357,7 +357,7 @@ calm. It's confident because it's specific, not because it's loud.
   license section, the footer, the pricing line). Never in a headline, tagline,
   badge row or social image.
 - **No comparisons or jabs on front surfaces.** The README, the website hero,
-  social images and store listings talk about BoltGet, not other products.
+  social images and store listings talk about Boltget, not other products.
   Comparisons belong in [docs/FEATURES.md](../docs/FEATURES.md).
 - **Respect the user.** No dark patterns, no urgency, no exclamation marks in UI.
 - **Credit and link.** Credit contributors, link the source, say what we don't
@@ -377,7 +377,7 @@ Social label (mono, uppercase): **DOWNLOAD MANAGER**
 | Pricing / license | GPL-3.0-or-later. No ads, no account, no telemetry. | 100% FREE forever!!! |
 | Positioning | Starts with 4 connections and adds more only while they help. | Faster than the one you paid for. |
 | Download done | Done. 4.2 GB in 43 s. | Woohoo! Your download is complete! |
-| Error | The server closed the connection. BoltGet will retry in 10 s. | Oops! Something went wrong :( |
+| Error | The server closed the connection. Boltget will retry in 10 s. | Oops! Something went wrong :( |
 | Empty state | Paste a link or drop one here. | Nothing to see here… yet! |
 
 ## 9. Social and web

@@ -47,8 +47,8 @@ Exit criteria:
 - [x] `boltget get`, `list`, `pause`/`resume` (standalone), `refresh`, `bench` work; `--json` output is documented and stable enough to script against
 - [x] Benchmark harness in `bench/`, lab environment scripted, real-world target list versioned
   *Status (2026-10-31):* harness, `boltget bench`, `bench/idm-compare.ps1` and `bench/targets.toml` exist; the lab is `boltget-testserver` on loopback with per-connection and per-line throttling, added latency, a server-side connection limit and HTTP/2, each with targets in `bench/targets.toml`. Packet loss cannot be modelled honestly on loopback and moves to the second-machine `tc netem` lab with the v0.5 benchmark re-run.
-- [x] **Benchmark report published** (in the repo, later on the website) comparing BoltGet with IDM per [ENGINE.md, Benchmarks plan](ENGINE.md#benchmarks-plan-vs-idm), with raw data. BoltGet is equal or faster on the majority of scenarios; every scenario where it is slower has an issue explaining why and a plan
-  *Status (2026-10-31):* [BENCHMARK.md](BENCHMARK.md) published with raw data; BoltGet's default was equal to or faster than IDM's default on all 5 targets. The scenarios where the adaptive default is slower than a fixed connection count have issues with a plan: [#3](https://github.com/boltget/boltget/issues/3) (fixed) and [#4](https://github.com/boltget/boltget/issues/4) (repeat contact fixed, first contact open). The IDM-at-32-connections configuration ([#5](https://github.com/boltget/boltget/issues/5)) needs a manual change of IDM's settings and moves to the v0.5 benchmark re-run.
+- [x] **Benchmark report published** (in the repo, later on the website) comparing Boltget with IDM per [ENGINE.md, Benchmarks plan](ENGINE.md#benchmarks-plan-vs-idm), with raw data. Boltget is equal or faster on the majority of scenarios; every scenario where it is slower has an issue explaining why and a plan
+  *Status (2026-10-31):* [BENCHMARK.md](BENCHMARK.md) published with raw data; Boltget's default was equal to or faster than IDM's default on all 5 targets. The scenarios where the adaptive default is slower than a fixed connection count have issues with a plan: [#3](https://github.com/boltget/boltget/issues/3) (fixed) and [#4](https://github.com/boltget/boltget/issues/4) (repeat contact fixed, first contact open). The IDM-at-32-connections configuration ([#5](https://github.com/boltget/boltget/issues/5)) needs a manual change of IDM's settings and moves to the v0.5 benchmark re-run.
 - [x] Default tunables (connection count, `min_split_size`, intervals) set from benchmark data, and ENGINE.md updated with the measured values
   *Status (2026-10-28):* start 4, maximum 16, `min_split_size` 1 MiB, with the measurements in ENGINE.md, open question 1.
 - [x] Fuzz targets for header parsers run in CI for a fixed time budget without findings
@@ -75,7 +75,7 @@ Exit criteria:
 
 ## v0.3: Browser extension
 
-Goal: downloads from the browser go to BoltGet automatically, with cookies and referrer, on Chrome, Edge and Firefox.
+Goal: downloads from the browser go to Boltget automatically, with cookies and referrer, on Chrome, Edge and Firefox.
 
 Scope: `apps/extension`, native host binary, installer registration. See [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md).
 
@@ -134,7 +134,7 @@ Exit criteria:
 - [ ] winget manifest submitted
 - [ ] boltget.app live: home with hero, download, features, compare, benchmarks, docs, changelog, privacy; Lighthouse budget met ([WEBSITE.md](WEBSITE.md#performance-budget))
 - [ ] User docs cover install, extension setup, video, CLI, troubleshooting
-- [ ] Published benchmark for the 1.0 build shows BoltGet equal or faster than IDM on every scenario in the suite (see [VISION.md](VISION.md#what-beating-idm-means-measurably)); any exception is disclosed on the benchmarks page
+- [ ] Published benchmark for the 1.0 build shows Boltget equal or faster than IDM on every scenario in the suite (see [VISION.md](VISION.md#what-beating-idm-means-measurably)); any exception is disclosed on the benchmarks page
 - [ ] Zero known data-loss bugs; zero open issues labelled `priority:critical`
 - [ ] Security review of native messaging, IPC, sidecar handling and updater completed; findings fixed
 - [ ] Release checklist in [RELEASE.md](RELEASE.md) executed end to end
@@ -148,7 +148,7 @@ Ordered by current intent, each to be scoped by an RFC before work starts:
 3. **FTP / FTPS**, then SFTP.
 4. **Mirrors / Metalink / multi-source** downloads with per-piece verification ([ENGINE.md](ENGINE.md#mirrors-and-multi-source-later)).
 5. **HTTP/3** (QUIC) for workers, if benchmarks justify it.
-6. **Engine-driven media downloads** (BoltGet segmentation for progressive video formats, see [VIDEO.md](VIDEO.md#engine-involvement)), if not already shipped as an experiment.
+6. **Engine-driven media downloads** (Boltget segmentation for progressive video formats, see [VIDEO.md](VIDEO.md#engine-involvement)), if not already shipped as an experiment.
 7. **BitTorrent / magnet** (maybe): only if it can be done without compromising the core; possibly via a well-maintained library.
 8. **Settings sync** (maybe): end-to-end encrypted, opt-in, no account required (for example via a user-provided folder).
 9. **Localization** (possible, community-driven): the string catalog makes it feasible; it happens if and when contributors want to maintain translations.

@@ -1,5 +1,5 @@
 {
-  "app.name": "BoltGet",
+  "app.name": "Boltget",
   "titlebar.search": "Search downloads",
   "titlebar.add": "Add download",
   "caption.minimize": "Minimize",
@@ -28,5 +28,5 @@
   "category.other": "Other",
   "empty.title": "Paste a link or drop one here.",
   "empty.shortcut": "Press {shortcut} to paste a link",
-  "error.window": "The window could not be updated. Restart BoltGet if it looks wrong."
+  "error.window": "The window could not be updated. Restart Boltget if it looks wrong."
 }

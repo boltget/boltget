@@ -1,6 +1,6 @@
 # Tech stack
 
-Every major technology choice in BoltGet, recorded as a short Architecture Decision Record (ADR): the context, the decision, why, what we rejected and the consequences. These decisions are settled; changing one requires an RFC (see [CONTRIBUTING.md](../CONTRIBUTING.md#rfcs)) that addresses the reasons below.
+Every major technology choice in Boltget, recorded as a short Architecture Decision Record (ADR): the context, the decision, why, what we rejected and the consequences. These decisions are settled; changing one requires an RFC (see [CONTRIBUTING.md](../CONTRIBUTING.md#rfcs)) that addresses the reasons below.
 
 | # | Area | Decision |
 |---|---|---|
@@ -89,7 +89,7 @@ Every major technology choice in BoltGet, recorded as a short Architecture Decis
 - **Window chrome.** Undecorated window (`decorations: false`, with the system shadow, so Windows 11 still draws the rounded corners and border) and a title bar drawn by the page. Snap layouts are kept with a native child window over the page's maximize button that answers `WM_NCHITTEST` with `HTMAXBUTTON` ([APP-DESIGN.md #31](APP-DESIGN.md#native-on-windows)). The Win32 code lives in `src-tauri/src/platform/windows.rs`, the app's only `unsafe` module. The documented fallback (native decorations with a themed caption) was not needed.
 - **Linux CI.** The desktop crate stays in `cargo clippy --workspace` and `cargo test --workspace` on Linux: `ci.yml` installs WebKitGTK and GTK first. Excluding it would leave its non-Windows code unlinted until the Linux port, which is how platform branches rot. The Linux-only unmaintained crates Tauri brings in (GTK's `proc-macro-error`, the single-instance plugin's `zbus`) are ignored in `deny.toml` with reasons.
 - **Builds in CI.** `.github/workflows/desktop.yml` runs the UI checks and `tauri build --no-bundle` on Windows; installers come with the release work.
-- **Binary name.** In `target/` the app is `boltget-desktop.exe`, not `BoltGet.exe`: Windows file names are case-insensitive, and the CLI's `boltget.exe` is built into the same directory. The installed name (`BoltGet.exe` in [ARCHITECTURE.md](ARCHITECTURE.md#the-desktop-app-boltgetexe)) is set when the installer is built.
+- **Binary name.** In `target/` the app is `boltget-desktop.exe`, not `Boltget.exe`: Windows file names are case-insensitive, and the CLI's `boltget.exe` is built into the same directory. The installed name (`Boltget.exe` in [ARCHITECTURE.md](ARCHITECTURE.md#the-desktop-app-boltgetexe)) is set when the installer is built.
 
 ## ADR-004: Svelte 5, TypeScript and Vite for the UI
 
@@ -152,7 +152,7 @@ Details: [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#native-messaging).
 
 ## ADR-008: yt-dlp and ffmpeg as on-demand sidecars
 
-**Decision.** Use yt-dlp and ffmpeg as external processes, downloaded on first use, verified and updated by BoltGet. The extension only detects media and hands the page URL to the app.
+**Decision.** Use yt-dlp and ffmpeg as external processes, downloaded on first use, verified and updated by Boltget. The extension only detects media and hands the page URL to the app.
 
 **Why.** yt-dlp's site coverage and update cadence cannot be matched by a reimplementation; keeping extraction out of the extension keeps it store-compliant; not bundling keeps the installer small and lets yt-dlp update independently.
 
@@ -211,18 +211,18 @@ Details: [RELEASE.md](RELEASE.md).
 
 **Rejected.** Traditional OV/EV certificates (more expensive, hardware token logistics in CI); staying unsigned (unacceptable for 1.0).
 
-**Risk.** Eligibility requirements for Trusted Signing have changed over time (by organization type and country). If BoltGet is not eligible, the fallback is SignPath's free code signing for open-source projects, or an OV certificate. See [RELEASE.md](RELEASE.md#code-signing).
+**Risk.** Eligibility requirements for Trusted Signing have changed over time (by organization type and country). If Boltget is not eligible, the fallback is SignPath's free code signing for open-source projects, or an OV certificate. See [RELEASE.md](RELEASE.md#code-signing).
 
 ## ADR-014: GPL-3.0-or-later
 
 **Decision.** The entire repository is licensed GPL-3.0-or-later.
 
-**Why.** The download-manager space is full of closed, ad-stuffed repackages of other people's work. Copyleft ensures any distributed fork stays open and that users of a modified BoltGet get the source too. "Or later" lets the project adopt future GPL versions without relicensing.
+**Why.** The download-manager space is full of closed, ad-stuffed repackages of other people's work. Copyleft ensures any distributed fork stays open and that users of a modified Boltget get the source too. "Or later" lets the project adopt future GPL versions without relicensing.
 
 **Rejected.**
 - **MIT / Apache-2.0:** maximally permissive, which here mostly benefits closed repackagers.
 - **MPL-2.0:** file-level copyleft is too easy to work around for an application.
-- **AGPL-3.0:** its network clause targets software offered as a service, which BoltGet is not; it adds friction without benefit.
+- **AGPL-3.0:** its network clause targets software offered as a service, which Boltget is not; it adds friction without benefit.
 
 **Consequences.** Dependencies must be GPL-3.0 compatible (MIT, Apache-2.0, BSD, ISC, MPL-2.0, Unlicense, Zlib are fine). CI will check licenses with `cargo-deny` and a JavaScript license checker. Contributions are accepted under the same license, without a CLA (see [CONTRIBUTING.md](../CONTRIBUTING.md#license-of-contributions)).
 

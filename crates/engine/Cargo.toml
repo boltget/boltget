@@ -1,6 +1,6 @@
 [package]
 name = "boltget-engine"
-description = "BoltGet download engine: probing, dynamic segmentation, positional writes, retries"
+description = "Boltget download engine: probing, dynamic segmentation, positional writes, retries"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
