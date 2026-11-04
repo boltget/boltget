@@ -20,8 +20,10 @@
     displayName,
     formatBytes,
     formatDuration,
+    formatSpeed,
     formatWhen,
     hostOf,
+    pathPieces,
     percent,
     progressParts,
     secondsLeft,
@@ -32,7 +34,7 @@
   import Icon, { type IconName } from "../Icon.svelte";
   import { popupMenu } from "../menu";
   import { primaryAction, type ActionId } from "../list/actions";
-  import { categoryOf } from "../list/category";
+  import { categoryIcon } from "../list/category";
   import { isRunning, needsAttention } from "../list/model";
   import { rowMenu } from "../list/rowMenu";
   import { connections as connectionsOf } from "./fileMap";
@@ -85,14 +87,6 @@
     });
   });
 
-  const ICONS: Record<string, IconName> = {
-    video: "video",
-    music: "music",
-    archives: "archives",
-    programs: "programs",
-    documents: "documents",
-    other: "file",
-  };
   const ACTION_ICONS: Partial<Record<ActionId, IconName>> = {
     pause: "pause",
     resume: "play",
@@ -103,6 +97,7 @@
   };
 
   const name = $derived(d ? displayName(d.fileName, d.url) : "");
+  const peak = $derived(samples.length ? Math.max(...samples) : 0);
   const running = $derived(d ? isRunning(d.state) : false);
   const complete = $derived(d?.state === "completed");
   const primary = $derived(d ? primaryAction(d.state) : "pause");
@@ -192,6 +187,11 @@
   <span class="v">{parts.before}<b>{parts.value}</b>{parts.after}</span>
 {/snippet}
 
+<!-- Paths and links wrap between folders, never inside a name. -->
+{#snippet breakable(value: string)}
+  {#each pathPieces(value) as piece, i (i)}{piece}<wbr />{/each}
+{/snippet}
+
 {#snippet copyButton(key: string, text: string, label: string)}
   <IconButton label={copied === key ? t("details.copied") : label} onclick={() => copy(key, text)}>
     <Icon name={copied === key ? "check" : "copy"} />
@@ -202,7 +202,7 @@
   {#if d}
     <header class="head">
       <div class="title-row">
-        <span class="type"><Icon name={ICONS[categoryOf(name)] ?? "file"} size={20} /></span>
+        <span class="type"><Icon name={categoryIcon(name)} size={20} /></span>
         <div class="titles">
           <h2 class="name">{name}</h2>
           <p class="sub">
@@ -335,7 +335,15 @@
 
     {#if running}
       <section class="block">
-        <div class="label"><span>{t("details.throughput")}</span></div>
+        <div class="label">
+          <span
+            >{samples.length >= SAMPLES
+              ? t("details.throughput")
+              : t("details.throughput.start")}</span
+          >
+          {#if peak > 0}<span class="note">{t("details.peak", { speed: formatSpeed(peak) })}</span
+            >{/if}
+        </div>
         <Sparkline {samples} capacity={SAMPLES} label={t("details.throughput")} />
       </section>
       {#if workers.length}
@@ -364,19 +372,21 @@
         {#if d.path}
           <div class="fact">
             <dt>{complete ? t("details.saved") : t("details.saving")}</dt>
-            <dd class="mono selectable">{d.path}</dd>
+            <dd class="mono selectable path" title={d.path}>{@render breakable(d.path)}</dd>
             {@render copyButton("path", d.path, t("action.copy_value"))}
           </div>
         {/if}
         <div class="fact">
           <dt>{t("details.link")}</dt>
-          <dd class="mono selectable">{d.url}</dd>
+          <dd class="mono selectable path" title={d.url}>{@render breakable(d.url)}</dd>
           {@render copyButton("url", d.url, t("action.copy"))}
         </div>
         {#if refreshed}
           <div class="fact">
             <dt>{t("details.refreshed")}</dt>
-            <dd class="mono selectable">{refreshed.url}</dd>
+            <dd class="mono selectable path" title={refreshed.url}>
+              {@render breakable(refreshed.url)}
+            </dd>
             {@render copyButton("fresh", refreshed.url, t("action.copy"))}
           </div>
         {/if}
@@ -690,6 +700,9 @@
   }
   .fact :global(.icon-button) {
     margin-top: -2px;
+  }
+  .fact dd.path {
+    overflow-wrap: break-word;
   }
   .mono {
     font-family: var(--font-mono);
