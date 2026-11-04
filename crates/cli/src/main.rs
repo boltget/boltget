@@ -12,8 +12,9 @@
 //! ```
 //!
 //! Downloads are kept in a database (`--state`, default `%LOCALAPPDATA%\Boltget`)
-//! so they can be paused and resumed. See `boltget help get` for the exit codes
-//! and the `--json` event format.
+//! so they can be paused and resumed. While the Boltget app runs it owns that
+//! database, and these commands go to it over its named pipe (`remote.rs`).
+//! See `boltget help get` for the exit codes and the `--json` event format.
 // A CLI prints to stdout by design.
 #![allow(clippy::print_stdout)]
 
@@ -21,6 +22,7 @@ mod bench;
 mod display;
 mod json;
 mod list;
+mod remote;
 mod settings;
 
 use std::path::{Path, PathBuf};
@@ -49,13 +51,16 @@ Exit codes:
   6    the file changed on the server, the link stopped working (give it a new
        one with `boltget refresh`), or `refresh` rejected a link to another file
   7    the download database is in use by another boltget process, or cannot
-       be opened
+       be opened (while the Boltget app runs, commands go to it instead)
   8    no download with that id, or the command does not apply to it in its
        current state (for example resuming a completed download)
   9    the downloaded file does not match its checksum (--checksum or a digest
        the server sent); it is kept as <name>.boltget, not renamed
-  130  interrupted (Ctrl-C): the download is paused; continue it with
-       `boltget resume <id>`";
+  10   the Boltget app is running but cannot be reached, speaks another pipe
+       protocol version (use the same release of both), or the connection to
+       it was lost (the download goes on there)
+  130  interrupted (Ctrl-C), or paused in the app or by `boltget pause`: the
+       download is paused; continue it with `boltget resume <id>`";
 
 const JSON_HELP: &str = "\
 With --json, stdout carries one JSON object per line. Every object has an
@@ -88,8 +93,16 @@ failed line when the download never got an id (a bad command line).";
 const STATE_HELP: &str = "\
 Downloads are recorded in a database in the state directory (default
 %LOCALAPPDATA%\\Boltget on Windows, $XDG_DATA_HOME/boltget on Linux; override
-with --state or BOLTGET_DATA_DIR). Only one boltget process at a time can use
-it; `boltget list` works alongside.";
+with --state or BOLTGET_DATA_DIR).
+
+While the Boltget app runs, it owns that database, and every command goes to
+it over its named pipe (client mode): `get` adds the download to the app and
+shows its progress here (Ctrl-C pauses it; --detach returns at once), `pause`
+reaches downloads running anywhere, and any number of terminals can work at
+once. The app's proxy settings apply there, not this shell's proxy variables
+(pass --proxy to choose one). Without the app, boltget runs the download
+itself; only one such boltget at a time can use the database, and `boltget
+list` works alongside.";
 
 /// Boltget: a fast, segmented download manager.
 #[derive(Debug, Parser)]
@@ -109,6 +122,11 @@ struct Cli {
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     verbose: u8,
 
+    /// Never talk to a running Boltget app; run the engine in this process
+    /// (it fails with exit code 7 while the app owns the database).
+    #[arg(long, global = true)]
+    standalone: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -121,11 +139,12 @@ enum Command {
     /// List recorded downloads.
     #[command(after_long_help = list::JSON_HELP)]
     List(ListArgs),
-    /// Mark a download that is not running as paused.
+    /// Pause a download.
     ///
-    /// A download runs inside the `boltget get` or `boltget resume` that started
-    /// it; press Ctrl-C there to pause it. This command cannot reach another
-    /// running boltget process yet.
+    /// While the Boltget app runs, this pauses the download wherever it runs
+    /// there. Without the app, a download runs inside the `boltget get` or
+    /// `boltget resume` that started it (press Ctrl-C there); this command then
+    /// only marks a download that is not running as paused.
     #[command(after_long_help = EXIT_CODES)]
     Pause(IdArgs),
     /// Continue a paused, interrupted or failed download in the foreground.
@@ -238,6 +257,7 @@ struct RunArgs {
 }
 
 #[derive(Debug, Args)]
+#[expect(clippy::struct_excessive_bools, reason = "command-line flags")]
 struct GetArgs {
     /// The URL to download (http or https).
     url: String,
@@ -258,6 +278,11 @@ struct GetArgs {
     /// Digest, Content-MD5, ...). Without --checksum such a digest is checked.
     #[arg(long)]
     no_server_digest: bool,
+
+    /// Add the download to the running Boltget app and return at once,
+    /// instead of showing its progress (needs the app).
+    #[arg(long, conflicts_with = "no_state")]
+    detach: bool,
 
     #[command(flatten)]
     run: RunArgs,
@@ -291,6 +316,11 @@ struct ResumeArgs {
     #[arg(long, conflicts_with = "checksum")]
     no_checksum: bool,
 
+    /// Continue it in the running Boltget app and return at once (needs the
+    /// app).
+    #[arg(long)]
+    detach: bool,
+
     #[command(flatten)]
     run: RunArgs,
 }
@@ -302,6 +332,11 @@ struct RefreshArgs {
 
     /// The new URL for the same file (http or https).
     url: String,
+
+    /// Continue it in the running Boltget app and return at once (needs the
+    /// app).
+    #[arg(long)]
+    detach: bool,
 
     #[command(flatten)]
     run: RunArgs,
@@ -327,7 +362,12 @@ pub(crate) fn parse_limit(s: &str) -> Result<Rate, String> {
 
 /// Maps an engine error to the documented exit code.
 fn exit_code_for(e: &Error) -> u8 {
-    match e.kind() {
+    exit_code_for_kind(e.kind())
+}
+
+/// Maps an error classification to the documented exit code.
+fn exit_code_for_kind(kind: ErrorKind) -> u8 {
+    match kind {
         ErrorKind::Transient | ErrorKind::Throttled => 3,
         ErrorKind::Permanent => 4,
         ErrorKind::Disk => 5,
@@ -533,8 +573,14 @@ fn report(e: &Error, json: bool, id: Option<DownloadId>, hints: &[String]) -> u8
 
 /// Hints for errors that `resume` (or another flag) can fix.
 fn hints_for(e: &Error, id: Option<DownloadId>, command: &str) -> Vec<String> {
-    match (e, id) {
-        (Error::DatabaseLocked { .. }, _) => {
+    hints(e.kind(), e.message_key(), id, command)
+}
+
+/// Hints for an error, from its classification and catalog key (what the
+/// app reports over its pipe, too).
+fn hints(kind: ErrorKind, key: &str, id: Option<DownloadId>, command: &str) -> Vec<String> {
+    match (key, id) {
+        ("error.database_locked", _) => {
             let mut v = vec![
                 "wait for the other download to finish, or press Ctrl-C in its terminal to pause it"
                     .to_owned(),
@@ -544,11 +590,11 @@ fn hints_for(e: &Error, id: Option<DownloadId>, command: &str) -> Vec<String> {
             }
             v
         }
-        (Error::RefreshRejected(_), Some(id)) => vec![
+        ("error.refresh_rejected", Some(id)) => vec![
             "nothing was changed; the download keeps its old link".to_owned(),
             format!("give it a link to the same file: boltget refresh {id} <new-url>"),
         ],
-        (_, Some(id)) => match e.kind() {
+        (_, Some(id)) => match kind {
             ErrorKind::LinkExpired => vec![
                 format!(
                     "the progress is saved; give the download a new link with: boltget refresh {id} <new-url>"
@@ -563,7 +609,7 @@ fn hints_for(e: &Error, id: Option<DownloadId>, command: &str) -> Vec<String> {
                 format!("download it again with: boltget resume {id} --restart"),
                 format!("or keep the file as it is with: boltget resume {id} --no-checksum"),
             ],
-            _ if matches!(e, Error::PartialMissing { .. }) => {
+            _ if key == "error.partial_missing" => {
                 vec![format!("start over with: boltget resume {id} --restart")]
             }
             ErrorKind::Transient | ErrorKind::Throttled | ErrorKind::Disk => {
@@ -906,11 +952,61 @@ async fn remove(args: &RemoveArgs, state: Option<&Path>) -> u8 {
     }
 }
 
+/// Whether a command uses the download database, so a running app should
+/// run it instead (client mode).
+fn uses_database(command: &Command) -> bool {
+    match command {
+        Command::Get(a) => !a.no_state,
+        Command::Bench(_) => false,
+        _ => true,
+    }
+}
+
+/// `--detach` without an app to leave the download with.
+fn wants_detach(command: &Command) -> bool {
+    match command {
+        Command::Get(a) => a.detach,
+        Command::Resume(a) => a.detach,
+        Command::Refresh(a) => a.detach,
+        _ => false,
+    }
+}
+
+/// Runs a command in the app over its pipe.
+async fn run_remote(conn: remote::Connection, command: Command, verbose: u8) -> u8 {
+    match command {
+        Command::Get(args) => remote::get(conn, args, verbose).await,
+        Command::List(args) => remote::list(conn, &args).await,
+        Command::Pause(args) => remote::pause(conn, &args).await,
+        Command::Resume(args) => remote::resume(conn, args, verbose).await,
+        Command::Refresh(args) => remote::refresh(conn, args, verbose).await,
+        Command::Remove(args) => remote::remove(conn, &args).await,
+        Command::Config(args) => remote::config(conn, &args).await,
+        Command::Bench(args) => bench::run(args).await,
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     init_logging(cli.verbose);
     let state = cli.state.as_deref();
+    if !cli.standalone && uses_database(&cli.command) {
+        match remote::connect(state).await {
+            Ok(Some(conn)) => {
+                return ExitCode::from(run_remote(conn, cli.command, cli.verbose).await);
+            }
+            Ok(None) => {}
+            Err(code) => return ExitCode::from(code),
+        }
+    }
+    if wants_detach(&cli.command) {
+        eprintln!(
+            "boltget: --detach needs the Boltget app running, to keep the download going after \
+             boltget exits"
+        );
+        return ExitCode::from(2);
+    }
     let code = match cli.command {
         Command::Get(args) => get(args, state, cli.verbose).await,
         Command::List(args) => list::run(&args, state).await,

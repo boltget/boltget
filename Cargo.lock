@@ -415,6 +415,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "boltget-engine",
+ "boltget-ipc",
  "boltget-testserver",
  "clap",
  "fastrand",

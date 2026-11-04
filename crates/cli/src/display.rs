@@ -152,11 +152,11 @@ pub(crate) fn segment_map(segments: &[Segment], total: Option<u64>) -> String {
     format!("[{out}] {} segments", segments.len())
 }
 
-fn probing_style() -> ProgressStyle {
+pub(crate) fn probing_style() -> ProgressStyle {
     ProgressStyle::with_template("{spinner:.cyan} {msg}").expect("valid template")
 }
 
-fn bar_style() -> ProgressStyle {
+pub(crate) fn bar_style() -> ProgressStyle {
     ProgressStyle::with_template(
         "{spinner:.cyan} {bar:32.cyan/blue} {bytes:>10} / {total_bytes:<10} {percent:>3}%  {prefix}\n  {wide_msg:.dim}",
     )
@@ -164,7 +164,7 @@ fn bar_style() -> ProgressStyle {
     .progress_chars("█▉▊▋▌▍▎▏ ")
 }
 
-fn stream_style() -> ProgressStyle {
+pub(crate) fn stream_style() -> ProgressStyle {
     ProgressStyle::with_template("{spinner:.cyan} {bytes:>10}  {prefix}").expect("valid template")
 }
 

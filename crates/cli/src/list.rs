@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use boltget_engine::{DownloadSummary, Engine, EngineConfig, Error, State};
+use boltget_engine::{DownloadSummary, Engine, EngineConfig, Error};
 use indicatif::HumanBytes;
 
 use crate::display::percent;
@@ -20,8 +20,10 @@ completed, failed, cancelled, corrupt. checksum.source is \"user\" or
 downloaded counts bytes saved at the last checkpoint.
 Times are Unix milliseconds; URLs have their query redacted.
 
-While another boltget process owns the database, the list is read without
-taking ownership and shows that process's last checkpoint.
+While the Boltget app runs, the list comes from it, and downloaded counts the
+bytes received so far for running downloads. While another boltget process
+owns the database, the list is read without taking ownership and shows that
+process's last checkpoint.
 
 Exit codes: 0 success, 7 the database cannot be read.";
 
@@ -52,21 +54,61 @@ pub(crate) async fn run(args: &ListArgs, state: Option<&Path>) -> u8 {
     if args.json {
         crate::json::emit(&list);
     } else {
-        print_table(&list);
+        print_table(&list.iter().map(Row::from_summary).collect::<Vec<_>>());
     }
     0
 }
 
-fn progress_cell(s: &DownloadSummary) -> String {
-    match (s.state, s.total) {
-        (State::Completed, _) => "100%".into(),
+/// What the table shows of a download, from the database or from the app.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Row {
+    id: u64,
+    state: String,
+    url: String,
+    file_name: Option<String>,
+    total: Option<u64>,
+    downloaded: u64,
+    error: Option<String>,
+}
+
+impl Row {
+    fn from_summary(s: &DownloadSummary) -> Self {
+        Self {
+            id: s.id.0,
+            state: s.state.as_str().to_owned(),
+            url: s.url.clone(),
+            file_name: s.file_name.clone(),
+            total: s.total,
+            downloaded: s.downloaded,
+            error: s.error.as_ref().map(|e| e.message.clone()),
+        }
+    }
+
+    /// A download as the app sends it (the `list --json` shape).
+    pub(crate) fn from_json(v: &serde_json::Value) -> Self {
+        let text = |k: &str| v[k].as_str().map(str::to_owned);
+        Self {
+            id: v["id"].as_u64().unwrap_or(0),
+            state: text("state").unwrap_or_default(),
+            url: text("url").unwrap_or_default(),
+            file_name: text("file_name"),
+            total: v["total"].as_u64(),
+            downloaded: v["downloaded"].as_u64().unwrap_or(0),
+            error: v["error"]["message"].as_str().map(str::to_owned),
+        }
+    }
+}
+
+fn progress_cell(s: &Row) -> String {
+    match (s.state.as_str(), s.total) {
+        ("completed", _) => "100%".into(),
         (_, Some(t)) => percent(s.downloaded, t),
         (_, None) if s.downloaded > 0 => HumanBytes(s.downloaded).to_string(),
         _ => "-".into(),
     }
 }
 
-fn print_table(list: &[DownloadSummary]) {
+pub(crate) fn print_table(list: &[Row]) {
     if list.is_empty() {
         println!("No downloads.");
         return;
@@ -89,12 +131,12 @@ fn print_table(list: &[DownloadSummary]) {
         println!(
             "{:>id_w$}  {:<14}  {:>9}  {:>10}  {name}",
             s.id.to_string(),
-            s.state.as_str(),
+            s.state,
             progress_cell(s),
             size
         );
         if let Some(e) = &s.error {
-            println!("{:>id_w$}  error: {}", "", e.message);
+            println!("{:>id_w$}  error: {e}", "");
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use boltget_engine::{Engine, EngineConfig, LimitScope, Settings};
+use boltget_engine::{Engine, EngineConfig, LimitScope};
 use clap::{Args, Subcommand};
 use indicatif::HumanBytes;
 
@@ -13,9 +13,10 @@ Keys:
   limit   global bandwidth limit shared by all downloads, in bytes per second
           (500K, 5M, 1048576; K = 1024). Unset: unlimited.
 
-Settings live in the download database (see --state). `set` and `unset` need
-the database, so they fail with exit code 7 while another boltget is running;
-`get` and `list` work alongside.";
+Settings live in the download database (see --state). While the Boltget app
+runs, these commands go to it and a new limit applies at once. Without the
+app, `set` and `unset` need the database, so they fail with exit code 7 while
+another boltget is running; `get` and `list` work alongside.";
 
 #[derive(Debug, Args)]
 pub(crate) struct ConfigArgs {
@@ -52,8 +53,8 @@ pub(crate) enum Key {
     Limit,
 }
 
-fn show_limit(s: &Settings) -> String {
-    s.speed_limit.map_or_else(
+pub(crate) fn show_limit(limit: Option<u64>) -> String {
+    limit.map_or_else(
         || "unlimited".to_owned(),
         |r| format!("{}/s ({r} bytes per second)", HumanBytes(r)),
     )
@@ -68,9 +69,9 @@ pub(crate) async fn run(args: &ConfigArgs, state: Option<&Path>) -> u8 {
         ConfigAction::List | ConfigAction::Get { .. } => match Engine::peek_settings(&dir) {
             Ok(s) => {
                 if matches!(args.action, ConfigAction::List) {
-                    println!("limit = {}", show_limit(&s));
+                    println!("limit = {}", show_limit(s.speed_limit));
                 } else {
-                    println!("{}", show_limit(&s));
+                    println!("{}", show_limit(s.speed_limit));
                 }
                 0
             }
@@ -100,7 +101,7 @@ async fn set_limit(dir: &Path, rate: Option<u64>) -> u8 {
         Err(e) => return report(&e, false, None, &hints_for(&e, None, "config")),
     };
     let r = engine.set_limit(LimitScope::Global, rate).await;
-    let shown = engine.settings().await.map(|s| show_limit(&s));
+    let shown = engine.settings().await.map(|s| show_limit(s.speed_limit));
     engine.shutdown().await;
     match (r, shown) {
         (Ok(()), Ok(s)) => {
