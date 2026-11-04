@@ -188,3 +188,26 @@ export function percent(downloaded: number, total: number | null): number | null
   const p = Math.floor((downloaded / total) * 100);
   return Math.min(downloaded >= total ? 100 : 99, Math.max(0, p));
 }
+
+/**
+ * A path or link in pieces that each end at a separator (`\`, `/`), so it
+ * can wrap between folders instead of in the middle of a name.
+ */
+export function pathPieces(path: string): string[] {
+  const pieces = path.match(/[^\\/]*(?:[\\/]+|$)/g)?.filter(Boolean) ?? [path];
+  // A link's scheme stays with its host, which may wrap after its dots:
+  // "https://cdn.", "example.org/", never "https://" alone.
+  if (pieces.length > 1 && pieces[0]?.endsWith("://")) {
+    const host = pieces[1]?.match(/[^.]*(?:\.+|$)/g)?.filter(Boolean) ?? [];
+    pieces.splice(0, 2, `${pieces[0]}${host[0] ?? ""}`, ...host.slice(1));
+  }
+  return pieces;
+}
+
+/** A folder's last name and the path above it, for compact display. */
+export function splitFolder(path: string): { parent: string; leaf: string } {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const cut = Math.max(trimmed.lastIndexOf("\\"), trimmed.lastIndexOf("/"));
+  if (cut < 0) return { parent: "", leaf: trimmed || path };
+  return { parent: trimmed.slice(0, cut + 1), leaf: trimmed.slice(cut + 1) || trimmed };
+}

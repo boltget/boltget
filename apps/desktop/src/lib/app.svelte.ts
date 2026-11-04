@@ -61,7 +61,29 @@ class AppState {
   announcement = $state("");
   /** The download whose "Refresh link" field should take focus. */
   refreshing = $state<DownloadId | null>(null);
+  /**
+   * The add sheet (APP-DESIGN #6) while it is open: the links it was opened
+   * with, and a number that changes when more arrive while it is open.
+   */
+  adding = $state<{ text: string; key: number } | null>(null);
   #toastId = 0;
+  #addKey = 0;
+
+  /** Opens the add sheet with `text` in its link field (or adds it there). */
+  openAdd(text = ""): void {
+    this.adding = { text, key: ++this.#addKey };
+  }
+
+  closeAdd(): void {
+    this.adding = null;
+  }
+
+  /** Selects downloads and shows the first in the details pane. */
+  select(ids: readonly DownloadId[]): void {
+    const first = ids[0];
+    if (first === undefined) return;
+    this.selection = { ids: new Set(ids), anchor: first, active: first };
+  }
 
   setDensity(density: Density): void {
     this.density = density;

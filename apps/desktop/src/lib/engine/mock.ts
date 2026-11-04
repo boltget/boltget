@@ -24,6 +24,8 @@ import type { EngineApi, Result } from "./store.svelte";
 
 const MIB = 1024 * 1024;
 const TICK = 250;
+const DOWNLOADS = String.raw`C:\Users\you\Downloads`;
+const SEP = "\\";
 
 const FILES: [string, string, number][] = [
   ["ubuntu-24.04.1-desktop-amd64.iso", "releases.ubuntu.com", 6114 * MIB],
@@ -89,6 +91,7 @@ export function mockEngineApi(search: string): EngineApi {
   const now = Date.now();
   const sims = new Map<DownloadId, Sim>();
   let settings: AppSettings = { speedLimit: null };
+  let recent: string[] = [];
   let focused: DownloadId | null = null;
   let emit: (m: EngineMessage) => void = () => {};
   let nextId = 1;
@@ -261,26 +264,75 @@ export function mockEngineApi(search: string): EngineApi {
         } catch {
           return err("error.invalid_url");
         }
-        const sim = make(sims.size, "downloading");
-        const name = decodeURIComponent(url.pathname.split("/").pop() || url.hostname);
+        const paused = request.paused ?? false;
+        const sim = make(sims.size, paused ? "paused" : "downloading");
+        const name =
+          request.fileName ?? decodeURIComponent(url.pathname.split("/").pop() || url.hostname);
+        const folder = request.directory ?? DOWNLOADS;
         sim.row.url = url.href;
         sim.row.fileName = name;
-        sim.row.path = `C:\\Users\\you\\Downloads\\${name}`;
+        sim.row.path = `${folder}${SEP}${name}`;
         sim.row.createdAt = Date.now();
+        sim.row.completedAt = null;
         sim.row.downloaded = 0;
+        sim.row.speedLimit = request.speedLimit ?? null;
         sim.segments = initialSegments(sim.row.total ?? MIB, 4, 0);
+        if (!paused) start(sim, false);
         sims.set(sim.row.id, sim);
+        recent = [folder, ...recent.filter((f) => f !== folder)].slice(0, 3);
         return ok({ ...sim.row });
       },
+      async addDefaults() {
+        return ok({ downloadsFolder: DOWNLOADS, recentFolders: recent });
+      },
+      async checkDestination(directory: string | null, fileName: string) {
+        // Names already in the list count as taken, like files on disk.
+        const folder = directory ?? DOWNLOADS;
+        const taken = new Set([...sims.values()].map((s) => s.row.path));
+        let saved = fileName;
+        const dot = fileName.lastIndexOf(".");
+        const [stem, ext] =
+          dot > 0 ? [fileName.slice(0, dot), fileName.slice(dot)] : [fileName, ""];
+        for (let k = 1; taken.has(`${folder}${SEP}${saved}`); k += 1)
+          saved = `${stem} (${k})${ext}`;
+        return ok({
+          fileName: saved,
+          renamed: saved !== fileName,
+          folderExists: true,
+          freeBytes: 48 * 1024 * MIB,
+        });
+      },
+      async chooseFolder() {
+        return ok(String.raw`D:\Media\Incoming`);
+      },
       async probeUrl(url: string) {
+        // Simulated answers by link: "404", "html" (or a bare host), "auth",
+        // "offline" and "slow" pick a case; anything else is a file.
+        await new Promise((r) => setTimeout(r, /slow/.test(url) ? 2500 : 450));
+        let u: URL;
+        try {
+          u = new URL(url);
+        } catch {
+          return err("error.invalid_url");
+        }
+        if (/404/.test(url)) return err("error.http.not_found");
+        if (/auth/.test(url)) return err("error.http.unauthorized");
+        if (/offline/.test(url)) return err("error.network");
+        const page = /html/.test(url) || u.pathname === "/";
+        const last = decodeURIComponent(u.pathname.split("/").pop() || "");
         return ok({
           finalUrl: url,
-          fileName: url.split("/").pop() ?? "file",
-          size: 100 * MIB,
-          resumable: true,
-          contentType: "application/octet-stream",
-          webPage: false,
+          fileName: page ? `${last || u.hostname}.html` : last || "download",
+          size: page
+            ? 1256
+            : (([...url].reduce((a, c) => a + c.charCodeAt(0), 0) % 900) + 20) * MIB,
+          resumable: !/once/.test(url),
+          contentType: page ? "text/html" : "application/octet-stream",
+          webPage: page,
           redirects: 0,
+          checksum: /sum/.test(url)
+            ? { algorithm: "sha256", digest: "9f86d08".padEnd(64, "0"), header: "repr-digest" }
+            : null,
         });
       },
       async pauseDownload(id: DownloadId) {

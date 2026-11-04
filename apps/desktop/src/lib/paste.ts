@@ -1,47 +1,32 @@
-// Paste-to-add, the stand-in for the add sheet (step 4 of v0.2 builds the
-// real one, APP-DESIGN #6): Ctrl+V in the window, a dropped link or the
-// "Add download" button starts the http(s) links found in the text at once.
-import { t } from "@boltget/ui/messages";
+// Links arrive from outside the sheet: Ctrl+V in the window, a dropped link,
+// Ctrl+N and the "Add download" button. All of them open the add sheet with
+// the links filled in (APP-DESIGN #6); nothing starts without it.
 import { app } from "./app.svelte";
-import { downloads } from "./engine";
-import { displayName } from "./format";
+import { linksIn } from "./add/links";
 
-/** The http and https links in a pasted or dropped text, without repeats. */
-export function linksIn(text: string): string[] {
-  const found = new Set<string>();
-  for (const word of text.split(/\s+/)) {
-    const candidate = word.replace(/^[<("']+|[>)"',.;]+$/g, "");
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") found.add(url.href);
-    } catch {
-      // Not a link.
-    }
-  }
-  return [...found];
-}
+/** How long the clipboard may take before the sheet opens without it. */
+const CLIPBOARD_WAIT_MS = 300;
 
-/** Starts every link in `text`; false when there was none. */
-export function addFromText(text: string): boolean {
+/** Opens the sheet with the links in `text`; false when there is none. */
+export function openAddFromText(text: string): boolean {
   const links = linksIn(text);
-  for (const url of links) {
-    void downloads.add({ url }).then((result) => {
-      if (result.status === "ok") {
-        const name = displayName(result.data.fileName, result.data.url);
-        app.toast(t("toast.added", { name }));
-      }
-    });
-  }
-  return links.length > 0;
+  if (links.length === 0) return false;
+  app.openAdd(links.join("\n"));
+  return true;
 }
 
-/** The "Add download" button: takes a link from the clipboard. */
-export async function addFromClipboard(): Promise<void> {
+/** Ctrl+N and the "Add download" button: the sheet, with the clipboard's links. */
+export async function openAddFromClipboard(): Promise<void> {
   let text = "";
   try {
-    text = await navigator.clipboard.readText();
+    // A clipboard that does not answer (no focus, no permission) must not
+    // keep the sheet closed: after a moment it opens empty.
+    text = await Promise.race([
+      navigator.clipboard.readText(),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), CLIPBOARD_WAIT_MS)),
+    ]);
   } catch {
-    // No clipboard access: fall through to the hint.
+    // No clipboard access: the sheet opens empty.
   }
-  if (!addFromText(text)) app.toast(t("add.hint"));
+  app.openAdd(linksIn(text).join("\n"));
 }

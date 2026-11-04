@@ -31,7 +31,7 @@
   } from "../format";
   import Icon, { type IconName } from "../Icon.svelte";
   import { primaryAction, type ActionId } from "./actions";
-  import { categoryOf } from "./category";
+  import { categoryIcon } from "./category";
   import { isRunning, needsAttention } from "./model";
 
   interface Props {
@@ -60,15 +60,6 @@
     onmore,
   }: Props = $props();
 
-  const ICONS: Record<string, IconName> = {
-    video: "video",
-    music: "music",
-    archives: "archives",
-    programs: "programs",
-    documents: "documents",
-    other: "file",
-  };
-
   const ACTION_ICONS: Record<ActionId, IconName> = {
     pause: "pause",
     resume: "play",
@@ -83,7 +74,7 @@
   };
 
   const name = $derived(displayName(d.fileName, d.url));
-  const icon = $derived(ICONS[categoryOf(name)] ?? "file");
+  const icon = $derived(categoryIcon(name));
   const running = $derived(isRunning(d.state));
   const attention = $derived(needsAttention(d.state));
   const action = $derived(primaryAction(d.state));

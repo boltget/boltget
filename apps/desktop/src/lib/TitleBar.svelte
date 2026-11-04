@@ -14,7 +14,7 @@
   import Icon from "./Icon.svelte";
   import { app } from "./app.svelte";
   import { appWindow } from "./native";
-  import { addFromClipboard } from "./paste";
+  import { openAddFromClipboard } from "./paste";
 
   let focused = $state(true);
   let search: HTMLInputElement | undefined = $state();
@@ -51,10 +51,9 @@
     }
   }
 
-  // Until the add sheet arrives (step 4), the button takes a link from the
-  // clipboard, like Ctrl+V.
+  // The add sheet, prefilled with a link on the clipboard (like Ctrl+N).
   function addDownload() {
-    void addFromClipboard();
+    void openAddFromClipboard();
   }
 </script>
 

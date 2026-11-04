@@ -40,6 +40,18 @@ export const commands = {
 	 *  before the engine's first event arrives.
 	 */
 	addDownload: (request: AddDownload) => typedError<DownloadRow, UiError>(__TAURI_INVOKE("add_download", { request })),
+	/**  The Downloads folder and the recent folders, for the add sheet. */
+	addDefaults: () => typedError<AddDefaults, UiError>(__TAURI_INVOKE("add_defaults")),
+	/**
+	 *  The name a download would be saved under in `directory` (the Downloads
+	 *  folder when absent), and the free space there, for the add sheet.
+	 */
+	checkDestination: (directory: string | null, fileName: string) => typedError<DestinationCheck, UiError>(__TAURI_INVOKE("check_destination", { directory, fileName })),
+	/**
+	 *  Asks for a folder with the system's folder picker, starting in `start`;
+	 *  `null` if the user cancels.
+	 */
+	chooseFolder: (start: string | null) => typedError<string | null, UiError>(__TAURI_INVOKE("choose_folder", { start })),
 	/**  Pauses a download after its final checkpoint; returns the state it is in. */
 	pauseDownload: (id: DownloadId) => typedError<DownloadState, UiError>(__TAURI_INVOKE("pause_download", { id })),
 	/**  Continues a stopped download; `restart` throws its progress away first. */
@@ -95,6 +107,14 @@ export const events = {
 };
 
 /* Types */
+/**  What the add sheet offers before anything is typed. */
+export type AddDefaults = {
+	/**  The user's Downloads folder, if Windows has one. */
+	downloadsFolder: string | null,
+	/**  Folders downloads were last added to, newest first (at most three). */
+	recentFolders: string[],
+};
+
 /**  A download to start. */
 export type AddDownload = {
 	url: string,
@@ -108,6 +128,8 @@ export type AddDownload = {
 	speedLimit?: number | null,
 	/**  `sha256:<hex>` (also `md5`, `sha1`, `sha512`) or bare hex. */
 	checksum?: string | null,
+	/**  Add it paused instead of starting it. */
+	paused?: boolean | null,
 };
 
 /**  What the About screen and bug reports need to know about this build. */
@@ -157,6 +179,21 @@ export type ChecksumInfo = {
 	 *  otherwise the response header the server sent it in.
 	 */
 	header: string | null,
+};
+
+/**  Where a download would be saved, for the add sheet. */
+export type DestinationCheck = {
+	/**
+	 *  The name it would be saved under: sanitized, with ` (1)` appended if
+	 *  the name is taken.
+	 */
+	fileName: string,
+	/**  The name was taken, so a number was appended. */
+	renamed: boolean,
+	/**  Whether the folder exists (the engine creates it otherwise). */
+	folderExists: boolean,
+	/**  Free space on the folder's drive, if known. */
+	freeBytes: number | null,
 };
 
 /**
@@ -294,6 +331,11 @@ export type ProbePreview = {
 	/**  The link returns a web page rather than a file (it may need a sign-in). */
 	webPage: boolean,
 	redirects: number,
+	/**
+	 *  A checksum of the file the server sent; downloads verify it unless the
+	 *  user gives one.
+	 */
+	checksum: ServerChecksum | null,
 };
 
 /**  Live progress of one running download, sent only when it changed. */
@@ -324,6 +366,16 @@ export type SegmentSpan = {
 	received: number,
 	/**  The connection working on it, if any. */
 	connection: number | null,
+};
+
+/**  A checksum the server advertised for the whole file. */
+export type ServerChecksum = {
+	/**  `md5`, `sha1`, `sha256` or `sha512`. */
+	algorithm: string,
+	/**  Lowercase hex. */
+	digest: string,
+	/**  The response header it came from. */
+	header: string,
 };
 
 /**  The resolved theme of the page. */

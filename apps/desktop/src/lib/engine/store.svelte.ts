@@ -8,8 +8,10 @@
 // the rows whose numbers changed. The list itself (`ids`) changes only when
 // downloads are added or removed.
 import type {
+  AddDefaults,
   AddDownload,
   AppSettings,
+  DestinationCheck,
   DownloadDetails,
   DownloadError,
   DownloadEvent,
@@ -36,6 +38,9 @@ export interface EngineApi {
   commands: Pick<
     typeof commands,
     | "addDownload"
+    | "addDefaults"
+    | "checkDestination"
+    | "chooseFolder"
     | "probeUrl"
     | "pauseDownload"
     | "resumeDownload"
@@ -215,6 +220,21 @@ export class DownloadStore {
   /** What a link points at, for the add sheet. */
   probe(url: string): Promise<Result<ProbePreview>> {
     return this.#api.commands.probeUrl(url);
+  }
+
+  /** The Downloads folder and the recent folders, for the add sheet. */
+  addDefaults(): Promise<Result<AddDefaults>> {
+    return this.#api.commands.addDefaults();
+  }
+
+  /** The name a download would be saved under, and the space free there. */
+  checkDestination(directory: string | null, fileName: string): Promise<Result<DestinationCheck>> {
+    return this.#api.commands.checkDestination(directory, fileName);
+  }
+
+  /** The system's folder picker; `null` when cancelled. */
+  chooseFolder(start: string | null): Promise<Result<string | null>> {
+    return this.#api.commands.chooseFolder(start);
   }
 
   /** Starts a download; its row appears at once. */

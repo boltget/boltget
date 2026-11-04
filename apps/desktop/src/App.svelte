@@ -20,7 +20,8 @@
   import DownloadList from "./lib/list/DownloadList.svelte";
   import ListHeader from "./lib/list/ListHeader.svelte";
   import Notice from "./lib/list/Notice.svelte";
-  import { addFromText } from "./lib/paste";
+  import AddSheet from "./lib/add/AddSheet.svelte";
+  import { openAddFromClipboard, openAddFromText } from "./lib/paste";
   import Sidebar from "./lib/Sidebar.svelte";
   import TitleBar from "./lib/TitleBar.svelte";
   import Toasts from "./lib/Toasts.svelte";
@@ -57,7 +58,7 @@
   function onpaste(event: ClipboardEvent) {
     if (editable(event.target) || status.state !== "ready") return;
     const text = event.clipboardData?.getData("text") ?? "";
-    if (addFromText(text)) event.preventDefault();
+    if (openAddFromText(text)) event.preventDefault();
   }
 
   function ondragover(event: DragEvent) {
@@ -69,12 +70,17 @@
     const data = event.dataTransfer;
     if (!data || status.state !== "ready") return;
     const text = data.getData("text/uri-list") || data.getData("text/plain");
-    if (addFromText(text)) event.preventDefault();
+    if (openAddFromText(text)) event.preventDefault();
   }
 
   function onkeydown(event: KeyboardEvent) {
     const ctrl = event.ctrlKey || event.metaKey;
-    if (ctrl && !event.altKey && event.code === "KeyI" && !event.shiftKey) {
+    // The add sheet is modal: the window's shortcuts wait until it closes.
+    if (app.adding) return;
+    if (ctrl && !event.altKey && !event.shiftKey && event.code === "KeyN") {
+      event.preventDefault();
+      if (status.state === "ready") void openAddFromClipboard();
+    } else if (ctrl && !event.altKey && event.code === "KeyI" && !event.shiftKey) {
       event.preventDefault();
       app.togglePane();
     } else if (ctrl && event.shiftKey && event.code === "KeyD") {
@@ -141,6 +147,7 @@
   </div>
 </div>
 
+<AddSheet />
 <ConfirmDialog />
 <div class="visually-hidden" aria-live="polite">{app.announcement}</div>
 

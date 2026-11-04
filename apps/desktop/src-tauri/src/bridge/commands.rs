@@ -10,9 +10,9 @@ use tauri::{AppHandle, Manager, State};
 
 use super::Bridge;
 use super::dto::{
-    AddDownload, AppSettings, ChecksumInfo, DownloadDetails, DownloadId, DownloadRow,
-    DownloadState, EngineMessage, EngineStatus, LimitScope, LinkSource, ProbePreview, SegmentSpan,
-    path_string,
+    AddDefaults, AddDownload, AppSettings, ChecksumInfo, DestinationCheck, DownloadDetails,
+    DownloadId, DownloadRow, DownloadState, EngineMessage, EngineStatus, LimitScope, LinkSource,
+    ProbePreview, SegmentSpan, path_string,
 };
 use super::hub::new_row;
 use crate::error::UiError;
@@ -81,7 +81,7 @@ pub(crate) async fn add_download(
     };
     let destination = match request.file_name.as_deref().map(str::trim) {
         Some(name) if !name.is_empty() => Destination::File(dir.join(plain_file_name(name)?)),
-        _ => Destination::Directory(dir),
+        _ => Destination::Directory(dir.clone()),
     };
     let url = redact_url(ctx.url());
     let mut req = AddRequest::new(ctx, destination).speed_limit(request.speed_limit);
@@ -95,11 +95,130 @@ pub(crate) async fn add_download(
             Checksum::parse(c).map_err(|e| UiError::with_message("error.invalid_checksum", e))?;
         req = req.checksum(checksum);
     }
-    let handle = engine.add(req);
-    let mut row = new_row(handle.id().into(), url);
+    let paused = request.paused.unwrap_or(false);
+    let id = if paused {
+        engine.add_paused(req)?
+    } else {
+        engine.add(req).id()
+    };
+    let mut row = new_row(id.into(), url);
     row.speed_limit = request.speed_limit.filter(|&r| r > 0);
+    if paused {
+        row.state = DownloadState::Paused;
+    }
     bridge.upsert(row.clone());
+    remember_folder(engine, &dir).await;
     Ok(row)
+}
+
+/// How many folders the add sheet offers (APP-DESIGN #6).
+const RECENT_FOLDERS: usize = 3;
+/// Where they are kept (an `app.` setting in the engine's database).
+const RECENT_FOLDERS_KEY: &str = "recent_folders";
+
+async fn recent_folders(engine: &boltget_engine::Engine) -> Vec<String> {
+    match engine.app_setting(RECENT_FOLDERS_KEY).await {
+        Ok(Some(value)) => serde_json::from_value(value).unwrap_or_default(),
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            tracing::warn!(error = %e, "could not read the recent folders");
+            Vec::new()
+        }
+    }
+}
+
+/// Puts `dir` first among the recent folders. A failure only costs the
+/// suggestion, so it is logged, not reported.
+async fn remember_folder(engine: &boltget_engine::Engine, dir: &Path) {
+    let dir = path_string(&std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf()));
+    let mut folders = recent_folders(engine).await;
+    folders.retain(|f| !f.eq_ignore_ascii_case(&dir));
+    folders.insert(0, dir);
+    folders.truncate(RECENT_FOLDERS);
+    if let Err(e) = engine
+        .set_app_setting(RECENT_FOLDERS_KEY, Some(serde_json::json!(folders)))
+        .await
+    {
+        tracing::warn!(error = %e, "could not remember the folder");
+    }
+}
+
+/// The Downloads folder and the recent folders, for the add sheet.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn add_defaults(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+) -> Result<AddDefaults, UiError> {
+    let engine = bridge.engine()?;
+    Ok(AddDefaults {
+        downloads_folder: app.path().download_dir().ok().map(|p| path_string(&p)),
+        recent_folders: recent_folders(engine).await,
+    })
+}
+
+/// The name a download would be saved under in `directory` (the Downloads
+/// folder when absent), and the free space there, for the add sheet.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn check_destination(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+    directory: Option<String>,
+    file_name: String,
+) -> Result<DestinationCheck, UiError> {
+    let engine = bridge.engine()?;
+    let dir = match directory.as_deref().map(str::trim) {
+        Some(d) if !d.is_empty() => PathBuf::from(d),
+        _ => app
+            .path()
+            .download_dir()
+            .map_err(|e| UiError::with_message("error.no_download_folder", e.to_string()))?,
+    };
+    plain_file_name(file_name.trim())?;
+    let path = engine
+        .free_path(&dir, file_name.trim())
+        .ok_or_else(|| UiError::key("error.invalid_file_name"))?;
+    let saved_as = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    // The nearest folder that exists tells which drive the file lands on.
+    let free_bytes = dir
+        .ancestors()
+        .find(|d| d.is_dir())
+        .and_then(boltget_engine::available_space);
+    Ok(DestinationCheck {
+        renamed: saved_as != file_name.trim(),
+        file_name: saved_as,
+        folder_exists: dir.is_dir(),
+        free_bytes,
+    })
+}
+
+/// Asks for a folder with the system's folder picker, starting in `start`;
+/// `null` if the user cancels.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn choose_folder(
+    window: tauri::WebviewWindow,
+    start: Option<String>,
+) -> Result<Option<String>, UiError> {
+    use tauri_plugin_dialog::DialogExt as _;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut dialog = window.dialog().file().set_parent(&window);
+    if let Some(dir) = start.map(PathBuf::from).filter(|d| d.is_dir()) {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog.pick_folder(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let picked = rx
+        .await
+        .map_err(|e| UiError::with_message("error.unknown", e.to_string()))?;
+    Ok(picked
+        .and_then(|p| p.into_path().ok())
+        .map(|p| path_string(&p)))
 }
 
 /// A file name the user typed, without any folder in it.

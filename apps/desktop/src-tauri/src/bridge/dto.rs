@@ -350,6 +350,21 @@ pub(crate) struct ProbePreview {
     /// The link returns a web page rather than a file (it may need a sign-in).
     pub(crate) web_page: bool,
     pub(crate) redirects: u32,
+    /// A checksum of the file the server sent; downloads verify it unless the
+    /// user gives one.
+    pub(crate) checksum: Option<ServerChecksum>,
+}
+
+/// A checksum the server advertised for the whole file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ServerChecksum {
+    /// `md5`, `sha1`, `sha256` or `sha512`.
+    pub(crate) algorithm: String,
+    /// Lowercase hex.
+    pub(crate) digest: String,
+    /// The response header it came from.
+    pub(crate) header: String,
 }
 
 impl From<&engine::ProbeResult> for ProbePreview {
@@ -366,6 +381,11 @@ impl From<&engine::ProbeResult> for ProbePreview {
             content_type: p.content_type.clone(),
             web_page,
             redirects: u32::try_from(p.redirects).unwrap_or(u32::MAX),
+            checksum: p.server_digest.as_ref().map(|d| ServerChecksum {
+                algorithm: d.checksum.algo.as_str().to_owned(),
+                digest: d.checksum.hex.clone(),
+                header: d.header.clone(),
+            }),
         }
     }
 }
@@ -443,6 +463,34 @@ pub(crate) struct AddDownload {
     /// `sha256:<hex>` (also `md5`, `sha1`, `sha512`) or bare hex.
     #[specta(optional)]
     pub(crate) checksum: Option<String>,
+    /// Add it paused instead of starting it.
+    #[specta(optional)]
+    pub(crate) paused: Option<bool>,
+}
+
+/// What the add sheet offers before anything is typed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AddDefaults {
+    /// The user's Downloads folder, if Windows has one.
+    pub(crate) downloads_folder: Option<String>,
+    /// Folders downloads were last added to, newest first (at most three).
+    pub(crate) recent_folders: Vec<String>,
+}
+
+/// Where a download would be saved, for the add sheet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DestinationCheck {
+    /// The name it would be saved under: sanitized, with ` (1)` appended if
+    /// the name is taken.
+    pub(crate) file_name: String,
+    /// The name was taken, so a number was appended.
+    pub(crate) renamed: bool,
+    /// Whether the folder exists (the engine creates it otherwise).
+    pub(crate) folder_exists: bool,
+    /// Free space on the folder's drive, if known.
+    pub(crate) free_bytes: Option<u64>,
 }
 
 /// Which speed limit to change.

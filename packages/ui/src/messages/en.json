@@ -153,7 +153,6 @@
     "one": "Link copied",
     "other": "{count} links copied"
   },
-  "toast.added": "Downloading {name}",
   "confirm.delete.title": {
     "one": "Delete {name}?",
     "other": "Delete {count} files?"
@@ -234,6 +233,69 @@
   "duration.hours": "{hours} h {minutes} min",
   "sort.current": "Sort: {sort}",
   "details.size": "Size",
-  "add.hint": "Copy a link, then paste it here with Ctrl+V.",
-  "details.left_bytes": "To go"
+  "details.left_bytes": "To go",
+  "add.title": "Add download",
+  "add.link": "Link",
+  "add.link.placeholder": "Paste a link, or several, one per line",
+  "add.invalid": "Paste an http or https link.",
+  "add.probing": "Looking at the link…",
+  "add.name": "File name",
+  "add.folder": "Save to",
+  "add.folder.choose": "Choose folder…",
+  "add.folder.new": "The folder is created when the download starts.",
+  "add.more": "More options",
+  "add.connections": "Connections",
+  "add.connections.auto": "Auto",
+  "add.limit": "Speed limit",
+  "add.limit.none": "No limit",
+  "add.limit.unit": "MiB/s",
+  "add.checksum": "Checksum",
+  "add.checksum.placeholder": "sha256:… or a hex digest",
+  "add.checksum.server": "The server’s {algorithm} is checked automatically.",
+  "add.paused": "Add paused",
+  "add.submit": "Download",
+  "add.submit.again": "Download again",
+  "add.submit.paused": "Add paused",
+  "add.submit.many": {
+    "one": "Download {count} file",
+    "other": "Download {count} files"
+  },
+  "add.submit.many_paused": {
+    "one": "Add {count} file paused",
+    "other": "Add {count} files paused"
+  },
+  "add.meta.resume": "Can resume",
+  "add.meta.no_resume": "No resume",
+  "add.meta.unknown_size": "Size unknown",
+  "add.meta.checksum": "{algorithm} from the server",
+  "add.warn.web_page": "This link returns a web page, not a file. It may need a sign-in.",
+  "add.warn.space": "Not enough space on this drive: {free} free.",
+  "add.warn.renamed": "{name} already exists there, so this one is saved as {saved}.",
+  "add.warn.downloaded": "You downloaded this on {date}.",
+  "add.warn.downloaded_today": "You downloaded this today at {time}.",
+  "add.warn.listed": "This link is already in your list.",
+  "add.show_existing": "Show it",
+  "add.error.unreachable": "Boltget could not reach the server. Check the link and your connection.",
+  "add.error.auth": "The server asks for a sign-in before it sends this file.",
+  "add.problem.connections": "Use a number from 1 to 32, or leave it on Auto.",
+  "add.problem.limit": "Type a speed in MiB/s, such as 2.5.",
+  "add.problem.checksum": "Use sha256:, sha512:, sha1: or md5: followed by the hex digest.",
+  "add.problem.name": "Type a file name.",
+  "add.problem.name_folder": "Type a file name without a folder in it.",
+  "add.list.all": "Select all",
+  "add.list.count": {
+    "one": "{count} link",
+    "other": "{count} links"
+  },
+  "add.list.selected": "{selected} of {count} selected",
+  "add.list.web_page": "Web page",
+  "add.announce": {
+    "one": "Added {name}",
+    "other": "Added {count} downloads"
+  },
+  "shortcut.enter": "Enter",
+  "add.folder.downloads": "Downloads",
+  "add.folder.label": "Save to {folder}",
+  "details.throughput.start": "Speed since it started",
+  "details.peak": "Peak {speed}"
 }

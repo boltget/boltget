@@ -60,6 +60,9 @@ fn main() {
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
                 .build(),
         )
+        // The folder picker. The capability grants the page none of its
+        // commands; `choose_folder` uses it from Rust.
+        .plugin(tauri_plugin_dialog::init())
         .manage(WindowShown::default())
         .manage(bridge)
         .invoke_handler(ipc.invoke_handler())

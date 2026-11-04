@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { linksIn } from "../paste";
 import { cellAt, cellRange, connections, contiguous, coverage, grid } from "./fileMap";
 
 describe("grid", () => {
@@ -78,14 +77,5 @@ describe("coverage", () => {
       { id: 4, done: 50, size: 200 },
     ]);
     expect(connections(null, 100)).toEqual([]);
-  });
-});
-
-describe("pasted links", () => {
-  it("finds http and https links, once each", () => {
-    expect(
-      linksIn("get <https://a.org/x.iso> and http://b.org/y.zip, also https://a.org/x.iso"),
-    ).toEqual(["https://a.org/x.iso", "http://b.org/y.zip"]);
-    expect(linksIn("ftp://c.org/z mailto:me@x.org plain words")).toEqual([]);
   });
 });

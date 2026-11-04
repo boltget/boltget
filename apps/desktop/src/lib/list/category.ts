@@ -1,5 +1,6 @@
 // Categories by file type (APP-DESIGN #2), derived from the file name's
 // extension: the engine has no categories of its own yet.
+import type { IconName } from "../Icon.svelte";
 
 export const CATEGORIES = ["video", "music", "archives", "programs", "documents", "other"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -24,4 +25,18 @@ export function categoryOf(name: string): Category {
   const dot = name.lastIndexOf(".");
   if (dot <= 0 || dot === name.length - 1) return "other";
   return BY_EXTENSION.get(name.slice(dot + 1).toLowerCase()) ?? "other";
+}
+
+const ICONS: Record<Category, IconName> = {
+  video: "video",
+  music: "music",
+  archives: "archives",
+  programs: "programs",
+  documents: "documents",
+  other: "file",
+};
+
+/** The type icon of a file, from its name. */
+export function categoryIcon(name: string): IconName {
+  return ICONS[categoryOf(name)];
 }

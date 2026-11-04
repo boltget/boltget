@@ -22,11 +22,15 @@ tauri-build = { version = "2.7", features = [] }
 [dependencies]
 boltget-engine.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tauri = { version = "2.12", features = [] }
 # Opening a completed download and showing it in Explorer, from Rust only:
 # the plugin is not registered, so the page gets no opener commands of its
 # own and can reveal nothing but a download's own file.
 tauri-plugin-opener = "2.7"
+# The add sheet's folder picker, from Rust only (`choose_folder`): the page
+# is granted none of the plugin's commands.
+tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2.5"
 tauri-plugin-window-state = "2.5"
 tokio.workspace = true

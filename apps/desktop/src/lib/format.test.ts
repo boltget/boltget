@@ -9,10 +9,12 @@ import {
   formatSpeed,
   formatWhen,
   hostOf,
+  pathPieces,
   percent,
   progressParts,
   secondsLeft,
   speedParts,
+  splitFolder,
   stableEta,
   unitOf,
 } from "./format";
@@ -119,5 +121,23 @@ describe("names and places", () => {
     expect(percent(1000, 1000)).toBe(100);
     expect(percent(0, 1000)).toBe(0);
     expect(percent(5, null)).toBeNull();
+  });
+});
+
+describe("paths", () => {
+  it("breaks only after separators", () => {
+    const path = String.raw`C:\Users\you\scratch\1G.bin`;
+    expect(pathPieces(path)).toEqual(["C:\\", "Users\\", "you\\", "scratch\\", "1G.bin"]);
+    expect(pathPieces("https://a.org/b/c.dat")).toEqual(["https://a.", "org/", "b/", "c.dat"]);
+    expect(pathPieces("plain").join("")).toBe("plain");
+  });
+
+  it("splits a folder into its name and parent", () => {
+    expect(splitFolder(String.raw`C:\Users\you\Downloads`)).toEqual({
+      parent: "C:\\Users\\you\\",
+      leaf: "Downloads",
+    });
+    expect(splitFolder("D:\\")).toEqual({ parent: "", leaf: "D:" });
+    expect(splitFolder("/home/me/")).toEqual({ parent: "/home/", leaf: "me" });
   });
 });
