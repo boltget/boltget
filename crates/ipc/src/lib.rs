@@ -18,6 +18,9 @@
 //!   [`Response::Error`] with the key `error.protocol_version`. Then one
 //!   request, one response, in turn; [`Request::Watch`] instead streams a
 //!   download's events and progress until it stops ([`proto`]).
+//! - **Ownership.** The app serves its endpoint from the start; a hello
+//!   waits while its engine opens, and is refused with `error.not_owner`
+//!   while a standalone `boltget` holds the database ([`Ownership`]).
 //!
 //! The owner side is [`Server`]; the client side is [`Client`].
 
@@ -40,7 +43,7 @@ pub use proto::{
     AddSpec, Finished, OLDEST_SUPPORTED, PROTOCOL_VERSION, ProgressReport, RefreshSpec, Request,
     RequestSpec, Response, ResumeSpec, WireError,
 };
-pub use server::{Owner, Server};
+pub use server::{Owner, Ownership, Server};
 
 /// Why talking over the pipe failed.
 #[derive(Debug, thiserror::Error)]

@@ -10,7 +10,9 @@ use boltget_testserver::TestServer;
 
 use crate::frame::{read_message, write_frame, write_message};
 use crate::proto::{INVALID_REQUEST_KEY, VERSION_ERROR_KEY};
-use crate::{AddSpec, Client, Endpoint, Error, Request, Response, ResumeSpec, Server, transport};
+use crate::{
+    AddSpec, Client, Endpoint, Error, Ownership, Request, Response, ResumeSpec, Server, transport,
+};
 
 const KIB: u64 = 1024;
 const MIB: u64 = 1024 * KIB;
@@ -68,8 +70,8 @@ impl Owner {
         let endpoint = Endpoint::for_data_dir(data.path()).unwrap();
         let server = Server::bind(endpoint.clone()).await.unwrap();
         let recorder = Arc::new(Recorder::default());
-        let task =
-            tokio::spawn(server.serve(engine.clone(), recorder.clone(), "Boltget test".into()));
+        let (_, ownership) = tokio::sync::watch::channel(Ownership::Owner(engine.clone()));
+        let task = tokio::spawn(server.serve(ownership, recorder.clone(), "Boltget test".into()));
         Self {
             _data: data,
             downloads,
@@ -138,6 +140,38 @@ async fn nobody_serves_a_directory_without_an_owner() {
     let dir = tempfile::tempdir().unwrap();
     let endpoint = Endpoint::for_data_dir(dir.path()).unwrap();
     assert!(Client::connect(&endpoint, "test").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn hello_waits_for_the_engine_and_a_non_owner_sends_clients_away() {
+    let data = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_data_dir(data.path()).unwrap();
+    let server = Server::bind(endpoint.clone()).await.unwrap();
+    let (tx, ownership) = tokio::sync::watch::channel(Ownership::Starting);
+    let task = tokio::spawn(server.serve(ownership, Arc::new(()), "Boltget test".into()));
+
+    let connecting = tokio::spawn({
+        let endpoint = endpoint.clone();
+        async move { Client::connect(&endpoint, "test").await }
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        !connecting.is_finished(),
+        "hello waits while the engine opens"
+    );
+    let engine = Engine::open(cfg(), data.path()).unwrap();
+    tx.send_replace(Ownership::Owner(engine.clone()));
+    let mut client = timed(connecting).await.unwrap().unwrap().expect("served");
+    assert!(matches!(
+        client.request(&Request::List).await.unwrap(),
+        Response::Downloads { .. }
+    ));
+
+    // Another process took the database: clients open it themselves.
+    tx.send_replace(Ownership::NotOwner);
+    assert!(Client::connect(&endpoint, "test").await.unwrap().is_none());
+    task.abort();
+    engine.shutdown().await;
 }
 
 #[tokio::test]

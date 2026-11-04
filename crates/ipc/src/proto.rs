@@ -25,6 +25,10 @@ pub const OLDEST_SUPPORTED: u32 = 1;
 /// The key of the error an owner answers a client of another version with.
 pub const VERSION_ERROR_KEY: &str = "error.protocol_version";
 
+/// The key of the error a process answers hello with while another
+/// process owns the database: the client should open it itself.
+pub const NOT_OWNER_KEY: &str = "error.not_owner";
+
 /// The key of the error for a message the owner cannot accept.
 pub const INVALID_REQUEST_KEY: &str = "error.invalid_request";
 
@@ -450,6 +454,15 @@ pub struct WireError {
 }
 
 impl WireError {
+    /// An engine error of `kind` with catalog key `key`.
+    pub fn new(kind: ErrorKind, key: &str, message: impl Into<String>) -> Self {
+        Self {
+            kind: kind.as_str().into(),
+            key: key.into(),
+            message: message.into(),
+        }
+    }
+
     /// An error of the protocol itself (`kind` = `protocol`).
     pub fn protocol(key: &str, message: impl Into<String>) -> Self {
         Self {

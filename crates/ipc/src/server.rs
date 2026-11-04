@@ -9,10 +9,10 @@ use boltget_engine::{
     EngineEvent, HeaderName, HeaderValue, LimitScope, Proxy, ProxyChoice, RequestContext,
     ResumeOptions, State,
 };
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 use crate::frame::{read_message, write_message};
-use crate::proto::{INVALID_REQUEST_KEY, VERSION_ERROR_KEY};
+use crate::proto::{INVALID_REQUEST_KEY, NOT_OWNER_KEY, VERSION_ERROR_KEY};
 use crate::transport::{BoxStream, Listener};
 use crate::{
     AddSpec, Endpoint, Error, Finished, OLDEST_SUPPORTED, PROTOCOL_VERSION, ProgressReport,
@@ -21,6 +21,8 @@ use crate::{
 
 /// How long a client may take to say hello.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a hello waits for an engine that is still opening.
+const STARTING_TIMEOUT: Duration = Duration::from_secs(8);
 /// How often [`Request::Watch`] reports progress.
 const WATCH_TICK: Duration = Duration::from_millis(500);
 
@@ -48,6 +50,22 @@ pub trait Owner: Send + Sync + 'static {
 /// An owner that needs to hear nothing.
 impl Owner for () {}
 
+/// Whether the serving process owns the engine right now. A process may
+/// serve its endpoint before its engine is open (so a client never finds
+/// the database locked and nobody to ask), and while another process holds
+/// the database (a standalone `boltget`), when it owns nothing.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum Ownership {
+    /// The engine is opening: a hello waits for it.
+    Starting,
+    /// The engine is open.
+    Owner(Engine),
+    /// Another process owns the database: clients are told so and should
+    /// open it themselves (and find it locked, or read it).
+    NotOwner,
+}
+
 /// Serves one endpoint.
 #[derive(Debug)]
 pub struct Server {
@@ -69,18 +87,19 @@ impl Server {
     }
 
     /// Accepts clients until the task running it is dropped, each served on
-    /// a task of its own. `name` identifies the owner in its hello
-    /// (`Boltget 0.2.0`).
-    pub async fn serve(mut self, engine: Engine, owner: Arc<dyn Owner>, name: String) {
-        let ctx = Arc::new(Ctx {
-            engine,
-            owner,
-            name,
-        });
+    /// a task of its own, with the engine `ownership` holds when it says
+    /// hello. `name` identifies the owner in its hello (`Boltget 0.2.0`).
+    pub async fn serve(
+        mut self,
+        ownership: watch::Receiver<Ownership>,
+        owner: Arc<dyn Owner>,
+        name: String,
+    ) {
+        let shared = Arc::new(Shared { owner, name });
         loop {
             match self.listener.accept().await {
                 Ok(io) => {
-                    tokio::spawn(connection(io, ctx.clone()));
+                    tokio::spawn(connection(io, shared.clone(), ownership.clone()));
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "the pipe stopped accepting a client");
@@ -91,10 +110,26 @@ impl Server {
     }
 }
 
+struct Shared {
+    owner: Arc<dyn Owner>,
+    name: String,
+}
+
 struct Ctx {
     engine: Engine,
     owner: Arc<dyn Owner>,
-    name: String,
+}
+
+/// The engine once it is open; `None` if this process does not own it.
+async fn engine(ownership: &mut watch::Receiver<Ownership>) -> Option<Engine> {
+    let ready = ownership.wait_for(|o| !matches!(o, Ownership::Starting));
+    match tokio::time::timeout(STARTING_TIMEOUT, ready).await {
+        Ok(Ok(o)) => match &*o {
+            Ownership::Owner(engine) => Some(engine.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 async fn send(io: &mut BoxStream, msg: &Response) -> Result<(), Error> {
@@ -113,13 +148,19 @@ fn refuse(error: WireError) -> Response {
     Response::Error { error }
 }
 
-async fn connection(mut io: BoxStream, ctx: Arc<Ctx>) {
-    match tokio::time::timeout(HELLO_TIMEOUT, read_message::<Request, _>(&mut io)).await {
+async fn connection(
+    mut io: BoxStream,
+    shared: Arc<Shared>,
+    mut ownership: watch::Receiver<Ownership>,
+) {
+    let engine = match tokio::time::timeout(HELLO_TIMEOUT, read_message::<Request, _>(&mut io))
+        .await
+    {
         Ok(Ok(Some(Request::Hello { v, client }))) => {
             if !(OLDEST_SUPPORTED..=PROTOCOL_VERSION).contains(&v) {
                 let msg = format!(
                     "{} speaks pipe protocol {}, {client} speaks {v}: use the same release of both",
-                    ctx.name,
+                    shared.name,
                     if OLDEST_SUPPORTED == PROTOCOL_VERSION {
                         PROTOCOL_VERSION.to_string()
                     } else {
@@ -133,14 +174,20 @@ async fn connection(mut io: BoxStream, ctx: Arc<Ctx>) {
                 .await;
                 return;
             }
+            let Some(engine) = engine(&mut ownership).await else {
+                let msg = format!("{} does not own the downloads right now", shared.name);
+                let _ = send(&mut io, &refuse(WireError::protocol(NOT_OWNER_KEY, msg))).await;
+                return;
+            };
             tracing::debug!(client, v, "pipe client connected");
             let hello = Response::Hello {
                 v,
-                server: ctx.name.clone(),
+                server: shared.name.clone(),
             };
             if send(&mut io, &hello).await.is_err() {
                 return;
             }
+            engine
         }
         Ok(Ok(Some(_))) => {
             let _ = send(&mut io, &refuse(invalid("the first message must be hello"))).await;
@@ -151,7 +198,11 @@ async fn connection(mut io: BoxStream, ctx: Arc<Ctx>) {
             return;
         }
         Ok(Ok(None)) | Err(_) => return,
-    }
+    };
+    let ctx = Ctx {
+        engine,
+        owner: shared.owner.clone(),
+    };
     loop {
         let req = match read_message::<Request, _>(&mut io).await {
             Ok(Some(req)) => req,

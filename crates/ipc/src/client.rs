@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::frame::{read_message, write_message};
-use crate::proto::VERSION_ERROR_KEY;
+use crate::proto::{NOT_OWNER_KEY, VERSION_ERROR_KEY};
 use crate::transport::{self, BoxStream};
 use crate::{Endpoint, Error, PROTOCOL_VERSION, Request, Response};
 
@@ -26,7 +26,9 @@ impl std::fmt::Debug for Client {
 
 impl Client {
     /// Connects to the owner at `endpoint` and agrees on the protocol.
-    /// `Ok(None)` when no process serves it (no app is running); an error
+    /// `Ok(None)` when no process serves it (no app is running), or the one
+    /// that does owns nothing right now (another process holds the
+    /// database); an error
     /// when one does but cannot be talked to, for example
     /// [`Error::Version`] when it speaks another protocol version.
     /// `client` names the caller in the owner's logs.
@@ -52,6 +54,7 @@ impl Client {
             Some(Response::Error { error }) if error.key == VERSION_ERROR_KEY => {
                 Err(Error::Version(error.message))
             }
+            Some(Response::Error { error }) if error.key == NOT_OWNER_KEY => Ok(None),
             Some(Response::Error { error }) => Err(Error::Protocol(error.message)),
             Some(other) => Err(Error::Protocol(format!("{other:?} instead of hello"))),
             None => Err(Error::Closed),
