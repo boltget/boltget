@@ -84,6 +84,11 @@ impl Model {
         self.rows.get(&id).map(|e| &e.row)
     }
 
+    /// Every row by id, for the aggregate the tray and taskbar show.
+    pub(crate) fn rows(&self) -> BTreeMap<DownloadId, &DownloadRow> {
+        self.rows.iter().map(|(id, e)| (*id, &e.row)).collect()
+    }
+
     /// Downloads that have live progress to sample.
     pub(crate) fn active_ids(&self) -> Vec<DownloadId> {
         self.rows

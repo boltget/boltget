@@ -13,6 +13,8 @@
 //! - **WebView2:** no browser context menu, status bubble, pinch zoom or swipe
 //!   navigation; no browser accelerator keys (reload, find, print, devtools)
 //!   in release builds.
+//! - **The tray:** the system's small icon size, and whether Windows shows
+//!   animations (the tray mark stays still when it does not).
 //!
 //! All of this runs on the main (UI) thread, which owns the windows.
 #![expect(
@@ -42,11 +44,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CreateWindowExW, DefWindowProcW, FindWindowExW, GWLP_USERDATA, GetClientRect,
-    GetParent, GetWindowLongPtrW, HTMAXBUTTON, HWND_TOP, IDC_ARROW, IsZoomed, LoadCursorW,
-    PostMessageW, RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-    SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY,
-    WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE,
-    WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSEXW, WS_CHILD, WS_CLIPSIBLINGS,
+    GetParent, GetSystemMetrics, GetWindowLongPtrW, HTMAXBUTTON, HWND_TOP, IDC_ARROW, IsZoomed,
+    LoadCursorW, PostMessageW, RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SM_CXSMICON,
+    SPI_GETCLIENTAREAANIMATION, SWP_NOACTIVATE, SWP_SHOWWINDOW,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetWindowLongPtrW, SetWindowPos, SystemParametersInfoW,
+    WINDOW_EX_STYLE, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
+    WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSEXW,
+    WS_CHILD, WS_CLIPSIBLINGS,
 };
 use windows::core::{Interface, PCWSTR, w};
 
@@ -425,6 +429,31 @@ unsafe extern "system" fn overlay_proc(
     }
     // SAFETY: default processing with the arguments we were given.
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
+/// The system's small icon size in pixels (the tray's), at the primary
+/// monitor's DPI.
+pub(crate) fn small_icon_size() -> u32 {
+    // SAFETY: GetSystemMetrics has no preconditions.
+    let size = unsafe { GetSystemMetrics(SM_CXSMICON) };
+    u32::try_from(size).ok().filter(|&s| s >= 16).unwrap_or(16)
+}
+
+/// Whether Windows shows animations ("Animation effects" in Settings);
+/// when it does not, motion is reduced.
+pub(crate) fn animations_enabled() -> bool {
+    let mut enabled = windows::core::BOOL(1);
+    // SAFETY: SPI_GETCLIENTAREAANIMATION writes one BOOL to the pointer,
+    // which points at `enabled`.
+    let ok = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            Some((&raw mut enabled).cast()),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    ok.is_err() || enabled.as_bool()
 }
 
 /// Window chrome failures are cosmetic: report them in debug builds only.

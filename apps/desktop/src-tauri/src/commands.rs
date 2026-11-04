@@ -3,6 +3,8 @@
 //!
 //! Errors reach the UI as [`UiError`]: a string catalog key, never prose.
 
+use std::sync::atomic::Ordering;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{Manager, WebviewWindow, window::Color};
@@ -43,11 +45,24 @@ pub(crate) fn app_info() -> AppInfo {
     reason = "Tauri passes command arguments by value"
 )]
 pub(crate) fn show_main_window(window: WebviewWindow) -> Result<(), UiError> {
-    if window.state::<WindowShown>().mark() {
+    if window.state::<WindowShown>().mark() && !stays_hidden(&window) {
         window.show().map_err(|_| UiError::window())?;
         let _ = window.set_focus();
     }
     Ok(())
+}
+
+/// Whether the app started with `--background`, in the tray: the first
+/// show is skipped, once.
+pub(crate) fn stays_hidden(window: &WebviewWindow) -> bool {
+    let hidden = window
+        .state::<crate::shell::StartHidden>()
+        .0
+        .swap(false, Ordering::AcqRel);
+    if hidden {
+        window.state::<crate::bridge::Bridge>().visible(false);
+    }
+    hidden
 }
 
 /// Brings the main window to the front: a second launch, or the fallback.

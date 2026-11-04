@@ -247,4 +247,21 @@ export interface MessageParams {
   "add.folder.label": { folder: string | number };
   "details.throughput.start": never;
   "details.peak": { speed: string | number };
+  "tray.tooltip": never;
+  "tray.active": { count: number };
+  "tray.open": never;
+  "tray.add_clipboard": never;
+  "tray.pause_all": never;
+  "tray.resume_all": never;
+  "tray.speed_limit": never;
+  "tray.no_limit": never;
+  "tray.open_folder": never;
+  "tray.quit": never;
+  "notify.completed": { size: string | number; time: string | number };
+  "notify.batch": { count: number };
+  "notify.batch.more": { count: number; names: string | number };
+  "notify.attention.batch": { count: number };
+  "notify.fix": never;
+  "notify.background.title": never;
+  "notify.background": never;
 }

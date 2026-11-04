@@ -5,12 +5,18 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { hexToRgba, themeColor, type Theme } from "@boltget/ui/theme";
-import { commands, events, type AppInfo, type CaptionMaximize } from "./bindings";
+import {
+  commands,
+  events,
+  type AppInfo,
+  type CaptionMaximize,
+  type ShellRequest,
+} from "./bindings";
 import type { CaptionRect } from "./caption";
 
 export const inTauri = isTauri();
 
-export type { AppInfo };
+export type { AppInfo, ShellRequest };
 
 export async function appInfo(): Promise<AppInfo> {
   if (!inTauri) {
@@ -55,6 +61,22 @@ export async function onMaximizeButton(
 ): Promise<() => void> {
   if (!inTauri) return () => {};
   return events.captionMaximize.listen((event) => handler(event.payload));
+}
+
+/**
+ * Requests from outside the page: links from a second launch, the tray's
+ * "Add from clipboard", a clicked notification.
+ */
+export async function onShellRequest(
+  handler: (request: ShellRequest) => void,
+): Promise<() => void> {
+  if (!inTauri) return () => {};
+  return events.shellRequest.listen((event) => handler(event.payload));
+}
+
+/** The links Boltget was started with (`Boltget.exe <url>`), once. */
+export async function takeLaunchLinks(): Promise<string | null> {
+  return inTauri ? commands.takeLaunchLinks() : null;
 }
 
 export const appWindow = {

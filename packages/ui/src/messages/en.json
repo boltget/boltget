@@ -297,5 +297,34 @@
   "add.folder.downloads": "Downloads",
   "add.folder.label": "Save to {folder}",
   "details.throughput.start": "Speed since it started",
-  "details.peak": "Peak {speed}"
+  "details.peak": "Peak {speed}",
+  "tray.tooltip": "Boltget",
+  "tray.active": {
+    "one": "{count} active",
+    "other": "{count} active"
+  },
+  "tray.open": "Open Boltget",
+  "tray.add_clipboard": "Add from clipboard",
+  "tray.pause_all": "Pause all",
+  "tray.resume_all": "Resume all",
+  "tray.speed_limit": "Speed limit",
+  "tray.no_limit": "No limit",
+  "tray.open_folder": "Open downloads folder",
+  "tray.quit": "Quit Boltget",
+  "notify.completed": "{size} in {time}",
+  "notify.batch": {
+    "one": "{count} download finished",
+    "other": "{count} downloads finished"
+  },
+  "notify.batch.more": {
+    "one": "{names} and {count} more",
+    "other": "{names} and {count} more"
+  },
+  "notify.attention.batch": {
+    "one": "{count} download needs attention",
+    "other": "{count} downloads need attention"
+  },
+  "notify.fix": "Fix…",
+  "notify.background.title": "Boltget is still running",
+  "notify.background": "Downloads go on in the background. Quit from the tray icon."
 }

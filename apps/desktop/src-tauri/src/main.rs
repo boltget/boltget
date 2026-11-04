@@ -3,17 +3,27 @@
 //! The v0.2 app: one window with a custom title bar, the theme plumbing and
 //! the native details that make it feel like a Windows app
 //! (docs/APP-DESIGN.md), and the engine bridge (`bridge`): the app owns the
-//! engine and its database and streams it to the page.
+//! engine and its database and streams it to the page. Around the window:
+//! one instance per session (`shell`), the tray and taskbar progress
+//! (`tray`), notifications (`notify`), the named pipe the CLI talks to
+//! (`pipe`), and the end of the session (`RunEvent::Exit` below).
 // No console window behind the app in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod catalog;
 mod commands;
 mod error;
 mod ipc;
+mod mark;
+mod notify;
+mod pipe;
 mod platform;
+mod shell;
 mod theme;
+mod tray;
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -22,6 +32,7 @@ use tauri::{Manager, RunEvent, WebviewWindow, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
 
 use crate::bridge::Bridge;
+use crate::shell::{Launch, PendingLinks, StartHidden};
 
 /// The label of the main window in `tauri.conf.json`.
 pub(crate) const MAIN_WINDOW: &str = "main";
@@ -45,12 +56,12 @@ fn main() {
     init_logging();
     let ipc = ipc::builder();
     let (bridge, hub) = Bridge::new(bridge::TICK);
+    let launch = Launch::parse(std::env::args().skip(1));
     let app = tauri::Builder::default()
-        // First, so a second launch exits before it creates anything.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                commands::reveal(&window);
-            }
+        // First, so a second launch exits before it creates anything; its
+        // links come here (docs/ARCHITECTURE.md, "The desktop app").
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            shell::second_instance(app, args);
         }))
         // Size, position and maximized state, restored while the window is
         // still hidden. Visibility is ours: the UI shows it after its first
@@ -64,16 +75,24 @@ fn main() {
         // commands; `choose_folder` uses it from Rust.
         .plugin(tauri_plugin_dialog::init())
         .manage(WindowShown::default())
+        .manage(StartHidden(AtomicBool::new(launch.background)))
+        .manage(PendingLinks::new(launch.links))
         .manage(bridge)
         .invoke_handler(ipc.invoke_handler())
         .setup(move |app| {
             ipc.mount_events(app);
             tauri::async_runtime::spawn(hub);
-            start_engine(app.handle());
+            let dir = data_dir();
+            if let Some(dir) = &dir {
+                pipe::start(app.handle(), dir.clone());
+            }
+            start_engine(app.handle(), dir);
             let window = app
                 .get_webview_window(MAIN_WINDOW)
                 .ok_or("the main window is missing from tauri.conf.json")?;
             prepare_main_window(&window);
+            tray::install(app.handle())?;
+            notify::start(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!());
@@ -81,8 +100,17 @@ fn main() {
     match app {
         Ok(app) => app.run(|app, event| {
             if let RunEvent::Exit = event {
-                // Every running download writes its final checkpoint.
-                tauri::async_runtime::block_on(app.state::<Bridge>().shutdown());
+                // Every running download writes its final checkpoint. Quitting
+                // from the tray leaves them paused. Any other exit is the end
+                // of the session (Tauri exits on `WM_ENDSESSION`: logoff,
+                // restart, shutdown, Restart Manager), since closing the
+                // window only hides it: what runs continues on the next start.
+                let bridge = app.state::<Bridge>();
+                if shell::quitting() {
+                    tauri::async_runtime::block_on(bridge.shutdown());
+                } else {
+                    tauri::async_runtime::block_on(bridge.shutdown_for_session_end());
+                }
             }
         }),
         Err(error) => {
@@ -106,18 +134,20 @@ fn init_logging() {
     }
 }
 
-/// Opens the engine in the background: the window does not wait for the
-/// database, and shows the engine's status when it arrives.
-///
-/// The data directory is the engine's default; debug builds accept
+/// Where the database lives: the engine's default; debug builds accept
 /// `BOLTGET_DATA_DIR`, like the CLI, so development never touches real
 /// downloads.
-fn start_engine(app: &tauri::AppHandle) {
-    let dir = cfg!(debug_assertions)
+fn data_dir() -> Option<PathBuf> {
+    cfg!(debug_assertions)
         .then(|| std::env::var_os("BOLTGET_DATA_DIR"))
         .flatten()
-        .map(std::path::PathBuf::from)
-        .or_else(boltget_engine::default_data_dir);
+        .map(PathBuf::from)
+        .or_else(boltget_engine::default_data_dir)
+}
+
+/// Opens the engine in the background: the window does not wait for the
+/// database, and shows the engine's status when it arrives.
+fn start_engine(app: &tauri::AppHandle, dir: Option<PathBuf>) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let bridge = app.state::<Bridge>();
@@ -142,19 +172,24 @@ fn prepare_main_window(window: &WebviewWindow) {
     platform::install(window, theme == tauri::Theme::Dark);
 
     let events = window.clone();
-    window.on_window_event(move |event| {
-        if matches!(
-            event,
-            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }
-        ) {
+    window.on_window_event(move |event| match event {
+        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
             platform::update_caption_layout(&events);
         }
+        // The window closes to the tray (APP-DESIGN #15); quitting is in the
+        // tray's menu.
+        WindowEvent::CloseRequested { api, .. } if !shell::quitting() => {
+            api.prevent_close();
+            shell::hide_to_tray(&events);
+        }
+        WindowEvent::Focused(true) => events.state::<Bridge>().acknowledge(),
+        _ => {}
     });
 
     let fallback = window.clone();
     std::thread::spawn(move || {
         std::thread::sleep(SHOW_FALLBACK);
-        if fallback.state::<WindowShown>().mark() {
+        if fallback.state::<WindowShown>().mark() && !commands::stays_hidden(&fallback) {
             commands::reveal(&fallback);
         }
     });

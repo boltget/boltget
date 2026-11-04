@@ -99,11 +99,17 @@ export const commands = {
 	 *  a snapshot when they are shown again (docs/APP-DESIGN.md #30).
 	 */
 	setUiVisible: (visible: boolean) => __TAURI_INVOKE<void>("set_ui_visible", { visible }),
+	/**
+	 *  The links `Boltget.exe` was started with, once; `null` when there are
+	 *  none. The page opens the add sheet with them when the engine is ready.
+	 */
+	takeLaunchLinks: () => __TAURI_INVOKE<string | null>("take_launch_links"),
 };
 
 /** Events */
 export const events = {
 	captionMaximize: makeEvent<CaptionMaximize, CaptionMaximize>("caption-maximize"),
+	shellRequest: makeEvent<ShellRequest, ShellRequest>("shell-request"),
 };
 
 /* Types */
@@ -377,6 +383,24 @@ export type ServerChecksum = {
 	/**  The response header it came from. */
 	header: string,
 };
+
+/**  What the page is asked to do from outside it. */
+export type ShellRequest = 
+/**
+ *  Open the add sheet with these links (one per line): `Boltget.exe
+ *  <url>`, or a second launch with links.
+ */
+{ kind: "add"; links: string } | 
+/**
+ *  Open the add sheet with the clipboard's links (the tray's "Add from
+ *  clipboard").
+ */
+{ kind: "addFromClipboard" } | 
+/**
+ *  Select a download and show it (a notification was clicked); with
+ *  `fix`, also offer what fixes it (a new link, say).
+ */
+{ kind: "select"; id: DownloadId; fix: boolean };
 
 /**  The resolved theme of the page. */
 export type ThemeName = "light" | "dark";

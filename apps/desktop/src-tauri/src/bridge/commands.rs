@@ -397,7 +397,15 @@ pub(crate) async fn open_download(
     bridge: State<'_, Bridge>,
     id: DownloadId,
 ) -> Result<(), UiError> {
-    let summary = summary(bridge.engine()?, id).await?;
+    open_file(bridge.engine()?, id).await
+}
+
+/// Opens a completed download's file (the window and notifications).
+pub(crate) async fn open_file(
+    engine: &boltget_engine::Engine,
+    id: DownloadId,
+) -> Result<(), UiError> {
+    let summary = summary(engine, id).await?;
     if summary.state != boltget_engine::State::Completed {
         return Err(UiError::key("error.invalid_state"));
     }
@@ -417,7 +425,15 @@ pub(crate) async fn show_download_in_folder(
     bridge: State<'_, Bridge>,
     id: DownloadId,
 ) -> Result<(), UiError> {
-    let summary = summary(bridge.engine()?, id).await?;
+    reveal_file(bridge.engine()?, id).await
+}
+
+/// Shows a download's file in its folder (the window and notifications).
+pub(crate) async fn reveal_file(
+    engine: &boltget_engine::Engine,
+    id: DownloadId,
+) -> Result<(), UiError> {
+    let summary = summary(engine, id).await?;
     let file = [summary.path.as_deref(), summary.partial_path.as_deref()]
         .into_iter()
         .flatten()

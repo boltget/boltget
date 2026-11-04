@@ -9,7 +9,7 @@
 use tauri_specta::{Builder, collect_commands, collect_events};
 
 use crate::bridge::commands as engine;
-use crate::commands;
+use crate::{commands, shell};
 
 /// The generated file, relative to this crate.
 #[cfg(test)]
@@ -44,8 +44,9 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             engine::show_download_in_folder,
             engine::set_focused_download,
             engine::set_ui_visible,
+            shell::take_launch_links,
         ])
-        .events(collect_events![commands::CaptionMaximize])
+        .events(collect_events![commands::CaptionMaximize, shell::ShellRequest])
         // Byte counts are u64; as JavaScript numbers they are exact up to
         // 2^53 (8 PiB), far beyond any file. Ids are small integers.
         .dangerously_cast_bigints_to_number()

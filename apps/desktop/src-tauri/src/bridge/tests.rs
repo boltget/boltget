@@ -351,3 +351,146 @@ fn resumes_recovered_and_queued_downloads_once() {
         vec![DownloadId(2), DownloadId(3)]
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_running_when_the_session_ends_continue_on_the_next_start() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let size = 3 * MIB + 17;
+
+    let first = bridge();
+    first
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let engine = first.engine().unwrap().clone();
+    let a = add(
+        &engine,
+        &srv.url(&format!("/data?size={size}&seed=21&throttle=262144")),
+        dir.path(),
+    );
+    let b = add(
+        &engine,
+        &srv.url(&format!("/data?size={size}&seed=22&throttle=262144")),
+        dir.path(),
+    );
+    let (ida, idb) = (a.id(), b.id());
+    until_durable(&a, 128 * KIB).await;
+    until_durable(&b, 128 * KIB).await;
+    // The user pauses `b`; then Windows ends the session while `a` runs.
+    engine.pause(idb).await.unwrap();
+    first.shutdown_for_session_end().await;
+    drop(engine);
+    // Quitting afterwards (Tauri's exit) changes nothing.
+    first.shutdown().await;
+
+    let second = bridge();
+    let mut rx = subscribe(&second);
+    second
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    until(&mut rx, |m| completed(m, ida.into())).await;
+    let rows = second.list().await;
+    let state_of = |id: boltget_engine::DownloadId| {
+        rows.iter()
+            .find(|r| r.id == DownloadId::from(id))
+            .unwrap()
+            .state
+    };
+    assert_eq!(state_of(ida), DownloadState::Completed);
+    assert_eq!(state_of(idb), DownloadState::Paused, "paused by the user");
+    second.shutdown().await;
+
+    // The list is used once: a third start continues nothing.
+    let engine = Engine::open(cfg(), state.path()).unwrap();
+    assert_eq!(engine.app_setting("resume_on_start").await.unwrap(), None);
+    engine.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn completions_reach_notifications_and_the_taskbar_settles() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let bridge = bridge();
+    let mut notices = bridge.notices();
+    let mut activity = bridge.activity();
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let engine = bridge.engine().unwrap().clone();
+    let h = add(
+        &engine,
+        &srv.url(&format!("/data?size={MIB}&seed=6&throttle=1048576")),
+        dir.path(),
+    );
+    let id = DownloadId::from(h.id());
+
+    let mut saw_running = false;
+    let notice = loop {
+        tokio::select! {
+            n = notices.recv() => break n.unwrap(),
+            _ = activity.changed() => {
+                let a = activity.borrow_and_update().clone();
+                saw_running |= a.running == 1
+                    && matches!(a.taskbar, super::activity::Taskbar::Normal(_));
+            }
+        }
+    };
+    assert!(saw_running, "the taskbar showed the download");
+    match notice {
+        super::activity::Notice::Completed {
+            id: n,
+            size,
+            elapsed,
+            ..
+        } => {
+            assert_eq!(n, id);
+            assert_eq!(size, Some(MIB));
+            assert!(elapsed.is_some(), "the whole run was seen");
+        }
+        other @ super::activity::Notice::Attention { .. } => panic!("{other:?}"),
+    }
+    // Nothing runs and everything completed: the button clears.
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        activity.wait_for(|a| a.taskbar == super::activity::Taskbar::None && a.running == 0),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(notices.try_recv().is_err(), "one notice per completion");
+    bridge.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_pipe_learns_who_owns_the_engine() {
+    let state = tempfile::tempdir().unwrap();
+    let cli = Engine::open(cfg(), state.path()).unwrap();
+    let bridge = std::sync::Arc::new(bridge());
+    let ownership = bridge.ownership();
+    assert!(matches!(
+        *ownership.borrow(),
+        boltget_ipc::Ownership::Starting
+    ));
+    let opener = {
+        let bridge = bridge.clone();
+        let dir = state.path().to_path_buf();
+        tokio::spawn(async move { bridge.open(dir, cfg(), Duration::from_millis(50)).await })
+    };
+    let mut o = ownership.clone();
+    o.wait_for(|o| matches!(o, boltget_ipc::Ownership::NotOwner))
+        .await
+        .unwrap();
+    cli.shutdown().await;
+    opener.await.unwrap();
+    assert!(matches!(
+        *ownership.borrow(),
+        boltget_ipc::Ownership::Owner(_)
+    ));
+    bridge.shutdown().await;
+    assert!(matches!(
+        *ownership.borrow(),
+        boltget_ipc::Ownership::NotOwner
+    ));
+}

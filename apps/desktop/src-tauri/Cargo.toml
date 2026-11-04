@@ -21,9 +21,12 @@ tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 boltget-engine.workspace = true
+# The named pipe the app serves to the CLI (docs/ARCHITECTURE.md, "CLI to app").
+boltget-ipc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2.12", features = [] }
+# The tray icon and its menu (docs/APP-DESIGN.md #13).
+tauri = { version = "2.12", features = ["tray-icon"] }
 # Opening a completed download and showing it in Explorer, from Rust only:
 # the plugin is not registered, so the page gets no opener commands of its
 # own and can reveal nothing but a download's own file.
@@ -50,8 +53,12 @@ serde_json.workspace = true
 tempfile.workspace = true
 
 # Window chrome on Windows (src/platform/windows.rs): the snap-layout overlay,
-# DWM attributes and WebView2 settings. Same versions as Tauri's own.
+# DWM attributes, WebView2 settings and the system's animation setting and
+# small icon size. Same versions as Tauri's own.
 [target.'cfg(windows)'.dependencies]
+# Native toasts with click and button callbacks (src/notify.rs); Tauri's own
+# notification plugin has no click callbacks on Windows. Same `windows` crate.
+tauri-winrt-notification = "0.8"
 webview2-com = "0.39"
 windows = { version = "0.62", features = [
     "Win32_Foundation",

@@ -21,12 +21,16 @@
   import ListHeader from "./lib/list/ListHeader.svelte";
   import Notice from "./lib/list/Notice.svelte";
   import AddSheet from "./lib/add/AddSheet.svelte";
+  import { onShellRequest, takeLaunchLinks, type ShellRequest } from "./lib/native";
   import { openAddFromClipboard, openAddFromText } from "./lib/paste";
   import Sidebar from "./lib/Sidebar.svelte";
   import TitleBar from "./lib/TitleBar.svelte";
   import Toasts from "./lib/Toasts.svelte";
 
   let count = $state(0);
+  /** Links from outside (a launch, the tray) waiting for the engine. */
+  let incoming = $state<string | null>(null);
+  let clipboardWanted = $state(false);
   const status = $derived(downloads.status);
   const empty = $derived(downloads.ids.length === 0 && app.hidden.size === 0);
   const reduced =
@@ -44,11 +48,50 @@
         app.announce(t("announce.failed", { name, reason: errorText(event.error) }));
       }
     });
+    const stopShell = onShellRequest(onRequest);
+    void takeLaunchLinks().then((links) => {
+      if (links) incoming = links;
+    });
     return () => {
       stopErrors();
       stopEvents();
+      void stopShell.then((stop) => stop());
     };
   });
+
+  // The add sheet opens once the engine can probe.
+  $effect(() => {
+    if (status.state !== "ready") return;
+    if (incoming !== null) {
+      openAddFromText(incoming);
+      incoming = null;
+    }
+    if (clipboardWanted) {
+      clipboardWanted = false;
+      void openAddFromClipboard();
+    }
+  });
+
+  function onRequest(request: ShellRequest) {
+    switch (request.kind) {
+      case "add":
+        incoming = request.links;
+        break;
+      case "addFromClipboard":
+        clipboardWanted = true;
+        break;
+      case "select": {
+        // Show it wherever it is: every download is in "All".
+        app.view = "all";
+        app.query = "";
+        app.select([request.id]);
+        const d = downloads.get(request.id);
+        if (request.fix && d?.state === "needs_new_link") app.run("refresh", [request.id]);
+        else app.togglePane(true);
+        break;
+      }
+    }
+  }
 
   function editable(target: EventTarget | null): boolean {
     const el = target as HTMLElement | null;

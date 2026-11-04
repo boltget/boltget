@@ -11,8 +11,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use boltget_engine::{Engine, EngineEvent};
 use tauri::ipc::Channel;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
+use super::activity::{Activity, Notice, Tracker};
 use super::dto::{
     AppSettings, DownloadError, DownloadId, DownloadRow, DownloadState, EngineMessage,
     EngineStatus, SegmentSpan, path_string,
@@ -59,6 +60,8 @@ pub(crate) enum Request {
     Focus(Option<DownloadId>),
     /// The window was hidden (no batches) or shown again (a snapshot).
     Visible(bool),
+    /// The window gained focus: the taskbar's batch can settle.
+    Acknowledge,
     /// The current rows, for `list_downloads`.
     List(oneshot::Sender<Vec<DownloadRow>>),
 }
@@ -67,13 +70,38 @@ pub(crate) enum Request {
 #[derive(Debug, Clone)]
 pub(crate) struct HubHandle {
     tx: mpsc::UnboundedSender<Request>,
+    activity: watch::Sender<Activity>,
+    notices: broadcast::Sender<Notice>,
 }
 
 impl HubHandle {
     /// Creates the hub; run the returned task on the async runtime.
     pub(crate) fn new(tick: Duration) -> (Self, impl Future<Output = ()> + Send + 'static) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Self { tx }, run(rx, tick))
+        let (activity, _) = watch::channel(Activity::default());
+        let (notices, _) = broadcast::channel(64);
+        let outputs = Outputs {
+            activity: activity.clone(),
+            notices: notices.clone(),
+        };
+        (
+            Self {
+                tx,
+                activity,
+                notices,
+            },
+            run(rx, tick, outputs),
+        )
+    }
+
+    /// The aggregate for the tray and the taskbar, updated every tick.
+    pub(crate) fn activity(&self) -> watch::Receiver<Activity> {
+        self.activity.subscribe()
+    }
+
+    /// Completions and failures, for notifications.
+    pub(crate) fn notices(&self) -> broadcast::Receiver<Notice> {
+        self.notices.subscribe()
     }
 
     pub(crate) fn send(&self, req: Request) {
@@ -114,6 +142,12 @@ pub(crate) fn new_row(id: DownloadId, url: String) -> DownloadRow {
     }
 }
 
+/// Where the hub publishes what the window does not show.
+struct Outputs {
+    activity: watch::Sender<Activity>,
+    notices: broadcast::Sender<Notice>,
+}
+
 struct Hub {
     model: Model,
     sinks: Vec<Box<dyn Sink>>,
@@ -121,9 +155,11 @@ struct Hub {
     status: EngineStatus,
     settings: AppSettings,
     visible: bool,
+    tracker: Tracker,
+    outputs: Outputs,
 }
 
-async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration) {
+async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration, outputs: Outputs) {
     let mut hub = Hub {
         model: Model::default(),
         sinks: Vec::new(),
@@ -131,6 +167,8 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration) {
         status: EngineStatus::Starting,
         settings: AppSettings::default(),
         visible: true,
+        tracker: Tracker::default(),
+        outputs,
     };
     let mut events: Option<broadcast::Receiver<EngineEvent>> = None;
     let mut ticker = tokio::time::interval(tick);
@@ -222,9 +260,17 @@ impl Hub {
                 if self.model.row(id).is_some_and(|r| r.state != state) {
                     let error = self.model.row(id).and_then(|r| r.error.clone());
                     self.model.state_changed(id, state, error);
+                    // The user's own doing (a pause): tracked, not announced.
+                    if let Some(row) = self.model.row(id) {
+                        self.tracker.state_changed(row, None, Instant::now());
+                    }
                 }
             }
-            Request::Removed(id) => self.model.removed(id),
+            Request::Removed(id) => {
+                self.model.removed(id);
+                self.tracker.removed(id);
+            }
+            Request::Acknowledge => self.tracker.acknowledge(&self.model.rows()),
             Request::SpeedLimit(id, limit) => self.model.set_speed_limit(id, limit),
             Request::Focus(id) => self.model.set_focus(id),
             Request::Visible(visible) => {
@@ -257,11 +303,14 @@ impl Hub {
                 );
             }
             EngineEvent::StateChanged { id, state, error } => {
+                let id = (*id).into();
+                let previous = self.model.row(id).map(|r| r.state);
                 self.model.state_changed(
-                    (*id).into(),
+                    id,
                     (*state).into(),
                     error.as_ref().map(DownloadError::from),
                 );
+                self.track(id, previous);
             }
             EngineEvent::Resumed {
                 id,
@@ -270,11 +319,28 @@ impl Hub {
             } => self.model.resumed((*id).into(), *downloaded, *total),
             EngineEvent::SegmentsChanged { id } => self.model.segments_changed((*id).into()),
             EngineEvent::Completed { id, path } => {
-                self.model
-                    .completed((*id).into(), path_string(path), now_ms());
+                let id = (*id).into();
+                let previous = self.model.row(id).map(|r| r.state);
+                self.model.completed(id, path_string(path), now_ms());
+                self.track(id, previous);
             }
             // Events added to the engine later: the next resync covers them.
             _ => {}
+        }
+    }
+
+    /// Follows a state change for the tray, the taskbar and notifications.
+    fn track(&mut self, id: DownloadId, previous: Option<DownloadState>) {
+        let Some(row) = self.model.row(id) else {
+            return;
+        };
+        // A completion arrives as a state change and as its own event; the
+        // second finds nothing new.
+        if previous == Some(row.state) && !row.state.is_active() {
+            return;
+        }
+        if let Some(notice) = self.tracker.state_changed(row, previous, Instant::now()) {
+            let _ = self.outputs.notices.send(notice);
         }
     }
 
@@ -320,5 +386,11 @@ impl Hub {
         {
             self.broadcast(&batch);
         }
+        let activity = self.tracker.activity(&self.model.rows());
+        self.outputs.activity.send_if_modified(|a| {
+            let changed = *a != activity;
+            *a = activity;
+            changed
+        });
     }
 }
