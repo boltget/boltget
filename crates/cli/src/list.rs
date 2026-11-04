@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use boltget_engine::{DownloadSummary, Engine, EngineConfig, Error};
+use boltget_engine::{DownloadSummary, Engine, State};
 use indicatif::HumanBytes;
 
 use crate::display::percent;
@@ -21,36 +21,40 @@ downloaded counts bytes saved at the last checkpoint.
 Times are Unix milliseconds; URLs have their query redacted.
 
 While the Boltget app runs, the list comes from it, and downloaded counts the
-bytes received so far for running downloads. While another boltget process
-owns the database, the list is read without taking ownership and shows that
-process's last checkpoint.
+bytes received so far for running downloads. Otherwise the list is read from
+the database without taking ownership: while another boltget process owns
+it, the list shows that process's last checkpoint; a download that a process
+which stopped (a crash, a killed app) left running shows as paused, and the
+app continues it when it next starts.
 
 Exit codes: 0 success, 7 the database cannot be read.";
 
-pub(crate) async fn run(args: &ListArgs, state: Option<&Path>) -> u8 {
+pub(crate) fn run(args: &ListArgs, state: Option<&Path>) -> u8 {
     let dir = match data_dir(state) {
         Ok(d) => d,
         Err(e) => return report(&e, false, None, &[]),
     };
+    // Read only, never as the owner: opening the database would mark the
+    // downloads a crashed app left running as paused, and the app would no
+    // longer know to continue them on its next start. Listing also does not
+    // create a database where there is none.
     let list = if dir.join(boltget_engine::DB_FILE).exists() {
-        match Engine::open(EngineConfig::default(), &dir) {
-            Ok(engine) => {
-                let l = engine.list().await;
-                engine.shutdown().await;
-                l
-            }
-            // Another process is downloading: read its last checkpoint instead.
-            Err(Error::DatabaseLocked { .. }) => Engine::peek(&dir),
-            Err(e) => Err(e),
-        }
+        Engine::peek(&dir)
     } else {
-        // Listing does not create a database where there is none.
         Ok(Vec::new())
     };
-    let list = match list {
+    let mut list = match list {
         Ok(l) => l,
         Err(e) => return report(&e, false, None, &[]),
     };
+    if !lock_held(&dir) {
+        // Nothing runs them: they wait for the app's next start, or resume.
+        for s in &mut list {
+            if s.state.is_active() {
+                s.state = State::Paused;
+            }
+        }
+    }
     if args.json {
         crate::json::emit(&list);
     } else {
@@ -97,6 +101,15 @@ impl Row {
             error: v["error"]["message"].as_str().map(str::to_owned),
         }
     }
+}
+
+/// Whether a process owns the database (holds its lock) now.
+fn lock_held(dir: &Path) -> bool {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(dir.join(boltget_engine::LOCK_FILE))
+        .is_ok_and(|f| f.try_lock().is_err())
 }
 
 fn progress_cell(s: &Row) -> String {

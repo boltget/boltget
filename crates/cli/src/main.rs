@@ -1009,7 +1009,7 @@ async fn main() -> ExitCode {
     }
     let code = match cli.command {
         Command::Get(args) => get(args, state, cli.verbose).await,
-        Command::List(args) => list::run(&args, state).await,
+        Command::List(args) => list::run(&args, state),
         Command::Pause(args) => pause(&args, state).await,
         Command::Resume(args) => resume(args, state, cli.verbose).await,
         Command::Refresh(args) => refresh(args, state, cli.verbose).await,

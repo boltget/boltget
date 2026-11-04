@@ -1032,3 +1032,42 @@ async fn testserver_stats_count_connections_and_reset() {
     assert_eq!(reset["max_concurrent"], 0, "{reset}");
     assert_eq!(reset["requests"], 0, "{reset}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn list_leaves_a_crashed_owners_downloads_for_the_app_to_continue() {
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let engine =
+        boltget_engine::Engine::open(boltget_engine::EngineConfig::default(), state.path())
+            .unwrap();
+    let id = engine
+        .add_paused(boltget_engine::AddRequest::new(
+            boltget_engine::RequestContext::new("http://127.0.0.1:9/a.bin").unwrap(),
+            boltget_engine::Destination::Directory(dir.path().to_path_buf()),
+        ))
+        .unwrap();
+    engine.shutdown().await;
+    // An app that was killed leaves its download marked as running.
+    let db = state.path().join(boltget_engine::DB_FILE);
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute(
+        "UPDATE download SET state = 'downloading' WHERE id = ?1",
+        [i64::try_from(id.0).unwrap()],
+    )
+    .unwrap();
+    drop(conn);
+
+    let listed = list_json(state.path()).await;
+    assert_eq!(listed[0]["state"], "paused", "nothing runs it now");
+    // The database still says it was interrupted, so the app's next start
+    // continues it.
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let stored: String = conn
+        .query_row(
+            "SELECT state FROM download WHERE id = ?1",
+            [i64::try_from(id.0).unwrap()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, "downloading");
+}
