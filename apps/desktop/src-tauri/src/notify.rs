@@ -368,6 +368,10 @@ fn show(app: &AppHandle, toast: Toast) {
 }
 
 #[cfg(not(windows))]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "signature is shared with the Windows implementation, which consumes the toast"
+)]
 fn show(_app: &AppHandle, toast: Toast) {
     // Notifications on other platforms come after 1.0 (ADR-016). The rest of
     // this module is shared; keep it compiled and warning-free here.
