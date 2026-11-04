@@ -18,12 +18,15 @@ use crate::error::{Error, Result};
 use crate::events::{Completed, DownloadId, DownloadInfo, EngineEvent, Progress, State};
 use crate::filename::{self, NameSources};
 use crate::http::{self, Connector, Origin};
-use crate::integrity::{Checksum, ChecksumSource};
-use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport};
+use crate::integrity::{self, Checksum, ChecksumSource};
+use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport, ServerDigest};
 use crate::proxy::ProxyChoice;
 use crate::ratelimit::RateLimiter;
 use crate::request::{RequestContext, redact_url};
 use crate::store::{DownloadSummary, Store, records};
+
+/// Attempts [`Engine::probe`] makes before it reports a transient failure.
+pub const PROBE_ATTEMPTS: u32 = 2;
 
 /// Where to save a download.
 #[derive(Debug, Clone)]
@@ -481,10 +484,17 @@ impl Engine {
     /// Probes a URL without downloading it (for an "add" dialog): size, range
     /// support, validators and the resolved file name. Costs one request, or two
     /// when the server answers `200` and range support must be verified.
+    ///
+    /// Someone is waiting for the answer, so a transient failure is tried
+    /// once more at most ([`PROBE_ATTEMPTS`]) instead of with a download's
+    /// patience: an unreachable server is reported within two connect
+    /// timeouts.
     pub async fn probe(&self, ctx: &RequestContext) -> Result<ProbeResult> {
+        let mut cfg = (*self.inner.cfg).clone();
+        cfg.max_attempts = cfg.max_attempts.min(PROBE_ATTEMPTS);
         let connector = Connector::new(
             self.inner.env.tls.clone(),
-            self.inner.cfg.clone(),
+            Arc::new(cfg),
             ctx.proxy().clone(),
         );
         let cancel = self.inner.root.child_token();
@@ -523,6 +533,16 @@ impl Engine {
             final_url: Some(&probed.final_url),
             content_type: probed.content_type.as_deref(),
         });
+        // The probe asked for `bytes=0-`, so a 200 or a 206 with a known total
+        // carries the whole file and body digests describe it too.
+        let whole = matches!(
+            probed.kind,
+            ProbeKind::Ranged { .. } | ProbeKind::Full { .. } | ProbeKind::Empty
+        );
+        let server_digest = integrity::server_digests(&probed.response.headers, whole)
+            .into_iter()
+            .next()
+            .map(|(checksum, header)| ServerDigest { checksum, header });
         Ok(ProbeResult {
             final_url: probed.final_url,
             redirects: probed.redirects,
@@ -534,6 +554,7 @@ impl Engine {
             validators: probed.validators,
             content_type: probed.content_type,
             filename,
+            server_digest,
         })
     }
 
@@ -544,27 +565,7 @@ impl Engine {
         req.destination = absolute(req.destination);
         let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
         if let Some(store) = &self.inner.store {
-            let (kind, dest) = match &req.destination {
-                Destination::Directory(d) => ("dir", d),
-                Destination::File(f) => ("file", f),
-            };
-            let rec = records::NewRecord {
-                id,
-                url: req.ctx.url().to_string(),
-                request_ctx: req.ctx.to_saved(),
-                requested_kind: kind,
-                requested_dest: dest.to_string_lossy().into_owned(),
-                conflict: conflict_name(req.conflict),
-                max_connections: req.connections,
-                speed_limit: req.speed_limit,
-            };
-            store.send("new download", move |c| records::insert(c, &rec));
-            if let Some(c) = &req.checksum {
-                let pair = (c.clone(), ChecksumSource::User);
-                store.send("checksum", move |conn| {
-                    records::set_checksum(conn, id, Some(&pair))
-                });
-            }
+            Self::record(store, id, &req);
         }
         let shared = self.new_shared(id, req.speed_limit);
         self.downloads().insert(id, shared.clone());
@@ -573,6 +574,54 @@ impl Engine {
             url: redact_url(req.ctx.url()),
         });
         self.spawn(shared, Job::new(req))
+    }
+
+    /// Records a download without starting it: it is [`State::Paused`] from
+    /// the start, and [`Engine::resume`] starts it (probing first, like a
+    /// fresh download). Needs a database, since nothing else would keep it.
+    pub fn add_paused(&self, mut req: AddRequest) -> Result<DownloadId> {
+        let store = self.store()?;
+        req.destination = absolute(req.destination);
+        let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
+        Self::record(store, id, &req);
+        store.send("paused on add", move |c| {
+            records::set_state(c, id, State::Paused, None)
+        });
+        let _ = self.inner.events.send(EngineEvent::Added {
+            id,
+            url: redact_url(req.ctx.url()),
+        });
+        let _ = self.inner.events.send(EngineEvent::StateChanged {
+            id,
+            state: State::Paused,
+            error: None,
+        });
+        Ok(id)
+    }
+
+    /// Queues the insert of a new download (and the checksum the user gave).
+    fn record(store: &Store, id: DownloadId, req: &AddRequest) {
+        let (kind, dest) = match &req.destination {
+            Destination::Directory(d) => ("dir", d),
+            Destination::File(f) => ("file", f),
+        };
+        let rec = records::NewRecord {
+            id,
+            url: req.ctx.url().to_string(),
+            request_ctx: req.ctx.to_saved(),
+            requested_kind: kind,
+            requested_dest: dest.to_string_lossy().into_owned(),
+            conflict: conflict_name(req.conflict),
+            max_connections: req.connections,
+            speed_limit: req.speed_limit,
+        };
+        store.send("new download", move |c| records::insert(c, &rec));
+        if let Some(c) = &req.checksum {
+            let pair = (c.clone(), ChecksumSource::User);
+            store.send("checksum", move |conn| {
+                records::set_checksum(conn, id, Some(&pair))
+            });
+        }
     }
 
     fn new_shared(&self, id: DownloadId, speed_limit: Option<u64>) -> Arc<Shared> {
@@ -949,6 +998,51 @@ impl Engine {
             Some(store) => store.call(|c| records::load_settings(c)).await,
             None => Ok(Settings::default()),
         }
+    }
+
+    /// A front end's own setting, such as the folders an add dialog offers.
+    /// Stored next to the engine's settings under `app.<key>`, so a front end
+    /// needs no file of its own; `None` when unset or without a database.
+    pub async fn app_setting(&self, key: &str) -> Result<Option<serde_json::Value>> {
+        let Some(store) = &self.inner.store else {
+            return Ok(None);
+        };
+        let key = format!("app.{key}");
+        store.call(move |c| records::get_setting(c, &key)).await
+    }
+
+    /// Stores a front end's own setting (see [`Engine::app_setting`]); `None`
+    /// deletes it. Does nothing without a database.
+    pub async fn set_app_setting(&self, key: &str, value: Option<serde_json::Value>) -> Result<()> {
+        let Some(store) = &self.inner.store else {
+            return Ok(());
+        };
+        let key = format!("app.{key}");
+        store
+            .call(move |c| records::put_setting(c, &key, value.as_ref()))
+            .await
+    }
+
+    /// Where a download named `name` in `dir` would be saved if it started
+    /// now (for an add dialog): `name` is sanitized like a typed name, then
+    /// ` (1)`, ` (2)`, ... is appended while a file, its partial file or
+    /// another download's destination has the path (`docs/ENGINE.md`,
+    /// "Filename resolution"). `None` if `name` sanitizes to nothing.
+    pub fn free_path(&self, dir: &Path, name: &str) -> Option<PathBuf> {
+        let name = filename::sanitize(name);
+        if name.is_empty() {
+            return None;
+        }
+        let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+        let reserved = self
+            .inner
+            .env
+            .reserved
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Some(filename::non_colliding(&dir, &name, |p| {
+            p.exists() || download::partial_path(p).exists() || reserved.contains(p)
+        }))
     }
 
     /// Subscribes to engine events. Slow subscribers miss events (`Lagged`)

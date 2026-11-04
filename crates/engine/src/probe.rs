@@ -44,6 +44,22 @@ pub struct ProbeResult {
     pub content_type: Option<String>,
     /// The resolved, sanitized file name.
     pub filename: String,
+    /// A digest of the whole file the server advertised (the strongest one,
+    /// as a download would verify it). Filled by [`crate::Engine::probe`];
+    /// `None` in a download's [`crate::DownloadInfo`], whose summary's
+    /// `checksum` says what the file is verified against.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_digest: Option<ServerDigest>,
+}
+
+/// A checksum of the whole file that the server sent in a response header.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[non_exhaustive]
+pub struct ServerDigest {
+    /// The expected digest.
+    pub checksum: crate::integrity::Checksum,
+    /// The header it came from, such as `repr-digest`.
+    pub header: String,
 }
 
 fn ser_redacted<S: serde::Serializer>(u: &Url, s: S) -> Result<S::Ok, S::Error> {

@@ -595,3 +595,81 @@ async fn pause_of_a_download_that_is_not_running() {
     assert_eq!(e.kind(), ErrorKind::NotFound);
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn added_paused_waits_for_resume() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let size = 2 * MIB + 9;
+    let url = srv.url(&format!("/data?size={size}&seed=12"));
+    let engine = Engine::open(cfg(), state.path()).unwrap();
+    let mut events = engine.subscribe();
+    let req = AddRequest::new(
+        RequestContext::new(&url).unwrap(),
+        Destination::Directory(dir.path().to_path_buf()),
+    );
+    let id = engine.add_paused(req).unwrap();
+    let mut saw_paused = false;
+    while let Ok(Ok(ev)) = tokio::time::timeout(Duration::from_millis(200), events.recv()).await {
+        if let EngineEvent::StateChanged { id: i, state, .. } = ev {
+            assert_eq!(i, id);
+            assert_eq!(state, State::Paused);
+            saw_paused = true;
+        }
+    }
+    assert!(saw_paused, "no paused event");
+    let listed = engine.list().await.unwrap();
+    let row = listed.iter().find(|s| s.id == id).unwrap();
+    assert_eq!(row.state, State::Paused);
+    assert_eq!(row.downloaded, 0);
+    assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
+
+    let done = wait(engine.resume(id, ResumeOptions::default()).await.unwrap())
+        .await
+        .unwrap();
+    assert_content(&done, 12, size);
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn free_path_and_app_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let engine = Engine::open(cfg(), state.path()).unwrap();
+    let d = dir.path();
+    assert_eq!(
+        engine.free_path(d, "a.iso").unwrap().file_name().unwrap(),
+        "a.iso"
+    );
+    std::fs::write(d.join("a.iso"), b"x").unwrap();
+    std::fs::write(
+        d.join(format!("a (1).iso{}", boltget_engine::PARTIAL_SUFFIX)),
+        b"",
+    )
+    .unwrap();
+    assert_eq!(
+        engine.free_path(d, "a.iso").unwrap().file_name().unwrap(),
+        "a (2).iso"
+    );
+    assert_eq!(
+        engine
+            .free_path(d, "b:c?.txt")
+            .unwrap()
+            .file_name()
+            .unwrap(),
+        "b_c_.txt"
+    );
+    assert!(engine.free_path(d, " .. ").is_none());
+
+    assert_eq!(engine.app_setting("recent").await.unwrap(), None);
+    let value = serde_json::json!(["one", "two"]);
+    engine
+        .set_app_setting("recent", Some(value.clone()))
+        .await
+        .unwrap();
+    assert_eq!(engine.app_setting("recent").await.unwrap(), Some(value));
+    engine.set_app_setting("recent", None).await.unwrap();
+    assert_eq!(engine.app_setting("recent").await.unwrap(), None);
+    engine.shutdown().await;
+}

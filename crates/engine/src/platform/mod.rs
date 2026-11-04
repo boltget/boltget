@@ -140,7 +140,7 @@ pub(crate) fn filesystem_name(file: &File) -> Option<String> {
 }
 
 /// Bytes available to the current user in `dir`, if the OS can tell us.
-pub(crate) fn available_space(dir: &Path) -> Option<u64> {
+pub fn available_space(dir: &Path) -> Option<u64> {
     #[cfg(windows)]
     {
         windows::available_space(dir)

@@ -251,3 +251,22 @@ async fn resumed_download_hashes_what_was_already_on_disk() {
     assert_eq!(done.verified, Some(sha256_of(12, size)));
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn probe_reports_the_server_digest() {
+    let srv = TestServer::start().await;
+    let engine = Engine::new(cfg()).unwrap();
+    let size = MIB + 3;
+    let ctx = boltget_engine::RequestContext::new(
+        &srv.url(&format!("/data?size={size}&seed=4&digest=repr")),
+    )
+    .unwrap();
+    let probe = engine.probe(&ctx).await.unwrap();
+    let digest = probe.server_digest.expect("a server digest");
+    assert_eq!(digest.header, "repr-digest");
+    assert_eq!(digest.checksum, sha256_of(4, size));
+
+    let plain =
+        boltget_engine::RequestContext::new(&srv.url(&format!("/data?size={size}"))).unwrap();
+    assert!(engine.probe(&plain).await.unwrap().server_digest.is_none());
+}

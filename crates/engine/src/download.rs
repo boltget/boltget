@@ -384,7 +384,7 @@ impl Drop for Reservation {
     }
 }
 
-fn partial_path(path: &Path) -> PathBuf {
+pub(crate) fn partial_path(path: &Path) -> PathBuf {
     let mut s = path.as_os_str().to_owned();
     s.push(PARTIAL_SUFFIX);
     PathBuf::from(s)
@@ -766,6 +766,7 @@ async fn setup_fresh(
             validators: probed.validators.clone(),
             content_type: probed.content_type.clone(),
             filename: file_name_of(&path),
+            server_digest: None,
         },
         path: path.clone(),
         partial_path: partial.clone(),
@@ -869,6 +870,7 @@ fn prepare_resume(
                 validators: saved.validators.clone(),
                 content_type: saved.mime.clone(),
                 filename: file_name_of(&path),
+                server_digest: None,
             },
             path: path.clone(),
             partial_path: partial,
@@ -989,6 +991,7 @@ fn prepare_resume(
             validators: saved.validators.clone(),
             content_type: saved.mime.clone(),
             filename: file_name_of(&path),
+            server_digest: None,
         },
         path: path.clone(),
         partial_path: partial.clone(),

@@ -501,7 +501,7 @@ pub(crate) fn set_speed_limit(conn: &Connection, id: DownloadId, bps: Option<u64
 /// Setting key of the global bandwidth limit (bytes per second, JSON number).
 pub(crate) const SETTING_SPEED_LIMIT: &str = "engine.speed_limit_bps";
 
-fn get_setting(conn: &Connection, key: &str) -> Result<Option<serde_json::Value>> {
+pub(crate) fn get_setting(conn: &Connection, key: &str) -> Result<Option<serde_json::Value>> {
     let raw: Option<String> = conn
         .query_row("SELECT value FROM setting WHERE key = ?1", [key], |r| {
             r.get(0)

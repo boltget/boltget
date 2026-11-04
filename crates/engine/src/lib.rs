@@ -54,15 +54,15 @@ mod writer;
 pub use config::{EngineConfig, Settings, parse_certificates};
 pub use cookies::{Cookie, CookieJar};
 pub use engine::{
-    AddRequest, ConflictPolicy, Destination, DownloadHandle, Engine, LimitScope, Removed,
-    ResumeOptions,
+    AddRequest, ConflictPolicy, Destination, DownloadHandle, Engine, LimitScope, PROBE_ATTEMPTS,
+    Removed, ResumeOptions,
 };
 pub use error::{Error, ErrorKind, Result};
 pub use events::{Completed, DownloadId, DownloadInfo, EngineEvent, ErrorInfo, Progress, State};
 pub use headers::Validators;
 pub use integrity::{Checksum, ChecksumSource, HashAlgo};
-pub use platform::{Preallocation, is_sparse};
-pub use probe::{ProbeResult, RangeSupport};
+pub use platform::{Preallocation, available_space, is_sparse};
+pub use probe::{ProbeResult, RangeSupport, ServerDigest};
 pub use proxy::{NoProxy, Proxy, ProxyChoice, ProxyKind, ProxyRules};
 pub use ratelimit::parse_rate;
 pub use refresh::{RefreshEvidence, RefreshOutcome};
