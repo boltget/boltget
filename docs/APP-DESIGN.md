@@ -220,7 +220,7 @@ The third step of v0.2 (2026-11-01) built the main list (#3, #4) and the details
 - **Context menus are native** (#29). Outside Tauri (the UI alone in a browser) there are none, and the sort button cycles instead.
 - **Copy link** copies the link as the engine keeps it for display, without its query string or credentials.
 - **Engine states** take the list's place calmly: "Opening your downloads…" fades in only if opening takes over 400 ms; a CLI holding the database shows a lock, one sentence and the folder in Mono; a failure shows the catalog message with the diagnostic in Mono below. A view or search with nothing in it says so in one line.
-- **Adding, until the add sheet (#6) exists:** `Ctrl+V` anywhere outside a field, a dropped link and the "Add download" button (with a link on the clipboard) start the http(s) links in the text at once, with a quiet "Downloading …" notice.
+- **Adding** was a stand-in until the add sheet existed: pasted and dropped links started at once. Step 4 replaced it with the sheet (see [The add sheet as built](#the-add-sheet-as-built)).
 - **Smoothness (#33)** was measured with 500 simulated downloads, 20 of them running, in Chromium at 1280 × 800: no long tasks; flinging through the whole list at about 3,600 px/s with the CPU throttled 4× (a mid-range laptop) holds 57 fps with no frame over 33 ms, and progress ticks alone stay at the display's rate. A progress tick re-renders only the rows on screen whose numbers changed.
 
 **The details pane**
@@ -234,6 +234,25 @@ The third step of v0.2 (2026-11-01) built the main list (#3, #4) and the details
 
 **Development aids**
 - The UI alone in a browser (`pnpm --filter @boltget/desktop dev`) runs on a simulated engine in development builds: `?mock=500&active=20` seeds downloads, `?engine=starting|locked|failed` holds a state, `?theme=light|dark` forces a theme. It is never part of a release build.
+
+## The add sheet as built
+
+The fourth step of v0.2 (2026-11-04) built the add sheet (#6 to #8) and polished the details pane. Decisions it took where this brief was open, and where it deviates:
+
+- **Every way in opens the sheet; nothing starts on its own.** The "Add download" button and `Ctrl+N` open it with the links on the clipboard, if any (DESIGN-PRINCIPLES #6); `Ctrl+V` outside a field and a dropped link open it with those links. Links that arrive while it is open are added to its field. This settles the open question "auto-start on paste" for v0.2: the sheet, with Download as the one decision (`Enter`).
+- **It is a modal sheet inside the window,** 560 px wide, 72 px from the top, on the floating elevation over a scrim: a native `<dialog>`, so focus stays in it and `Esc` (or a click on the scrim) closes it. It enters in 220 ms (fade and 8 px drop, `--ease-enter`) and leaves in 150 ms; reduced motion shows and hides it at once.
+- **The probe** (`Engine::probe` tries a transient failure only twice, so an unreachable server is reported in about 30 s rather than minutes) runs as the link is typed (after a 350 ms pause) or at once when it is pasted, dropped or prefilled. One probe is in flight for a single link (three for a list); a link that left the field before its turn is skipped, and answers that arrive after the sheet closed are ignored, since the backend cannot abort a probe. Each link is probed once per sheet. "Looking at the link…" appears only after 150 ms.
+- **What the preview shows:** the type icon, the resolved name as an editable field that looks like text until hovered, then one muted line: size, host, "Can resume" or "No resume", and the server's checksum ("SHA-256 from the server") when the probe saw one. The engine's probe now reports that digest (`ProbeResult::server_digest`).
+- **One notice at most,** in this order: web page, not enough space on the drive, downloaded before ("You downloaded this on Oct 12." with Open, and the button becomes "Download again"), already in the list (with "Show it", which selects the row), and "saved as `name (1).ext`" when the name is taken. A failed probe replaces the preview with one sentence: unreachable (with Try again), sign-in needed, or the catalog's message. Downloading stays possible in every case: the sheet warns, it does not block. #7's "single connection and no resume" is the "No resume" in the meta line, not a notice.
+- **Duplicates** compare links as the list keeps them (origin and path; query, fragment and credentials are not stored). A name already taken on disk, by a partial file or by another download is renamed with ` (1)` (docs/ENGINE.md, "Filename resolution"), never overwritten; the sheet shows the final name before starting (`Engine::free_path`).
+- **The folder** is the last one used, else the Downloads folder (#6's "category's folder" waits for category folders). A button shows it with the folder name in full and the path above it clipped from the start; it opens a native menu with the last three folders, the Downloads folder and "Choose folder…" (the system folder picker, called from Rust; the page gets no dialog or file system commands). The last three folders are stored in the engine's database as an app setting (`app.recent_folders`). A folder that does not exist yet is created when the download starts, and the sheet says so.
+- **"More options"** holds what the engine honours today: connections (empty is Auto, or 1 to 32), a speed limit in MiB/s, a checksum (`sha256:…`, `md5=…` or bare hex, checked like the engine's parser) and "Add paused" (`Engine::add_paused`: recorded paused, started with Resume). Queue, start later at a time, sign-in, headers and referrer wait for their engine features. The disclosure remembers whether it was open. A bad value says so under the options and keeps the sheet open.
+- **Several links** (one per line, or any text with links in it) become a checklist: each with its probed name and size, "Web page" or a warning glyph, a select-all checkbox with the count, one folder and one set of options for all, and "Download 3 files". The checksum field is hidden there, since one digest cannot fit several files.
+- **After adding,** the sheet closes and the new rows are selected; a screen reader hears "Added …". There is no toast, since the user just did it (#16).
+
+**Details pane polish**
+- Paths and links wrap only after a folder separator (and a link's host after its dots, never right after `https://`), so a name is never split; each keeps its copy button and shows the full value as a tooltip.
+- The speed chart's time axis covers what there is (at least 10 s) until a minute has passed, so a fresh download draws from the left edge; its label says "Speed since it started" until then, the newest sample has a dot, and the peak speed is shown beside the label.
 
 ## Resolved conflicts in the design documents
 
@@ -255,6 +274,6 @@ The research found nine places where the existing documents disagreed or did not
 
 These decisions are settled with the clickable prototype, before the app is built:
 
-- **Auto-start on paste.** Should `Ctrl+V` in the window start the download at once, with an undoable preview row (Downie and browsers), or open the sheet with Download focused (one `Enter`)? The default above is the sheet; auto-start is the alternative to test.
+- **Auto-start on paste.** Should `Ctrl+V` in the window start the download at once, with an undoable preview row (Downie and browsers), or open the sheet with Download focused (one `Enter`)? *v0.2 ships the sheet* ([The add sheet as built](#the-add-sheet-as-built)); auto-start stays an option to test with users.
 - **A table layout for IDM users,** or one row model only. Rows ship in v0.2; a table is added later if users ask.
 - **Segments in the row.** Should the progress bar of an active row hint at gaps (a 1 px mini map), or should segments appear only in the details pane? *For now only in the pane;* rows keep one plain bar.
