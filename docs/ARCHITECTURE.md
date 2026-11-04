@@ -9,6 +9,7 @@ Status: design. Names of crates, types and tables are the intended names; they m
 | Component | Path | Language | Ships as | Responsibility |
 |---|---|---|---|---|
 | Engine | `crates/engine` | Rust | library crate `boltget-engine` | Probing, segmentation, connections, disk I/O, rate limiting, persistence, integrity, events |
+| IPC | `crates/ipc` | Rust | library crate `boltget-ipc` | The named pipe between the engine's owner and its clients: framing, messages, server, client, the pipe's security |
 | CLI | `crates/cli` | Rust | `boltget.exe` | Command-line front end; embeds the engine or talks to the running app |
 | Desktop backend | `apps/desktop/src-tauri` | Rust | inside `Boltget.exe` | Hosts the engine, exposes Tauri commands/events, tray, single-instance, updater, IPC server |
 | Desktop UI | `apps/desktop/src` | Svelte 5 + TS | bundled web assets | Everything the user sees in the window |
@@ -64,6 +65,8 @@ flowchart LR
 - Hosts the engine on a Tokio multi-threaded runtime (the same runtime Tauri uses).
 - Owns the IPC server: a Windows named pipe, `\\.\pipe\boltget-<user SID>`, used by the native host and the CLI. On macOS/Linux (post-1.0) the equivalent is a Unix domain socket in the user's runtime directory with `0600` permissions.
 
+> **Implemented (v0.2).** A second `Boltget.exe` hands its command line to the first and exits: links (`http`/`https` arguments) open the add sheet prefilled, anything else just brings the window forward; the first instance's own links wait until its engine is ready. `--background` starts with the window hidden (the tray only). The pipe is named per data directory as well as per user, `\\.\pipe\boltget-<user SID>-<key>`, where `<key>` is 16 hex digits of FNV-1a over the canonical, case-folded data directory path: a CLI given `--state <dir>` (or a debug app with `BOLTGET_DATA_DIR`) reaches exactly the process that owns that database, and never another. On Unix the socket is `boltget-<key>.sock` in `$XDG_RUNTIME_DIR`, or in the data directory when that is unset. The app serves the pipe from the moment it starts, before its engine is open (see [CLI to app](#3-cli-to-app-named-pipe)). Closing the window hides it to the tray; the app quits from the tray's menu, or when the session ends.
+
 ### The native messaging host (`boltget-native-host.exe`)
 
 Browsers start native messaging hosts as a **new process per connection** (`runtime.connectNative`) or per message (`runtime.sendNativeMessage`) and talk to them over stdin/stdout. So the host must be small and stateless:
@@ -82,6 +85,8 @@ Two modes, chosen automatically:
 - **Client mode** (app is running): the CLI connects to the named pipe and asks the running engine to add, list, pause or resume downloads. Progress is streamed back over the pipe. This avoids two engines writing the same database.
 - **Standalone mode** (app is not running, or `--standalone`): the CLI embeds the engine directly, takes the [single owner lock](#single-owner-rule), and runs to completion. This is what `boltget bench` and server/CI usage rely on. Standalone mode can use a separate database (`--state <path>`) or none at all (`--no-state`, keeps resume data in a sidecar file next to the download).
 
+> **Implemented (v0.2): client mode.** Every command that uses the database (`get` without `--no-state`, `list`, `pause`, `resume`, `refresh`, `remove`, `config`) first asks for the app on the data directory's pipe, and runs there if the app owns the database. `get` adds the download to the app and follows it on the terminal (the same progress display and `--json` lines; `--detach` returns once it is added); the first Ctrl-C pauses it in the app, a second stops following. `pause` reaches a download running anywhere in the app, and any number of terminals work at once. Options that change the engine itself (`--ca-cert`, `--max-connections`, and the hidden test knobs) are refused in client mode (exit 2), and the app's proxy settings apply rather than the shell's proxy variables (`--proxy` still works). `--standalone` skips the app. Exit code 10: an app runs but cannot be reached, speaks another protocol version, or the connection was lost (the download goes on in the app). `boltget list` without an app no longer opens the database as its owner: it reads it, and shows a download that a dead process left running as paused, so it does not take over the app's recovery (see [Recovery on start](#recovery-on-start)).
+>
 > **Implementation note (v0.1):** only standalone mode exists; client mode arrives with the desktop app's IPC server (v0.2). `--state <dir>` (also `BOLTGET_DATA_DIR`) is a directory holding `boltget.db`, not a database path. `get --no-state` records nothing and keeps no sidecar yet, so such a download cannot be resumed. While one `boltget` owns the database, a second invocation that needs it exits with code 7 and says why (`pause` explains that Ctrl-C in the owning terminal pauses it); `boltget list` instead opens the database read-only, without the lock, and shows the owner's last checkpoint (WAL lets a reader in another process see committed data safely).
 
 ### Sidecars
@@ -95,7 +100,7 @@ Exactly one process at a time may own the engine state for a given database:
 - Ownership is a lock file (`boltget.db.lock`, held with an exclusive OS file lock for the lifetime of the owner) next to the database.
   - *Implemented (v0.1)* with `std::fs::File::try_lock` (`LockFileEx` on Windows, `flock` on Unix), taken before the database is opened and released only after it is closed. The OS drops the lock when the owner dies, so a crash never leaves a stale lock. A second owner gets `Error::DatabaseLocked`.
 - The desktop app takes it on start. If it cannot (a standalone CLI is running), the app shows a "Boltget CLI is running a download" state and becomes a client until the lock is released.
-  - *Implemented (v0.2, engine bridge):* the app opens the engine in the background, so the window never waits for it. While a CLI owns the database the engine status is `locked` (with the directory) and engine commands fail with `error.engine_unavailable`; the app tries again every 2 s and becomes ready on its own when the lock is released. It is not a client yet: client mode needs the named pipe (a later v0.2 step).
+  - *Implemented (v0.2, engine bridge):* the app opens the engine in the background, so the window never waits for it. While a CLI owns the database the engine status is `locked` (with the directory) and engine commands fail with `error.engine_unavailable`; the app tries again every 2 s and becomes ready on its own when the lock is released. It is not a client of that CLI (a standalone CLI serves no pipe); meanwhile its own pipe tells clients it owns nothing (`error.not_owner`), so they open the database themselves and find it locked, or read it.
 - Clients talk to the owner over IPC. This is simpler and safer than having multiple processes coordinate on SQLite rows.
 
 ## Engine internals at a glance
@@ -132,7 +137,7 @@ The full algorithm for workers, splits and checkpoints is in [ENGINE.md](ENGINE.
 
 There are three IPC boundaries. All of them carry the same logical message types, defined once in Rust (types with `serde`), and exported to TypeScript so the UI and extension never hand-write message shapes.
 
-> **Decided in v0.2:** `tauri-specta` generates the UI's bindings, calls included ([TECH-STACK.md, ADR-017](TECH-STACK.md#adr-017-tauri-specta-for-generated-ipc-bindings)). The types are the app's own (`apps/desktop/src-tauri/src/bridge/dto.rs`), mapped from the engine's, not the engine's types themselves: the engine stays free of the generator, and the UI does not depend on engine internals. The named-pipe protocol will reuse them (moved to a shared crate if the CLI needs them).
+> **Decided in v0.2:** `tauri-specta` generates the UI's bindings, calls included ([TECH-STACK.md, ADR-017](TECH-STACK.md#adr-017-tauri-specta-for-generated-ipc-bindings)). The types are the app's own (`apps/desktop/src-tauri/src/bridge/dto.rs`), mapped from the engine's, not the engine's types themselves: the engine stays free of the generator, and the UI does not depend on engine internals. The named-pipe protocol does **not** reuse them, as first planned: it has its own types in `boltget-ipc` (`proto.rs`), versioned on their own, because the UI's types change with the window's needs while the pipe is a contract with other programs (the CLI, later the native host), and its JSON matches the CLI's `--json` output rather than the page's camelCase.
 
 ### 1. UI to backend (Tauri)
 
@@ -183,6 +188,28 @@ Versioning: the protocol version is an integer. The app supports the current and
 ### 3. CLI to app (named pipe)
 
 Same framing as native messaging (4-byte little-endian length prefix + JSON) so both clients share one server implementation. The CLI uses a superset of message types (`list`, `pause`, `resume`, `remove`, `subscribe_progress`).
+
+> **Implemented (v0.2), `boltget-ipc` protocol version 1.** The reference is `crates/ipc/src/proto.rs`.
+>
+> - **Transport.** The pipe named in [The desktop app](#the-desktop-app-boltgetexe), one connection per client, many at once. Each message is a 4-byte little-endian length, then that many bytes of UTF-8 JSON, at most 1 MiB either way; a larger length or a stream that ends inside a message closes the connection.
+> - **Handshake.** The client's first message is `{"type":"hello","v":1,"client":"boltget-cli 0.2.0"}`, within 5 s. The owner answers `{"type":"hello","v":1,"server":"Boltget 0.2.0"}` when it serves that version (1 to 1 today), else `{"type":"error","error":{"kind":"protocol","key":"error.protocol_version","message":"Boltget 0.2.0 speaks pipe protocol 1, boltget-cli 0.3.0 speaks 2: use the same release of both"}}` and hangs up; the CLI prints the message and exits with 10. A hello that arrives while the app's engine is still opening waits for it (up to 8 s); one that arrives while another process owns the database is answered with the key `error.not_owner`, and the client runs standalone.
+> - **Requests**, each with a `type`, one at a time; each gets one response. Requests are strict: an unknown type or field is answered with `error.invalid_request` and the connection is closed, so a client never believes an option was applied. A request gaining a field changes the version; a response gaining one does not (clients ignore what they do not know).
+>
+>   | Request | Response |
+>   |---|---|
+>   | `list` | `downloads`: each download as `boltget list --json` prints it, `downloaded` live for running ones |
+>   | `add` `{url, destination, to_file, overwrite, connections, limit, checksum, server_digest, paused, request}` | `added {id}` |
+>   | `pause {id}` | `paused {id, state}` (the state it is in: `paused`, or that of a download that was not running) |
+>   | `resume {id, restart, connections, limit, checksum, no_checksum, request}` | `ok` |
+>   | `remove {id, delete_file}` | `removed {id, deleted}` |
+>   | `refresh {id, url, request}` | `refreshed {outcome}` (the engine's `RefreshOutcome`); the download stays stopped, resume it |
+>   | `settings` | `settings {limit}` |
+>   | `set_limit {id?, bps?}` | `settings {limit}` (no `id`: the global limit; no or 0 `bps`: none) |
+>   | `watch {id}` | a stream: `event {event}` (engine events of that download, as `get --json` prints them), `progress {id, state, downloaded, total, connections, segments}` every 500 ms, then one `finished {id, state, path, partial_path, downloaded, total, verified, error}` when it completes or stops; the connection then takes requests again |
+>
+>   `request` is `{headers: [[name, value]], cookies: [[name, value]], cookie_file, proxy}` (`proxy`: `direct` or a URL); paths are absolute, resolved by the client. A failure is `{"type":"error","error":{kind, key, message}}` with the engine's `ErrorKind` and catalog key, from which the CLI takes its exit code and hints; the connection stays usable.
+> - **Who may connect, and what they may do.** Only the same user in the same logon session (see [Named pipe hardening](#browser--app-channel)), which could run the engine itself, so the CLI gets the full set of verbs, credentials included (headers, cookies, proxy passwords travel over the pipe and are never logged). The native host's messages (v0.3) will be a separate, narrower set that can only propose downloads, as described above.
+> - **The app's side** (`apps/desktop/src-tauri/src/pipe.rs`) runs these on its own engine and tells its list about changes the engine does not announce as events (a pause of a download that was not running, a new link, a limit), so the window stays current.
 
 ## Data model
 
@@ -343,8 +370,10 @@ The roadmap promises that the app survives a forced kill during active downloads
 
 - `Engine::open` marks downloads a dead process left `probing`/`downloading`/`retrying`/`verifying` as `paused` (their checkpoint never claims more than was durable) and now also reports them: `Engine::recovered()` returns their ids.
 - The app resumes exactly those, plus downloads still `queued` (only an add interrupted before it started leaves one, as there is no scheduler yet), right after the engine opens. A download that cannot continue (partial file gone, file changed on the server) fails with its error as usual; one whose server cannot resume starts over, as [ENGINE.md](ENGINE.md) promises.
-- Downloads the user paused stay paused. So do downloads that were running when the user **quit** normally: quitting pauses every download (each writes its final checkpoint; the app waits at most 5 s) and they wait for the user. Continuing them after a logoff or reboot is the roadmap's separate shutdown criterion, not done yet.
+- Downloads the user paused stay paused. So do downloads that were running when the user **quit** from the tray: quitting pauses every download (each writes its final checkpoint; the app waits at most 5 s) and they wait for the user.
+- **The end of the session** (logoff, restart, shutdown, or Restart Manager) is the other way the app exits, since closing the window only hides it: Tauri exits on `WM_ENDSESSION`, and the app first records the downloads that run (and any still queued) in the app setting `app.resume_on_start`, then pauses them all within 4 s (Windows ends a busy process after about 5 s). The next start continues those still paused, once, and clears the list. If Windows ends the process before that, the downloads were left running in the database and are recovered as after a kill.
 - A `boltget` CLI killed mid-download is recovered the same way when the app takes the database over.
+- `boltget list` reads the database without owning it, so it does not mark a dead app's downloads paused and take the recovery away from the app. A standalone command that owns the database (`resume`, `pause`, `remove`, `get` of another download) between a crash and the next start still does; those downloads are then paused and wait for the user. Making the recovery list itself persistent in the engine would close that gap; it is not needed for the roadmap's criteria.
 
 ## Persistence
 
@@ -403,6 +432,7 @@ The attack surface of a download manager is real: it parses untrusted network da
 - **Schema validation.** Every message is deserialized into a strict Rust type (`#[serde(deny_unknown_fields)]`), with size limits (URLs ≤ 32 KiB, cookie headers ≤ 64 KiB, whole message ≤ 1 MiB). Invalid messages are rejected and logged.
 - **No privileged verbs.** Messages can only *propose* downloads. There is no message that runs a command, changes the destination to an arbitrary path outside the configured folders without user confirmation, or alters settings.
 - **Named pipe hardening.** The pipe is created with a DACL granting access only to the current user's SID, with `PIPE_REJECT_REMOTE_CLIENTS`, and the server verifies the client process belongs to the same session.
+  - *Implemented (v0.2, `crates/ipc/src/platform/windows.rs`):* every instance is created with the security descriptor `O:<user SID>D:P(A;;GA;;;<user SID>)` (owned by the user; a protected DACL that grants the user everything and nobody else anything) and `PIPE_REJECT_REMOTE_CLIENTS`; the first instance with `FILE_FLAG_FIRST_PIPE_INSTANCE`, so a pipe someone else created first is noticed (the app then serves no pipe) rather than joined. The server drops a client whose session (`GetNamedPipeClientSessionId`) is not its own. Because names are global, the client checks the server too: same session (`GetNamedPipeServerSessionId`) and a pipe owned by the current user (`GetSecurityInfo`), so another user who created the name first cannot receive the CLI's headers or cookies. On Unix the socket is `0600` in the user's own runtime or data directory, and the server compares the client's uid (`SO_PEERCRED`) with its own.
 
 ### No remote code
 

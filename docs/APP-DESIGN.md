@@ -254,6 +254,32 @@ The fourth step of v0.2 (2026-11-04) built the add sheet (#6 to #8) and polished
 - Paths and links wrap only after a folder separator (and a link's host after its dots, never right after `https://`), so a name is never split; each keeps its copy button and shows the full value as a tooltip.
 - The speed chart's time axis covers what there is (at least 10 s) until a minute has passed, so a fresh download draws from the left edge; its label says "Speed since it started" until then, the newest sample has a dot, and the peak speed is shown beside the label.
 
+## The tray, the taskbar and notifications as built
+
+The fifth step of v0.2 (2026-11-04) built #13 to #16 and the app's life around its window. Decisions it took where this brief was open, and where it deviates:
+
+**The tray (#13)**
+- **The icon** is the app icon (the dark tile), so it reads on light and dark taskbars. It is drawn in Rust from the brand geometry (`apps/desktop/src-tauri/src/mark.rs`): the pixel-snapped 16 px design at 16, 20 and 32 px, the 24 px design at 24 and 48 px, at the size Windows asks for small icons.
+- **The motion** is the brand's (BRAND.md §6): the arrow's rows light up top to bottom on a 2.6 s loop with a 0.12 s stagger, shown at 10 frames a second. It runs only while bytes are flowing (some download running at a speed above zero); it stops on the still mark when everything is paused, stalled or done. There is no setting of its own: it never moves when Windows' "Animation effects" are off, the system's reduced-motion switch.
+- **Left click** opens or focuses the window. **The menu** is native: Open Boltget, Add from clipboard (opens the window and the add sheet with the clipboard's links; nothing starts on its own), Pause all, Resume all (paused downloads; failed ones wait for the user, as in the window), Speed limit ▸ (No limit, 1, 5, 10, 25 and 50 MiB/s, checked to match the global limit, which the window or the CLI may change), Open downloads folder, Quit Boltget.
+- **The tooltip** is `3 active · 48.2 MiB/s · about 2 min left` (binary units, as everywhere), only `3 active` while nothing flows yet, and `Boltget` when idle. Its numbers change at most once a second.
+
+**The taskbar button (#14)**
+- It shows the **batch**: every download that ran since the user last looked. Green with the batch's progress while anything runs (red if something in it needs attention meanwhile), indeterminate when a size is unknown; when nothing runs, yellow if something in it is paused, red if something failed, needs a new link or is damaged, and nothing once everything in it completed. The batch is cleared when nothing runs and the window gains focus, so a failure stays red until the user comes back, and old paused downloads never colour the button. Tauri's `set_progress_bar` (ITaskbarList3) is enough; no Windows code of our own. The jump list waits for a later step.
+
+**Notifications (#16)**
+- Native toasts, built with `tauri-winrt-notification` (Tauri's own notification plugin cannot report clicks on Windows). *Completed*: the file name, then `420 MiB in 7.9 s` when this session saw the whole download (only the size when it continued from a checkpoint, where the time of this run alone would mislead), with Open and Show in folder. *Needs attention* (failed, link expired, damaged): the name and the catalog's sentence for the reason, with Fix…. Clicking a toast brings the window forward with the download selected and the details pane open; Fix… on an expired link opens its "Refresh link" field.
+- **No spam.** Notices that arrive within 1.5 s of each other are one moment. Three or more completions within a minute become one summary (`5 downloads finished`, two names and "and 3 more"), and further completions in that minute add no toast; three or more problems at once become one summary too. Nothing is shown while the window is visible and focused, since the list says it already, and nothing for what the user did (a pause is not a notice). Windows holds toasts back during Focus sessions and Do not disturb by itself.
+- There is no setting to turn them off yet (Settings arrive later); Windows' per-app notification switch works.
+- **Development builds** show toasts as "Windows PowerShell": Windows shows toasts only for an app id it knows, and only the installer's Start menu shortcut registers Boltget's (`app.boltget.desktop`). Clicking an old toast in the notification centre after it left the screen does not reach the app (that needs a COM activator, later).
+
+**The app around its window (#15)**
+- **Close goes to the tray**, every time; the first time a toast says so ("Boltget is still running. Downloads go on in the background. Quit from the tray icon."), recorded in the database so it is said once. Quit is in the tray's menu. Destroying the WebView after some minutes hidden is not done yet; the hidden page gets no batches, as before.
+- **One instance.** A second `Boltget.exe` passes its links to the first, which opens the add sheet with them; without links it brings the window forward. `Boltget.exe <url>` on a first start opens the sheet once the engine is ready. `--background` starts in the tray, the window hidden.
+- **The end of the session** checkpoints everything and continues the downloads that ran on the next start ([ARCHITECTURE.md, Recovery on start](ARCHITECTURE.md#recovery-on-start)); quitting from the tray leaves them paused.
+- **The CLI** reaches the app over its named pipe ([ARCHITECTURE.md, CLI to app](ARCHITECTURE.md#3-cli-to-app-named-pipe)). A `boltget get` in a terminal adds the download directly, without the sheet: the user already decided. (#6's "CLI handoff" that opens the sheet is the shell's `Boltget.exe <url>`.)
+- **Strings** the tray and toasts show come from the page's catalog (`packages/ui/src/messages/en.json`), compiled into the Rust side (`catalog.rs`) with the same plural and unit rules as `format.ts`.
+
 ## Resolved conflicts in the design documents
 
 The research found nine places where the existing documents disagreed or did not fit a desktop app. All were resolved as follows, and the documents concerned were updated:

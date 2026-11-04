@@ -477,7 +477,7 @@ On startup (or when a paused download is resumed):
 
 On app exit (including Windows logoff/shutdown, `WM_QUERYENDSESSION` / `WM_ENDSESSION`), the engine pauses all downloads, which flushes and checkpoints. Design target: complete within 2 seconds; if the OS kills the process sooner, the invariant still guarantees a correct resume.
 
-> **Implementation note (v0.1 phase 2):** `Engine::shutdown` pauses every running download, waits for their final checkpoints, then closes the database and releases the owner lock. Hooking it to logoff/shutdown messages is the desktop app's job (v0.2). The CLI pauses on the first Ctrl-C (exit code 130) and exits immediately on a second one, which the invariant makes safe.
+> **Implementation note (v0.1 phase 2):** `Engine::shutdown` pauses every running download, waits for their final checkpoints, then closes the database and releases the owner lock. Hooking it to logoff/shutdown messages is the desktop app's job (v0.2). *v0.2:* the app does, and records what ran so its next start continues it (`app.resume_on_start`; [ARCHITECTURE.md, Recovery on start](ARCHITECTURE.md#recovery-on-start)). The engine is unchanged. The CLI pauses on the first Ctrl-C (exit code 130) and exits immediately on a second one, which the invariant makes safe.
 
 ## Retries, backoff and stall detection
 
@@ -714,6 +714,8 @@ boltget bench <url> [--runs 5] [--connections 8,16,32] [--json]
 
 > **Implementation note (v0.1 phase 3):** the checksum flag is `--checksum sha256:<hex>` (also `md5`, `sha1`, `sha512`, or bare hex), not `--sha256`. Without `-c` the connection count adapts (`--max-connections` caps it). Also added: `--limit`, `--no-server-digest`, `resume --no-checksum`, `--proxy`, `--no-proxy`, `--cookie-file`, `--cookie`/`-b`, `--user`/`-u`, `boltget refresh <id> <new-url>` and `boltget config list|get|set|unset limit`. New exit code 9 (checksum mismatch); exit 6 also covers a link that needs refreshing and a rejected new link. `boltget bench` is implemented as `boltget bench [<url>...] [--targets <file>] [-t <name>] [--runs 5] [--warmup 1] [-c auto,8] [--lab <url>] [--json] [--csv <file>]`; see [Benchmarks plan](#benchmarks-plan-vs-idm) and `boltget help bench`.
 
+> **v0.2:** client mode exists: while the desktop app owns the database, the CLI's commands run in the app over its named pipe (`boltget-ipc`, protocol in [ARCHITECTURE.md, CLI to app](ARCHITECTURE.md#3-cli-to-app-named-pipe)); the engine itself has no pipe code. The paragraph below describes standalone mode, which is unchanged.
+>
 > **Implementation note (v0.1 phase 2):** the CLI runs in standalone mode only (client mode over the named pipe is v0.2, see [ARCHITECTURE.md](ARCHITECTURE.md#the-cli-boltgetexe)). `get` and `resume` run the download in the foreground of that invocation. A second invocation that needs the database while another one owns it exits with code 7 and says why; `pause <id>` cannot reach the running process yet and tells the user to press Ctrl-C there, while `list` reads the owner's last checkpoint without the lock. `--state <dir>` (or `BOLTGET_DATA_DIR`) selects the database directory and `get --no-state` downloads without recording anything (no sidecar resume file yet).
 
 ## Testing strategy

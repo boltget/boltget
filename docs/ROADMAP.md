@@ -71,9 +71,11 @@ Exit criteria:
 - [ ] 500 downloads in the list stay smooth (no dropped frames during progress updates on a mid-range laptop) — design target, verified with the WebView2 performance profiler
   *Progress (2026-11-01):* the list is virtualised and was measured with 500 simulated downloads in Chromium with the CPU throttled 4× (no long tasks, no frame over 33 ms while flinging through it; [APP-DESIGN.md](APP-DESIGN.md#the-list-and-the-details-pane-as-built)). Still to do: the WebView2 profiler on a real mid-range laptop.
 - [ ] Idle memory, startup time and installer size measured and published; compared with the targets in [VISION.md](VISION.md#what-beating-idm-means-measurably)
-- [ ] App survives forced kill during active downloads and resumes everything on next start
+- [x] App survives forced kill during active downloads and resumes everything on next start
+  *Done (2026-11-04):* `Engine::recovered` and the app's recovery on start (ARCHITECTURE.md, "Recovery on start"), tested in `bridge/tests.rs`, and checked in the running app: killed with `Stop-Process -Force` mid-download, it continued the download on the next start, also with a `boltget list` run in between.
 - [ ] Unsigned preview builds available from GitHub Releases as pre-releases, clearly labelled
-- [ ] Shutdown/logoff handling: downloads checkpoint and resume after reboot
+- [x] Shutdown/logoff handling: downloads checkpoint and resume after reboot
+  *Done (2026-11-04):* on `WM_ENDSESSION` the app records what runs, checkpoints it within 4 s and continues it on the next start; a download the user paused stays paused (ARCHITECTURE.md, "Recovery on start"). Tested in `bridge/tests.rs` and checked in the running app by sending its windows the logoff messages Windows sends (`WM_QUERYENDSESSION`, `WM_ENDSESSION` with `ENDSESSION_LOGOFF`): it exited with both running downloads checkpointed, and the next start continued both. A real reboot was not part of the check.
 
 ## v0.3: Browser extension
 
