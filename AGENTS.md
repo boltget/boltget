@@ -13,6 +13,7 @@ Current stage: v0.1 (Rust engine and CLI) is released; next is v0.2, the desktop
 | Path | What |
 |---|---|
 | `crates/engine` | `boltget-engine` library: probing, segmentation, I/O, persistence |
+| `crates/ipc` | `boltget-ipc`: the named pipe (a Unix socket elsewhere) between the engine's owner (the app) and its clients (the CLI): framing, messages, server and client |
 | `crates/cli` | `boltget-cli` package, `boltget` binary |
 | `crates/testserver` | `boltget-testserver`: local HTTP server that simulates misbehaving servers for tests |
 | `fuzz/` | cargo-fuzz targets (own workspace, nightly; run in `.github/workflows/nightly.yml`). Logic and properties live in `crates/engine/src/fuzzing.rs`; the seed corpus runs in `cargo test` |
@@ -47,7 +48,7 @@ Website (pnpm workspace at the root, Node from `.node-version`): `pnpm install`,
 ## Rust rules
 
 - Toolchain: stable via `rust-toolchain.toml`, edition 2024. Workspace lints (pedantic-lite clippy) are in the root `Cargo.toml`; don't relax them crate-wide, use a targeted `#[expect(..., reason = "...")]`.
-- `unsafe_code` is denied. The only exceptions are `crates/engine/src/platform/windows.rs` and `apps/desktop/src-tauri/src/platform/windows.rs`, and every `unsafe` block there needs a `// SAFETY:` comment.
+- `unsafe_code` is denied. The only exceptions are `crates/engine/src/platform/windows.rs`, `crates/ipc/src/platform/windows.rs` (the pipe's ACL and session checks) and `apps/desktop/src-tauri/src/platform/windows.rs`, and every `unsafe` block there needs a `// SAFETY:` comment.
 - Library code: errors via `thiserror`, no `unwrap()`/`expect()` on paths that can fail at runtime, rustdoc on public items. The CLI may use `anyhow`.
 - Dependencies must be GPL-3.0-compatible and pass `cargo-deny` (`deny.toml`). Prefer pure-Rust crates that build on Windows without extra tools (this is why rustls uses the `ring` provider).
 

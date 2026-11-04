@@ -1,0 +1,38 @@
+[package]
+name = "boltget-ipc"
+description = "Boltget's local IPC: the named pipe (a Unix socket elsewhere) between the engine's owner and its clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+boltget-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# The pipe's security: its ACL, the user's SID in its name, and checks that
+# the other end is in the same session (src/platform/windows.rs).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+boltget-testserver.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

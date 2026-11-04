@@ -490,6 +490,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "boltget-ipc"
+version = "0.1.0"
+dependencies = [
+ "boltget-engine",
+ "boltget-testserver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "boltget-testserver"
 version = "0.1.0"
 dependencies = [
