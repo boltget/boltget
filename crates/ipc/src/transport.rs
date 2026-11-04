@@ -110,7 +110,7 @@ mod imp {
 
     #[derive(Debug)]
     pub(crate) struct Listener {
-        listener: UnixListener,
+        socket: UnixListener,
         path: PathBuf,
         uid: u32,
     }
@@ -133,7 +133,7 @@ mod imp {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
             let uid = std::fs::metadata(&path)?.uid();
             Ok(Self {
-                listener,
+                socket: listener,
                 path,
                 uid,
             })
@@ -142,7 +142,7 @@ mod imp {
         /// Waits for the next client of this user.
         pub(crate) async fn accept(&mut self) -> io::Result<BoxStream> {
             loop {
-                let (stream, _) = self.listener.accept().await?;
+                let (stream, _) = self.socket.accept().await?;
                 match stream.peer_cred() {
                     Ok(cred) if cred.uid() == self.uid => return Ok(Box::new(stream)),
                     Ok(_) => tracing::warn!("refused a socket client of another user"),
