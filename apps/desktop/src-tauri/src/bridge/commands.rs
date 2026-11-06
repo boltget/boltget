@@ -3,6 +3,7 @@
 //! did not make the call stays in sync.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, UNIX_EPOCH};
 
 use boltget_engine::{AddRequest, Checksum, Destination, RequestContext, redact_url};
 use tauri::ipc::Channel;
@@ -12,7 +13,7 @@ use super::Bridge;
 use super::dto::{
     AddDefaults, AddDownload, AppSettings, ChecksumInfo, DestinationCheck, DownloadDetails,
     DownloadId, DownloadRow, DownloadState, EngineMessage, EngineStatus, LimitScope, LinkSource,
-    ProbePreview, SegmentSpan, path_string,
+    ProbePreview, QueueId, QueueInfo, QueuePatch, SegmentSpan, ShiftDirection, path_string,
 };
 use super::hub::new_row;
 use crate::error::UiError;
@@ -62,8 +63,10 @@ pub(crate) async fn probe_url(
     Ok(ProbePreview::from(&probe))
 }
 
-/// Starts a download. Returns its row at once, so the list can show it
-/// before the engine's first event arrives.
+/// Adds a download to its queue (the default queue unless the page names
+/// one): it starts when its turn comes, or at `startAt`, or stays paused
+/// with `paused`. Returns its row at once, so the list can show it before
+/// the engine's first event arrives.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn add_download(
@@ -93,16 +96,29 @@ pub(crate) async fn add_download(
             Checksum::parse(c).map_err(|e| UiError::with_message("error.invalid_checksum", e))?;
         req = req.checksum(checksum);
     }
+    let queue = request
+        .queue
+        .unwrap_or(QueueId(boltget_engine::DEFAULT_QUEUE.0));
+    req = req.queue(queue.into());
+    let start_at = request
+        .start_at
+        .map(|ms| UNIX_EPOCH + Duration::from_millis(ms));
+    if let Some(at) = start_at {
+        req = req.start_at(at);
+    }
     let paused = request.paused.unwrap_or(false);
     let id = if paused {
         engine.add_paused(req)?
     } else {
-        engine.add(req).id()
+        engine.enqueue(req).await?
     };
     let mut row = new_row(id.into(), url);
     row.speed_limit = request.speed_limit.filter(|&r| r > 0);
+    row.queue = queue;
     if paused {
         row.state = DownloadState::Paused;
+    } else {
+        row.start_at = request.start_at;
     }
     bridge.upsert(row.clone());
     remember_folder(engine, &dir).await;
@@ -254,7 +270,9 @@ pub(crate) async fn pause_download(
     Ok(state)
 }
 
-/// Continues a stopped download; `restart` throws its progress away first.
+/// Starts a stopped or waiting download now, whatever its queue does (it
+/// does not wait for a free slot); `restart` throws its progress away
+/// first.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn resume_download(
@@ -270,6 +288,127 @@ pub(crate) async fn resume_download(
         )
         .await?;
     Ok(())
+}
+
+/// Lets a stopped download (paused, failed, cancelled) wait in its queue
+/// again instead of starting it now; returns the state it is in.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn requeue_download(
+    bridge: State<'_, Bridge>,
+    id: DownloadId,
+) -> Result<DownloadState, UiError> {
+    let state: DownloadState = bridge.engine()?.requeue(id.into()).await?.into();
+    bridge.set_state(id, state);
+    Ok(state)
+}
+
+/// Sets when a download starts on its own (Unix milliseconds; `null`: when
+/// its turn comes). A stopped download given a time waits for it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn set_start_at(
+    bridge: State<'_, Bridge>,
+    id: DownloadId,
+    at: Option<u64>,
+) -> Result<DownloadState, UiError> {
+    let at = at.map(|ms| UNIX_EPOCH + Duration::from_millis(ms));
+    let state: DownloadState = bridge.engine()?.set_start_at(id.into(), at).await?.into();
+    bridge.set_state(id, state);
+    Ok(state)
+}
+
+/// Creates a queue (last, started, with the default limit).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn create_queue(
+    bridge: State<'_, Bridge>,
+    name: String,
+) -> Result<QueueInfo, UiError> {
+    let q = bridge.engine()?.create_queue(&name).await?;
+    Ok(QueueInfo::from(&q))
+}
+
+/// Changes a queue's settings; refused changes (a name taken, a limit out
+/// of range) return an `error.queue.*` key and change nothing.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn update_queue(
+    bridge: State<'_, Bridge>,
+    id: QueueId,
+    patch: QueuePatch,
+) -> Result<QueueInfo, UiError> {
+    let q = bridge
+        .engine()?
+        .update_queue(id.into(), (&patch).into())
+        .await?;
+    Ok(QueueInfo::from(&q))
+}
+
+/// Deletes a queue; its downloads move to the end of the default queue.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn delete_queue(bridge: State<'_, Bridge>, id: QueueId) -> Result<(), UiError> {
+    bridge.engine()?.delete_queue(id.into()).await?;
+    Ok(())
+}
+
+/// Starts a queue: it starts its waiting downloads as slots free.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn start_queue(bridge: State<'_, Bridge>, id: QueueId) -> Result<(), UiError> {
+    bridge.engine()?.start_queue(id.into()).await?;
+    Ok(())
+}
+
+/// Stops a queue: its running downloads go back to waiting in their place.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn stop_queue(bridge: State<'_, Bridge>, id: QueueId) -> Result<(), UiError> {
+    bridge.engine()?.stop_queue(id.into()).await?;
+    Ok(())
+}
+
+/// Moves downloads into a queue, before `before` or to the end, in the
+/// order given (dragging rows, "Move to queue").
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn move_downloads(
+    bridge: State<'_, Bridge>,
+    ids: Vec<DownloadId>,
+    queue: QueueId,
+    before: Option<DownloadId>,
+) -> Result<(), UiError> {
+    let ids: Vec<boltget_engine::DownloadId> = ids.into_iter().map(Into::into).collect();
+    bridge
+        .engine()?
+        .move_downloads(&ids, queue.into(), before.map(Into::into))
+        .await?;
+    Ok(())
+}
+
+/// Moves a download one place up or down in its queue, or to the top or
+/// the bottom (Alt+arrow keys).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn shift_download(
+    bridge: State<'_, Bridge>,
+    id: DownloadId,
+    direction: ShiftDirection,
+) -> Result<(), UiError> {
+    bridge.engine()?.shift(id.into(), direction.into()).await?;
+    Ok(())
+}
+
+/// Cancels a finished queue's sleep or shut down while it counts down.
+#[tauri::command]
+#[specta::specta]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn cancel_finish_action(bridge: State<'_, Bridge>) {
+    bridge.cancel_finish_action();
 }
 
 /// Removes a download from the list (pausing it first), and with

@@ -20,16 +20,22 @@ import type {
   DownloadState,
   EngineMessage,
   EngineStatus,
+  FinishCountdown,
   LimitScope,
   ProbePreview,
   ProgressItem,
+  QueueId,
+  QueueInfo,
+  QueuePatch,
   SegmentSpan,
   SettingsPatch,
+  ShiftDirection,
   SystemProxyInfo,
   UiError,
   commands,
 } from "../bindings";
 import { setCategories } from "../list/categoryTable.svelte";
+import { placeOrder } from "../list/queue";
 import { DEFAULT_SETTINGS } from "../settings/model";
 
 /** The result shape of every generated command that can fail. */
@@ -48,6 +54,16 @@ export interface EngineApi {
     | "probeUrl"
     | "pauseDownload"
     | "resumeDownload"
+    | "requeueDownload"
+    | "setStartAt"
+    | "createQueue"
+    | "updateQueue"
+    | "deleteQueue"
+    | "startQueue"
+    | "stopQueue"
+    | "moveDownloads"
+    | "shiftDownload"
+    | "cancelFinishAction"
     | "removeDownload"
     | "refreshLink"
     | "setSpeedLimit"
@@ -79,6 +95,10 @@ export class Download {
   error = $state<DownloadError | null>(null);
   createdAt = $state(0);
   completedAt = $state<number | null>(null);
+  /** The queue it belongs to, its place there, and when it starts on its own. */
+  queue = $state<QueueId>(1);
+  queuePosition = $state(0);
+  startAt = $state<number | null>(null);
   /** The file map, while this download is focused and running. */
   segments = $state.raw<SegmentSpan[] | null>(null);
 
@@ -102,6 +122,9 @@ export class Download {
     this.error = row.error;
     this.createdAt = row.createdAt;
     this.completedAt = row.completedAt;
+    this.queue = row.queue;
+    this.queuePosition = row.queuePosition;
+    this.startAt = row.startAt;
   }
 
   progress(item: ProgressItem): void {
@@ -116,6 +139,10 @@ export class Download {
 export class DownloadStore {
   status = $state<EngineStatus>({ state: "starting" });
   settings = $state.raw<AppSettings>(DEFAULT_SETTINGS);
+  /** The queues, the default first. */
+  queues = $state.raw<QueueInfo[]>([]);
+  /** A finished queue counting down to sleep or shut down. */
+  countdown = $state.raw<FinishCountdown | null>(null);
   /** Download ids, oldest first. Replaced only when the set changes. */
   ids = $state.raw<DownloadId[]>([]);
   /** The download whose file map streams (the details pane's). */
@@ -164,7 +191,15 @@ export class DownloadStore {
       case "snapshot":
         this.status = message.status;
         this.#setSettings(message.settings);
+        this.queues = message.queues;
+        this.countdown = message.countdown;
         this.#replaceAll(message.downloads);
+        break;
+      case "queues":
+        this.queues = message.queues;
+        break;
+      case "countdown":
+        this.countdown = message.countdown;
         break;
       case "status":
         this.status = message.status;
@@ -279,6 +314,121 @@ export class DownloadStore {
     const result = await this.#api.commands.resumeDownload(id, restart);
     if (this.#failed(result) && d && before) Object.assign(d, before);
     return result;
+  }
+
+  /** Lets stopped downloads wait in their queue again ("Resume all"). */
+  async requeue(id: DownloadId): Promise<Result<DownloadState>> {
+    const d = this.#items.get(id);
+    const before = d && { state: d.state, error: d.error };
+    if (d) {
+      d.state = "queued";
+      d.error = null;
+    }
+    const result = await this.#api.commands.requeueDownload(id);
+    if (this.#failed(result)) {
+      if (d && before) Object.assign(d, before);
+    } else if (d) {
+      d.state = result.data;
+    }
+    return result;
+  }
+
+  /** Starts a download at a time (Unix ms), or when its turn comes (`null`). */
+  async setStartAt(id: DownloadId, at: number | null): Promise<Result<DownloadState>> {
+    const d = this.#items.get(id);
+    const before = d?.startAt ?? null;
+    if (d) d.startAt = at;
+    const result = await this.#api.commands.setStartAt(id, at);
+    if (this.#failed(result)) {
+      if (d) d.startAt = before;
+    } else if (d) {
+      d.state = result.data;
+    }
+    return result;
+  }
+
+  /** The queue with this id. */
+  queue(id: QueueId): QueueInfo | undefined {
+    return this.queues.find((q) => q.id === id);
+  }
+
+  /**
+   * Creates a queue. A refusal (a name taken) is returned, not recorded:
+   * the queue settings show it next to the field.
+   */
+  createQueue(name: string): Promise<Result<QueueInfo>> {
+    return this.#api.commands.createQueue(name);
+  }
+
+  /** Changes a queue's settings; a refusal is returned, as for `createQueue`. */
+  updateQueue(id: QueueId, patch: QueuePatch): Promise<Result<QueueInfo>> {
+    return this.#api.commands.updateQueue(id, patch);
+  }
+
+  async deleteQueue(id: QueueId): Promise<Result<null>> {
+    const result = await this.#api.commands.deleteQueue(id);
+    this.#failed(result);
+    return result;
+  }
+
+  /** Starts or stops a queue; the button follows at once. */
+  async setQueueStarted(id: QueueId, started: boolean): Promise<Result<null>> {
+    const flip = (on: boolean) =>
+      (this.queues = this.queues.map((q) => (q.id === id ? { ...q, started: on } : q)));
+    flip(started);
+    const result = started
+      ? await this.#api.commands.startQueue(id)
+      : await this.#api.commands.stopQueue(id);
+    if (this.#failed(result)) flip(!started);
+    return result;
+  }
+
+  /**
+   * Moves downloads into `queue` before `before` (or to the end), keeping
+   * their order. The rows take their new places at once; the backend
+   * confirms with the real positions.
+   */
+  async moveDownloads(
+    ids: readonly DownloadId[],
+    queue: QueueId,
+    before: DownloadId | null,
+    order: readonly DownloadId[],
+  ): Promise<Result<null>> {
+    const previous = ids.map((id) => {
+      const d = this.#items.get(id);
+      return d && { d, queue: d.queue, position: d.queuePosition };
+    });
+    const next = placeOrder(order, ids, before);
+    next.forEach((id, i) => {
+      const d = this.#items.get(id);
+      if (d) {
+        d.queue = queue;
+        d.queuePosition = i + 1;
+      }
+    });
+    const result = await this.#api.commands.moveDownloads([...ids], queue, before);
+    if (this.#failed(result)) {
+      for (const p of previous) {
+        if (p) {
+          p.d.queue = p.queue;
+          p.d.queuePosition = p.position;
+        }
+      }
+    }
+    return result;
+  }
+
+  /** Moves a download within its queue (the menu's Move to top, say). */
+  async shift(id: DownloadId, direction: ShiftDirection): Promise<Result<null>> {
+    const result = await this.#api.commands.shiftDownload(id, direction);
+    this.#failed(result);
+    return result;
+  }
+
+  /** Cancels a finished queue's sleep or shut down. */
+  async cancelFinish(): Promise<void> {
+    this.countdown = null;
+    await this.#api.commands.cancelFinishAction();
   }
 
   /** Removes a download from the list, and its file with `deleteFile`. */

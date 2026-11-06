@@ -2,16 +2,17 @@
 //! window over the maximize button that keeps snap layouts
 //! (docs/APP-DESIGN.md #29 to #31), what the tray needs to know about the
 //! system, and the settings that live in Windows (the system proxy, the Run
-//! key, the clipboard listener). Elsewhere these are no-ops for now; macOS
-//! and Linux come after 1.0 (TECH-STACK.md, ADR-016).
+//! key, the clipboard listener), and a finished queue's sleep or shut down.
+//! Elsewhere these are no-ops for now; macOS and Linux come after 1.0
+//! (TECH-STACK.md, ADR-016).
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 pub(crate) use self::windows::{
     ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
-    set_caption_layout, set_chrome, small_icon_size, system_proxy, update_caption_layout,
-    watch_clipboard, watch_system_proxy,
+    set_caption_layout, set_chrome, shut_down, sleep, small_icon_size, system_proxy,
+    update_caption_layout, watch_clipboard, watch_system_proxy,
 };
 
 #[cfg(not(windows))]
@@ -63,10 +64,20 @@ mod other {
         drop(on_text);
         None
     }
+
+    /// A finished queue's sleep: Windows-only for now.
+    pub(crate) fn sleep() -> Result<(), String> {
+        Err("sleeping after a queue is supported on Windows only".to_owned())
+    }
+
+    /// A finished queue's shut down: Windows-only for now.
+    pub(crate) fn shut_down() -> Result<(), String> {
+        Err("shutting down after a queue is supported on Windows only".to_owned())
+    }
 }
 #[cfg(not(windows))]
 pub(crate) use self::other::{
     ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
-    set_caption_layout, set_chrome, small_icon_size, system_proxy, update_caption_layout,
-    watch_clipboard, watch_system_proxy,
+    set_caption_layout, set_chrome, shut_down, sleep, small_icon_size, system_proxy,
+    update_caption_layout, watch_clipboard, watch_system_proxy,
 };

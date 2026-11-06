@@ -250,6 +250,9 @@ mod tests {
             error: None,
             created_at: 1,
             completed_at: None,
+            queue: crate::bridge::dto::QueueId(1),
+            queue_position: 0,
+            start_at: None,
         }
     }
 

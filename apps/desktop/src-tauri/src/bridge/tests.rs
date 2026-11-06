@@ -5,16 +5,21 @@
 use std::path::Path;
 use std::time::Duration;
 
+use std::sync::{Arc, Mutex};
+
 use boltget_engine::{
-    AddRequest, Destination, DownloadHandle, Engine, EngineConfig, RequestContext,
+    AddRequest, DEFAULT_QUEUE, Destination, DownloadHandle, Engine, EngineConfig, QueueChange,
+    RequestContext,
 };
 use boltget_testserver::TestServer;
 use tokio::sync::mpsc;
 
 use super::dto::{
     DownloadEvent, DownloadId, DownloadRow, DownloadState, EngineMessage, EngineStatus,
+    FinishAction,
 };
 use super::{Bridge, Sink, to_resume};
+use crate::power::Power;
 
 const KIB: u64 = 1024;
 const MIB: u64 = 1024 * 1024;
@@ -321,35 +326,201 @@ async fn waits_while_another_process_owns_the_database() {
 }
 
 #[test]
-fn resumes_recovered_and_queued_downloads_once() {
-    let row = |id: u64, state: DownloadState| DownloadRow {
-        id: DownloadId(id),
-        state,
-        url: String::new(),
-        file_name: None,
-        path: None,
-        total: None,
-        downloaded: 0,
-        bps: 0,
-        connections: 0,
-        resumable: true,
-        speed_limit: None,
-        error: None,
-        created_at: 0,
-        completed_at: None,
-    };
-    let rows = [
-        row(1, DownloadState::Paused),
-        row(2, DownloadState::Paused),
-        row(3, DownloadState::Queued),
-        row(4, DownloadState::Completed),
-        row(5, DownloadState::Failed),
+fn resumes_recovered_downloads_once() {
+    let recovered = [
+        boltget_engine::DownloadId(3),
+        boltget_engine::DownloadId(2),
+        boltget_engine::DownloadId(3),
     ];
-    let recovered = [boltget_engine::DownloadId(2), boltget_engine::DownloadId(3)];
-    assert_eq!(
-        to_resume(&recovered, &rows),
-        vec![DownloadId(2), DownloadId(3)]
+    assert_eq!(to_resume(&recovered), vec![DownloadId(2), DownloadId(3)]);
+}
+
+/// Records finish actions instead of carrying them out: tests never sleep
+/// or shut the machine down.
+#[derive(Debug, Default)]
+struct Recorded(Mutex<Vec<FinishAction>>);
+
+impl Power for Recorded {
+    fn act(&self, action: FinishAction) {
+        self.0.lock().unwrap().push(action);
+    }
+}
+
+fn bridge_with(power: Arc<Recorded>, countdown: Duration) -> Arc<Bridge> {
+    let (bridge, hub) = Bridge::with_power(TEST_TICK, power, countdown);
+    tokio::spawn(hub);
+    let bridge = Arc::new(bridge);
+    let runner = bridge.clone();
+    tokio::spawn(async move { runner.run_finish_actions(|| {}).await });
+    bridge
+}
+
+async fn finishing_queue(bridge: &Bridge, srv: &TestServer, dir: &Path) {
+    let engine = bridge.engine().unwrap().clone();
+    let mut change = QueueChange::default();
+    change.on_finish = Some(boltget_engine::FinishAction::ShutDown);
+    change.max_concurrent = Some(1);
+    engine.update_queue(DEFAULT_QUEUE, change).await.unwrap();
+    for seed in [31, 32] {
+        let req = AddRequest::new(
+            RequestContext::new(&srv.url(&format!("/data?size=100000&seed={seed}"))).unwrap(),
+            Destination::Directory(dir.to_path_buf()),
+        );
+        engine.enqueue(req).await.unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queues_stream_to_the_page_and_follow_moves() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let bridge = bridge();
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let mut rx = subscribe(&bridge);
+    match next(&mut rx).await {
+        EngineMessage::Snapshot { queues, .. } => {
+            assert_eq!(queues.len(), 1);
+            assert!(queues[0].is_default && queues[0].started);
+            assert_eq!(queues[0].name, None);
+        }
+        m => panic!("{m:?}"),
+    }
+    let engine = bridge.engine().unwrap().clone();
+    let night = engine.create_queue("Night").await.unwrap();
+    engine.stop_queue(night.id).await.unwrap();
+    until(&mut rx, |m| {
+        matches!(m, EngineMessage::Queues { queues } if queues.len() == 2 && !queues[1].started)
+    })
+    .await;
+    let mut ids = Vec::new();
+    for seed in [41, 42] {
+        let req = AddRequest::new(
+            RequestContext::new(&srv.url(&format!("/data?size=1000&seed={seed}"))).unwrap(),
+            Destination::Directory(dir.path().to_path_buf()),
+        )
+        .queue(night.id);
+        ids.push(DownloadId::from(engine.enqueue(req).await.unwrap()));
+    }
+    // The rows arrive with their queue and place.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        let placed = bridge
+            .list()
+            .await
+            .iter()
+            .filter(|r| r.queue.0 == night.id.0 && r.queue_position < i64::MAX)
+            .count();
+        if placed == 2 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "rows with their queue"
+        );
+        tokio::time::sleep(TEST_TICK).await;
+    }
+    engine
+        .shift(ids[1].into(), boltget_engine::Shift::Top)
+        .await
+        .unwrap();
+    // The hub reads the order again and the page gets the moved rows.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        let rows = bridge.list().await;
+        let pos = |id| rows.iter().find(|r| r.id == id).unwrap().queue_position;
+        if pos(ids[1]) < pos(ids[0]) {
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "first now");
+        tokio::time::sleep(TEST_TICK).await;
+    }
+    let mut sent = false;
+    while let Ok(m) = rx.try_recv() {
+        sent |=
+            matches!(m, EngineMessage::Batch { rows, .. } if rows.iter().any(|r| r.id == ids[1]));
+    }
+    assert!(
+        sent || until_row(&mut rx, ids[1]).await,
+        "the page heard of it"
     );
+    bridge.shutdown().await;
+}
+
+async fn until_row(rx: &mut mpsc::UnboundedReceiver<EngineMessage>, id: DownloadId) -> bool {
+    until(
+        rx,
+        |m| matches!(m, EngineMessage::Batch { rows, .. } if rows.iter().any(|r| r.id == id)),
+    )
+    .await;
+    true
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_finished_queue_counts_down_then_acts_once() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let power = Arc::new(Recorded::default());
+    let bridge = bridge_with(power.clone(), Duration::from_millis(400));
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let mut rx = subscribe(&bridge);
+    finishing_queue(&bridge, &srv, dir.path()).await;
+    let seen = until(&mut rx, |m| {
+        matches!(m, EngineMessage::Countdown { countdown: Some(_) })
+    })
+    .await;
+    let Some(EngineMessage::Countdown { countdown: Some(c) }) = seen.last() else {
+        unreachable!()
+    };
+    assert_eq!(c.action, FinishAction::ShutDown);
+    assert_eq!(
+        *power.0.lock().unwrap(),
+        [],
+        "not before the countdown ends"
+    );
+    until(&mut rx, |m| {
+        matches!(m, EngineMessage::Countdown { countdown: None })
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(*power.0.lock().unwrap(), [FinishAction::ShutDown]);
+    bridge.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_countdown_does_nothing() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let power = Arc::new(Recorded::default());
+    let bridge = bridge_with(power.clone(), Duration::from_secs(30));
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let mut rx = subscribe(&bridge);
+    finishing_queue(&bridge, &srv, dir.path()).await;
+    until(&mut rx, |m| {
+        matches!(m, EngineMessage::Countdown { countdown: Some(_) })
+    })
+    .await;
+    bridge.cancel_finish_action();
+    until(&mut rx, |m| {
+        matches!(m, EngineMessage::Countdown { countdown: None })
+    })
+    .await;
+    // A page that subscribes now sees no countdown.
+    let mut late = subscribe(&bridge);
+    match next(&mut late).await {
+        EngineMessage::Snapshot { countdown, .. } => assert_eq!(countdown, None),
+        m => panic!("{m:?}"),
+    }
+    assert_eq!(*power.0.lock().unwrap(), []);
+    bridge.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

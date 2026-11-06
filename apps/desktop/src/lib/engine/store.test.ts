@@ -5,6 +5,7 @@ import type {
   DownloadState,
   EngineMessage,
   ProgressItem,
+  QueueInfo,
   UiError,
 } from "../bindings";
 import { errorText } from "./index";
@@ -27,9 +28,23 @@ function row(id: number, extra: Partial<DownloadRow> = {}): DownloadRow {
     error: null,
     createdAt: id,
     completedAt: null,
+    queue: 1,
+    queuePosition: id,
+    startAt: null,
     ...extra,
   };
 }
+
+const MAIN: QueueInfo = {
+  id: 1,
+  name: null,
+  isDefault: true,
+  maxConcurrent: 3,
+  started: true,
+  startTime: null,
+  stopTime: null,
+  onFinish: "nothing",
+};
 
 function progress(id: number, downloaded: number, extra: Partial<ProgressItem> = {}): ProgressItem {
   return { id, downloaded, total: 1000, bps: 500, connections: 4, segments: null, ...extra };
@@ -81,6 +96,16 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
     downloadDetails: vi.fn((id) => ok({ id, partialPath: null, checksum: null, sources: [] })),
     openDownload: vi.fn(() => ok(null)),
     showDownloadInFolder: vi.fn(() => ok(null)),
+    requeueDownload: vi.fn(() => ok("queued" as const)),
+    setStartAt: vi.fn(() => ok("queued" as const)),
+    createQueue: vi.fn((name) => ok({ ...MAIN, id: 2, name, isDefault: false })),
+    updateQueue: vi.fn((id) => ok({ ...MAIN, id })),
+    deleteQueue: vi.fn(() => ok(null)),
+    startQueue: vi.fn(() => ok(null)),
+    stopQueue: vi.fn(() => ok(null)),
+    moveDownloads: vi.fn(() => ok(null)),
+    shiftDownload: vi.fn(() => ok(null)),
+    cancelFinishAction: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
   const api: EngineApi = {
@@ -101,6 +126,8 @@ async function connected(overrides: Partial<EngineApi["commands"]> = {}, rows = 
     status: { state: "ready" },
     downloads: rows,
     settings: DEFAULT_SETTINGS,
+    queues: [MAIN],
+    countdown: null,
   });
   return { store, ...fake };
 }
@@ -184,6 +211,8 @@ describe("DownloadStore", () => {
       status: { state: "ready" },
       downloads: [row(1, { downloaded: 500 }), row(5)],
       settings: { ...DEFAULT_SETTINGS, speedLimit: 1000 },
+      queues: [MAIN],
+      countdown: null,
     });
     expect(store.ids).toEqual([1, 5]);
     expect(store.get(1)).toBe(one);
@@ -303,6 +332,69 @@ describe("DownloadStore", () => {
     expect(probe.status === "ok" && probe.data.fileName).toBe("f.iso");
     await store.setVisible(false);
     expect(commands.setUiVisible).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("queues", () => {
+  it("follows queue and countdown messages", async () => {
+    const { store, emit } = await connected();
+    expect(store.queues).toEqual([MAIN]);
+    const night = { ...MAIN, id: 2, name: "Night", isDefault: false, started: false };
+    emit({ type: "queues", queues: [MAIN, night] });
+    expect(store.queue(2)?.name).toBe("Night");
+    emit({ type: "countdown", countdown: { queue: 2, action: "shut_down", deadline: 5 } });
+    expect(store.countdown?.action).toBe("shut_down");
+    emit({ type: "countdown", countdown: null });
+    expect(store.countdown).toBeNull();
+  });
+
+  it("starts and stops a queue optimistically and rolls back a refusal", async () => {
+    const { store, commands } = await connected({
+      stopQueue: vi.fn(() => fail("error.database")),
+    });
+    await store.setQueueStarted(1, true);
+    expect(commands.startQueue).toHaveBeenCalledWith(1);
+    const pending = store.setQueueStarted(1, false);
+    expect(store.queue(1)?.started).toBe(false);
+    await pending;
+    expect(store.queue(1)?.started).toBe(true);
+    expect(store.lastError?.key).toBe("error.database");
+  });
+
+  it("moves rows to their new places at once", async () => {
+    const { store, commands } = await connected({}, [row(1), row(2), row(3)]);
+    await store.moveDownloads([3], 1, 1, [1, 2, 3]);
+    expect(commands.moveDownloads).toHaveBeenCalledWith([3], 1, 1);
+    const places = [1, 2, 3].map((id) => store.get(id)?.queuePosition);
+    expect(places).toEqual([2, 3, 1]);
+  });
+
+  it("puts a move back when the backend refuses it", async () => {
+    const { store } = await connected({ moveDownloads: vi.fn(() => fail("error.unknown_queue")) }, [
+      row(1),
+      row(2),
+    ]);
+    await store.moveDownloads([2], 7, null, []);
+    expect(store.get(2)?.queue).toBe(1);
+    expect(store.get(2)?.queuePosition).toBe(2);
+  });
+
+  it("requeues and sets start times, keeping the backend's state", async () => {
+    const { store, commands } = await connected();
+    await store.requeue(1);
+    expect(store.get(1)?.state).toBe("queued");
+    await store.setStartAt(2, 1234);
+    expect(commands.setStartAt).toHaveBeenCalledWith(2, 1234);
+    expect(store.get(2)?.startAt).toBe(1234);
+    expect(store.get(2)?.state).toBe("queued");
+  });
+
+  it("clears the countdown as soon as it is cancelled", async () => {
+    const { store, emit, commands } = await connected();
+    emit({ type: "countdown", countdown: { queue: 1, action: "sleep", deadline: 5 } });
+    await store.cancelFinish();
+    expect(store.countdown).toBeNull();
+    expect(commands.cancelFinishAction).toHaveBeenCalledOnce();
   });
 });
 

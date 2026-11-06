@@ -16,7 +16,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use super::activity::{Activity, Notice, Tracker};
 use super::dto::{
     AppSettings, DownloadError, DownloadId, DownloadRow, DownloadState, EngineMessage,
-    EngineStatus, SegmentSpan, path_string,
+    EngineStatus, FinishAction, FinishCountdown, QueueId, QueueInfo, SegmentSpan, path_string,
 };
 use super::model::{Model, Sample};
 
@@ -46,8 +46,11 @@ pub(crate) enum Request {
         events: broadcast::Receiver<EngineEvent>,
         rows: Vec<DownloadRow>,
         settings: AppSettings,
+        queues: Vec<QueueInfo>,
     },
     Status(EngineStatus),
+    /// A finish action's countdown started or ended.
+    Countdown(Option<FinishCountdown>),
     Settings(AppSettings),
     /// A row to add or update (a download just added, or read again from the
     /// database).
@@ -72,6 +75,7 @@ pub(crate) struct HubHandle {
     tx: mpsc::UnboundedSender<Request>,
     activity: watch::Sender<Activity>,
     notices: broadcast::Sender<Notice>,
+    finishes: broadcast::Sender<(QueueId, FinishAction)>,
 }
 
 impl HubHandle {
@@ -80,15 +84,18 @@ impl HubHandle {
         let (tx, rx) = mpsc::unbounded_channel();
         let (activity, _) = watch::channel(Activity::default());
         let (notices, _) = broadcast::channel(64);
+        let (finishes, _) = broadcast::channel(16);
         let outputs = Outputs {
             activity: activity.clone(),
             notices: notices.clone(),
+            finishes: finishes.clone(),
         };
         (
             Self {
                 tx,
                 activity,
                 notices,
+                finishes,
             },
             run(rx, tick, outputs),
         )
@@ -102,6 +109,11 @@ impl HubHandle {
     /// Completions and failures, for notifications.
     pub(crate) fn notices(&self) -> broadcast::Receiver<Notice> {
         self.notices.subscribe()
+    }
+
+    /// Queues that finished, with what they ask for.
+    pub(crate) fn finishes(&self) -> broadcast::Receiver<(QueueId, FinishAction)> {
+        self.finishes.subscribe()
     }
 
     pub(crate) fn send(&self, req: Request) {
@@ -139,6 +151,10 @@ pub(crate) fn new_row(id: DownloadId, url: String) -> DownloadRow {
         error: None,
         created_at: now_ms(),
         completed_at: None,
+        queue: QueueId(1),
+        // Last until the queues are read again (within a tick).
+        queue_position: i64::MAX,
+        start_at: None,
     }
 }
 
@@ -146,6 +162,7 @@ pub(crate) fn new_row(id: DownloadId, url: String) -> DownloadRow {
 struct Outputs {
     activity: watch::Sender<Activity>,
     notices: broadcast::Sender<Notice>,
+    finishes: broadcast::Sender<(QueueId, FinishAction)>,
 }
 
 struct Hub {
@@ -154,6 +171,11 @@ struct Hub {
     engine: Option<Engine>,
     status: EngineStatus,
     settings: AppSettings,
+    queues: Vec<QueueInfo>,
+    /// The queues, or which downloads they hold, changed: read them again
+    /// at the next tick.
+    queues_dirty: bool,
+    countdown: Option<FinishCountdown>,
     visible: bool,
     tracker: Tracker,
     outputs: Outputs,
@@ -166,6 +188,9 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration, outputs: 
         engine: None,
         status: EngineStatus::Starting,
         settings: AppSettings::default(),
+        queues: Vec::new(),
+        queues_dirty: false,
+        countdown: None,
         visible: true,
         tracker: Tracker::default(),
         outputs,
@@ -176,10 +201,11 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration, outputs: 
     loop {
         tokio::select! {
             req = rx.recv() => match req {
-                Some(Request::Ready { engine, events: rx_events, rows, settings }) => {
+                Some(Request::Ready { engine, events: rx_events, rows, settings, queues }) => {
                     events = Some(rx_events);
                     hub.engine = Some(engine);
                     hub.settings = settings;
+                    hub.queues = queues;
                     hub.status = EngineStatus::Ready;
                     hub.model.load(rows);
                     hub.broadcast_snapshot();
@@ -195,7 +221,12 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration, outputs: 
                 }
                 Err(broadcast::error::RecvError::Closed) => events = None,
             },
-            _ = ticker.tick() => hub.tick(),
+            _ = ticker.tick() => {
+                if hub.queues_dirty {
+                    hub.refresh_queues().await;
+                }
+                hub.tick();
+            }
         }
     }
 }
@@ -215,6 +246,8 @@ impl Hub {
             status: self.status.clone(),
             downloads: self.model.snapshot(),
             settings: self.settings.clone(),
+            queues: self.queues.clone(),
+            countdown: self.countdown.clone(),
         }
     }
 
@@ -241,6 +274,12 @@ impl Hub {
                 if self.status != status {
                     self.status = status.clone();
                     self.broadcast(&EngineMessage::Status { status });
+                }
+            }
+            Request::Countdown(countdown) => {
+                if self.countdown != countdown {
+                    self.countdown.clone_from(&countdown);
+                    self.broadcast(&EngineMessage::Countdown { countdown });
                 }
             }
             Request::Settings(settings) => {
@@ -324,6 +363,13 @@ impl Hub {
                 self.model.completed(id, path_string(path), now_ms());
                 self.track(id, previous);
             }
+            EngineEvent::QueuesChanged => self.queues_dirty = true,
+            EngineEvent::QueueFinished { queue, action } => {
+                let _ = self
+                    .outputs
+                    .finishes
+                    .send(((*queue).into(), (*action).into()));
+            }
             // Events added to the engine later: the next resync covers them.
             _ => {}
         }
@@ -344,8 +390,38 @@ impl Hub {
         }
     }
 
+    /// Reads the queues and every download's place in them again, after
+    /// the engine said they changed: the queues go out at once if they
+    /// changed, the rows that moved with the next batch.
+    async fn refresh_queues(&mut self) {
+        self.queues_dirty = false;
+        let Some(engine) = &self.engine else { return };
+        match (engine.queues().await, engine.list().await) {
+            (Ok(queues), Ok(list)) => {
+                let queues: Vec<QueueInfo> = queues.iter().map(QueueInfo::from).collect();
+                if queues != self.queues {
+                    self.queues.clone_from(&queues);
+                    if self.visible {
+                        self.broadcast(&EngineMessage::Queues { queues });
+                    }
+                }
+                for s in &list {
+                    let row = DownloadRow::from(s);
+                    if self.model.row(row.id).is_some() {
+                        self.model.set_queue_fields(&row);
+                    } else {
+                        self.model.added(row);
+                    }
+                }
+            }
+            (Err(e), _) | (_, Err(e)) => tracing::warn!(error = %e, "could not read the queues"),
+        }
+    }
+
     /// Reads the list again after missing events, and sends a snapshot.
     async fn resync(&mut self) {
+        // Missed events may have moved downloads between queues too.
+        self.queues_dirty = true;
         let Some(engine) = &self.engine else { return };
         match engine.list().await {
             Ok(list) => {

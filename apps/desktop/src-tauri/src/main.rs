@@ -21,6 +21,7 @@ mod mark;
 mod notify;
 mod pipe;
 mod platform;
+mod power;
 mod settings;
 mod shell;
 mod theme;
@@ -97,6 +98,7 @@ fn main() {
             prepare_main_window(&window);
             tray::install(app.handle())?;
             notify::start(app.handle());
+            start_finish_actions(app.handle());
             clipboard::start(app.handle());
             let handle = app.handle().clone();
             platform::watch_system_proxy(move || handle.state::<Bridge>().system_proxy_changed());
@@ -166,6 +168,21 @@ fn start_engine(app: &tauri::AppHandle, dir: Option<PathBuf>) {
             }
             None => bridge.no_data_dir(),
         }
+    });
+}
+
+/// Carries out what finished queues ask for (a cancellable countdown, then
+/// sleep or shut down), bringing the window forward for the countdown.
+fn start_finish_actions(app: &tauri::AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let bridge = app.state::<Bridge>();
+        let shown = || {
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                commands::reveal(&window);
+            }
+        };
+        bridge.run_finish_actions(shown).await;
     });
 }
 

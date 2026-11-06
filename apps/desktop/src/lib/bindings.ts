@@ -41,8 +41,10 @@ export const commands = {
 	/**  Looks at a link without downloading it, for the add sheet's preview. */
 	probeUrl: (url: string) => typedError<ProbePreview, UiError>(__TAURI_INVOKE("probe_url", { url })),
 	/**
-	 *  Starts a download. Returns its row at once, so the list can show it
-	 *  before the engine's first event arrives.
+	 *  Adds a download to its queue (the default queue unless the page names
+	 *  one): it starts when its turn comes, or at `startAt`, or stays paused
+	 *  with `paused`. Returns its row at once, so the list can show it before
+	 *  the engine's first event arrives.
 	 */
 	addDownload: (request: AddDownload) => typedError<DownloadRow, UiError>(__TAURI_INVOKE("add_download", { request })),
 	/**  The Downloads folder and the recent folders, for the add sheet. */
@@ -59,8 +61,47 @@ export const commands = {
 	chooseFolder: (start: string | null) => typedError<string | null, UiError>(__TAURI_INVOKE("choose_folder", { start })),
 	/**  Pauses a download after its final checkpoint; returns the state it is in. */
 	pauseDownload: (id: DownloadId) => typedError<DownloadState, UiError>(__TAURI_INVOKE("pause_download", { id })),
-	/**  Continues a stopped download; `restart` throws its progress away first. */
+	/**
+	 *  Starts a stopped or waiting download now, whatever its queue does (it
+	 *  does not wait for a free slot); `restart` throws its progress away
+	 *  first.
+	 */
 	resumeDownload: (id: DownloadId, restart: boolean) => typedError<null, UiError>(__TAURI_INVOKE("resume_download", { id, restart })),
+	/**
+	 *  Lets a stopped download (paused, failed, cancelled) wait in its queue
+	 *  again instead of starting it now; returns the state it is in.
+	 */
+	requeueDownload: (id: DownloadId) => typedError<DownloadState, UiError>(__TAURI_INVOKE("requeue_download", { id })),
+	/**
+	 *  Sets when a download starts on its own (Unix milliseconds; `null`: when
+	 *  its turn comes). A stopped download given a time waits for it.
+	 */
+	setStartAt: (id: DownloadId, at: number | null) => typedError<DownloadState, UiError>(__TAURI_INVOKE("set_start_at", { id, at })),
+	/**  Creates a queue (last, started, with the default limit). */
+	createQueue: (name: string) => typedError<QueueInfo, UiError>(__TAURI_INVOKE("create_queue", { name })),
+	/**
+	 *  Changes a queue's settings; refused changes (a name taken, a limit out
+	 *  of range) return an `error.queue.*` key and change nothing.
+	 */
+	updateQueue: (id: QueueId, patch: QueuePatch) => typedError<QueueInfo, UiError>(__TAURI_INVOKE("update_queue", { id, patch })),
+	/**  Deletes a queue; its downloads move to the end of the default queue. */
+	deleteQueue: (id: QueueId) => typedError<null, UiError>(__TAURI_INVOKE("delete_queue", { id })),
+	/**  Starts a queue: it starts its waiting downloads as slots free. */
+	startQueue: (id: QueueId) => typedError<null, UiError>(__TAURI_INVOKE("start_queue", { id })),
+	/**  Stops a queue: its running downloads go back to waiting in their place. */
+	stopQueue: (id: QueueId) => typedError<null, UiError>(__TAURI_INVOKE("stop_queue", { id })),
+	/**
+	 *  Moves downloads into a queue, before `before` or to the end, in the
+	 *  order given (dragging rows, "Move to queue").
+	 */
+	moveDownloads: (ids: DownloadId[], queue: QueueId, before: DownloadId | null) => typedError<null, UiError>(__TAURI_INVOKE("move_downloads", { ids, queue, before })),
+	/**
+	 *  Moves a download one place up or down in its queue, or to the top or
+	 *  the bottom (Alt+arrow keys).
+	 */
+	shiftDownload: (id: DownloadId, direction: ShiftDirection) => typedError<null, UiError>(__TAURI_INVOKE("shift_download", { id, direction })),
+	/**  Cancels a finished queue's sleep or shut down while it counts down. */
+	cancelFinishAction: () => __TAURI_INVOKE<void>("cancel_finish_action"),
 	/**
 	 *  Removes a download from the list (pausing it first), and with
 	 *  `delete_file` its partial or completed file too.
@@ -153,8 +194,12 @@ export type AddDownload = {
 	speedLimit?: number | null,
 	/**  `sha256:<hex>` (also `md5`, `sha1`, `sha512`) or bare hex. */
 	checksum?: string | null,
-	/**  Add it paused instead of starting it. */
+	/**  Add it paused instead of letting it wait for its turn. */
 	paused?: boolean | null,
+	/**  The queue it waits in; the default queue when absent. */
+	queue?: QueueId | null,
+	/**  Start it at this time (Unix milliseconds), whatever its queue does. */
+	startAt?: number | null,
 };
 
 /**  What the About screen and bug reports need to know about this build. */
@@ -265,6 +310,12 @@ export type ClipboardOffer = {
 	links: string,
 };
 
+/**  A queue's daily start and stop, in minutes after local midnight. */
+export type DailyTimes = {
+	start: number | null,
+	stop: number | null,
+};
+
 /**  Where a download would be saved, for the add sheet. */
 export type DestinationCheck = {
 	/**
@@ -344,6 +395,15 @@ export type DownloadRow = {
 	createdAt: number,
 	/**  Unix milliseconds. */
 	completedAt: number | null,
+	/**  The queue it belongs to. */
+	queue: QueueId,
+	/**  Its place in the queue: smaller goes first (compare, do not count). */
+	queuePosition: number,
+	/**
+	 *  When it starts on its own (Unix milliseconds), if the user chose a
+	 *  time.
+	 */
+	startAt: number | null,
 };
 
 /**
@@ -361,11 +421,21 @@ export type EngineMessage =
  *  The whole state: on subscribe, when the window becomes visible again,
  *  and after the backend lost track of engine events.
  */
-{ type: "snapshot"; status: EngineStatus; downloads: DownloadRow[]; settings: AppSettings } | 
+{ type: "snapshot"; status: EngineStatus; downloads: DownloadRow[]; settings: AppSettings; queues: QueueInfo[]; countdown: FinishCountdown | null } | 
 /**  The engine's status changed. */
 { type: "status"; status: EngineStatus } | 
 /**  Settings changed. */
 { type: "settings"; settings: AppSettings } | 
+/**
+ *  The queues changed (all of them, in order). Rows whose queue, place
+ *  or start time changed arrive in the next batch.
+ */
+{ type: "queues"; queues: QueueInfo[] } | 
+/**
+ *  A finish action's countdown started (`null`: it ended or was
+ *  cancelled).
+ */
+{ type: "countdown"; countdown: FinishCountdown | null } | 
 /**
  *  Everything that changed during one tick (about 250 ms), coalesced:
  *  rows that were added or changed, rows that were removed, progress of
@@ -387,6 +457,20 @@ export type EngineStatus =
 
 /**  How an error should be presented (docs/ARCHITECTURE.md, "Error handling"). */
 export type ErrorKind = "transient" | "throttled" | "link_expired" | "resource_changed" | "range_unsupported" | "disk" | "permanent" | "integrity" | "cancelled" | "internal" | "busy" | "database" | "not_found" | "invalid_state";
+
+/**  What a queue does when it finishes (docs/ENGINE.md, "Queues"). */
+export type FinishAction = "nothing" | "sleep" | "shut_down";
+
+/**
+ *  A finished queue is about to put the computer to sleep or shut it
+ *  down; the page shows the countdown with Cancel.
+ */
+export type FinishCountdown = {
+	queue: QueueId,
+	action: FinishAction,
+	/**  When it acts, Unix milliseconds. */
+	deadline: number,
+};
 
 /**  Which speed limit to change. */
 export type LimitScope = 
@@ -461,6 +545,35 @@ export type ProxySettings = {
 	bypass: string,
 };
 
+/**  Identifies a queue; 1 is the default queue ("Main"). */
+export type QueueId = number;
+
+/**  A queue, for the sidebar, its view and its settings. */
+export type QueueInfo = {
+	id: QueueId,
+	/**  `null` for the default queue until it is renamed: the page names it. */
+	name: string | null,
+	isDefault: boolean,
+	/**  Downloads it runs at once. */
+	maxConcurrent: number,
+	/**  Whether it starts waiting downloads as slots free. */
+	started: boolean,
+	/**  When it starts each day, in minutes after local midnight. */
+	startTime: number | null,
+	/**  When it stops each day, in minutes after local midnight. */
+	stopTime: number | null,
+	onFinish: FinishAction,
+};
+
+/**  A change to a queue's settings; absent fields keep their value. */
+export type QueuePatch = {
+	name?: string | null,
+	maxConcurrent?: number | null,
+	/**  Both daily times at once (either may be `null`). */
+	times?: DailyTimes | null,
+	onFinish?: FinishAction | null,
+};
+
 /**
  *  A byte range of a download and how far it has been received: one run of
  *  squares in the details pane's file map.
@@ -520,6 +633,9 @@ export type ShellRequest =
  *  `fix`, also offer what fixes it (a new link, say).
  */
 { kind: "select"; id: DownloadId; fix: boolean };
+
+/**  Where to move a download within its queue. */
+export type ShiftDirection = "up" | "down" | "top" | "bottom";
 
 /**  What the Network section shows about Windows' proxy. */
 export type SystemProxyInfo = {

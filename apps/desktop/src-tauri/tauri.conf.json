@@ -24,6 +24,7 @@
         "shadow": true,
         "resizable": true,
         "zoomHotkeysEnabled": false,
+        "dragDropEnabled": false,
         "scrollBarStyle": "fluentOverlay"
       }
     ],

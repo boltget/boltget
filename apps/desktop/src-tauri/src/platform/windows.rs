@@ -882,3 +882,98 @@ fn read_clipboard_text(hwnd: HWND) -> Option<String> {
     let _ = unsafe { CloseClipboard() };
     text
 }
+
+// Power: a finished queue's sleep or shut down (src/power.rs) ------------------
+
+/// Enables the shutdown privilege in this process's token, which both
+/// sleeping and shutting down need (a normal user has it, disabled).
+fn enable_shutdown_privilege() -> Result<(), String> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, LUID};
+    use windows::Win32::Security::{
+        AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED,
+        SE_SHUTDOWN_NAME, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    let mut token = HANDLE::default();
+    // SAFETY: `GetCurrentProcess` returns a pseudo-handle that needs no
+    // closing; `token` is a valid place for the handle it opens.
+    unsafe {
+        OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &raw mut token,
+        )
+    }
+    .map_err(|e| format!("opening the process token: {e}"))?;
+    let mut luid = LUID::default();
+    // SAFETY: `SE_SHUTDOWN_NAME` is a static, NUL-terminated wide string and
+    // `luid` a valid place for the answer.
+    let looked_up = unsafe { LookupPrivilegeValueW(None, SE_SHUTDOWN_NAME, &raw mut luid) };
+    let result = looked_up
+        .map_err(|e| format!("looking up the shutdown privilege: {e}"))
+        .and_then(|()| {
+            let privileges = TOKEN_PRIVILEGES {
+                PrivilegeCount: 1,
+                Privileges: [LUID_AND_ATTRIBUTES {
+                    Luid: luid,
+                    Attributes: SE_PRIVILEGE_ENABLED,
+                }],
+            };
+            // SAFETY: `token` was opened with TOKEN_ADJUST_PRIVILEGES above,
+            // and `privileges` lives across the call; the previous state is
+            // not asked for.
+            unsafe {
+                AdjustTokenPrivileges(token, false, Some(&raw const privileges), 0, None, None)
+            }
+            .map_err(|e| format!("enabling the shutdown privilege: {e}"))
+        });
+    // SAFETY: `token` is a handle this function opened and owns.
+    let _ = unsafe { CloseHandle(token) };
+    result
+}
+
+/// Puts the computer to sleep (not hibernation), as Start's Sleep does.
+pub(crate) fn sleep() -> Result<(), String> {
+    use windows::Win32::System::Power::SetSuspendState;
+    enable_shutdown_privilege()?;
+    // SAFETY: plain flags; the call suspends the machine and returns after
+    // it wakes up.
+    if unsafe { SetSuspendState(false, false, false) } {
+        Ok(())
+    } else {
+        Err(format!(
+            "SetSuspendState failed: {}",
+            windows::core::Error::from_thread()
+        ))
+    }
+}
+
+/// Shuts the computer down and powers it off, letting apps save their work
+/// (no forced close), as a planned shutdown.
+pub(crate) fn shut_down() -> Result<(), String> {
+    use windows::Win32::System::Shutdown::{
+        InitiateShutdownW, SHTDN_REASON_FLAG_PLANNED, SHTDN_REASON_MAJOR_OTHER,
+        SHTDN_REASON_MINOR_OTHER, SHUTDOWN_POWEROFF,
+    };
+    enable_shutdown_privilege()?;
+    // SAFETY: no machine name or message (the local machine, no text); the
+    // flags and reason are plain values.
+    let code = unsafe {
+        InitiateShutdownW(
+            None,
+            None,
+            0,
+            SHUTDOWN_POWEROFF,
+            SHTDN_REASON_MAJOR_OTHER | SHTDN_REASON_MINOR_OTHER | SHTDN_REASON_FLAG_PLANNED,
+        )
+    };
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "InitiateShutdownW failed: {}",
+            windows::core::Error::from_hresult(windows::core::HRESULT::from_win32(code))
+        ))
+    }
+}

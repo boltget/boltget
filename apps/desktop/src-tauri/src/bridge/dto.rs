@@ -186,6 +186,13 @@ pub(crate) struct DownloadRow {
     pub(crate) created_at: u64,
     /// Unix milliseconds.
     pub(crate) completed_at: Option<u64>,
+    /// The queue it belongs to.
+    pub(crate) queue: QueueId,
+    /// Its place in the queue: smaller goes first (compare, do not count).
+    pub(crate) queue_position: i64,
+    /// When it starts on its own (Unix milliseconds), if the user chose a
+    /// time.
+    pub(crate) start_at: Option<u64>,
 }
 
 pub(crate) fn path_string(p: &Path) -> String {
@@ -209,8 +216,162 @@ impl From<&engine::DownloadSummary> for DownloadRow {
             error: s.error.as_ref().map(DownloadError::from),
             created_at: s.created_at,
             completed_at: s.completed_at,
+            queue: s.queue.into(),
+            queue_position: s.queue_position,
+            start_at: s.start_at,
         }
     }
+}
+
+/// Identifies a queue; 1 is the default queue ("Main").
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Type,
+)]
+#[serde(transparent)]
+pub(crate) struct QueueId(pub(crate) u64);
+
+impl From<engine::QueueId> for QueueId {
+    fn from(id: engine::QueueId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<QueueId> for engine::QueueId {
+    fn from(id: QueueId) -> Self {
+        Self(id.0)
+    }
+}
+
+/// What a queue does when it finishes (docs/ENGINE.md, "Queues").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum FinishAction {
+    Nothing,
+    Sleep,
+    ShutDown,
+}
+
+impl From<engine::FinishAction> for FinishAction {
+    fn from(a: engine::FinishAction) -> Self {
+        match a {
+            engine::FinishAction::Nothing => Self::Nothing,
+            engine::FinishAction::Sleep => Self::Sleep,
+            engine::FinishAction::ShutDown => Self::ShutDown,
+        }
+    }
+}
+
+impl From<FinishAction> for engine::FinishAction {
+    fn from(a: FinishAction) -> Self {
+        match a {
+            FinishAction::Nothing => Self::Nothing,
+            FinishAction::Sleep => Self::Sleep,
+            FinishAction::ShutDown => Self::ShutDown,
+        }
+    }
+}
+
+/// A queue, for the sidebar, its view and its settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QueueInfo {
+    pub(crate) id: QueueId,
+    /// `null` for the default queue until it is renamed: the page names it.
+    pub(crate) name: Option<String>,
+    pub(crate) is_default: bool,
+    /// Downloads it runs at once.
+    pub(crate) max_concurrent: u32,
+    /// Whether it starts waiting downloads as slots free.
+    pub(crate) started: bool,
+    /// When it starts each day, in minutes after local midnight.
+    pub(crate) start_time: Option<u16>,
+    /// When it stops each day, in minutes after local midnight.
+    pub(crate) stop_time: Option<u16>,
+    pub(crate) on_finish: FinishAction,
+}
+
+impl From<&engine::Queue> for QueueInfo {
+    fn from(q: &engine::Queue) -> Self {
+        Self {
+            id: q.id.into(),
+            name: q.name.clone(),
+            is_default: q.is_default,
+            max_concurrent: q.max_concurrent,
+            started: q.started,
+            start_time: q.window.start,
+            stop_time: q.window.stop,
+            on_finish: q.on_finish.into(),
+        }
+    }
+}
+
+/// A change to a queue's settings; absent fields keep their value.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QueuePatch {
+    #[specta(optional)]
+    pub(crate) name: Option<String>,
+    #[specta(optional)]
+    pub(crate) max_concurrent: Option<u32>,
+    /// Both daily times at once (either may be `null`).
+    #[specta(optional)]
+    pub(crate) times: Option<DailyTimes>,
+    #[specta(optional)]
+    pub(crate) on_finish: Option<FinishAction>,
+}
+
+/// A queue's daily start and stop, in minutes after local midnight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DailyTimes {
+    pub(crate) start: Option<u16>,
+    pub(crate) stop: Option<u16>,
+}
+
+impl From<&QueuePatch> for engine::QueueChange {
+    fn from(p: &QueuePatch) -> Self {
+        let mut c = Self::default();
+        c.name.clone_from(&p.name);
+        c.max_concurrent = p.max_concurrent;
+        c.window = p.times.map(|t| engine::DailyWindow {
+            start: t.start,
+            stop: t.stop,
+        });
+        c.on_finish = p.on_finish.map(Into::into);
+        c
+    }
+}
+
+/// Where to move a download within its queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ShiftDirection {
+    Up,
+    Down,
+    Top,
+    Bottom,
+}
+
+impl From<ShiftDirection> for engine::Shift {
+    fn from(s: ShiftDirection) -> Self {
+        match s {
+            ShiftDirection::Up => Self::Up,
+            ShiftDirection::Down => Self::Down,
+            ShiftDirection::Top => Self::Top,
+            ShiftDirection::Bottom => Self::Bottom,
+        }
+    }
+}
+
+/// A finished queue is about to put the computer to sleep or shut it
+/// down; the page shows the countdown with Cancel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FinishCountdown {
+    pub(crate) queue: QueueId,
+    pub(crate) action: FinishAction,
+    /// When it acts, Unix milliseconds.
+    pub(crate) deadline: u64,
 }
 
 /// A byte range of a download and how far it has been received: one run of
@@ -307,11 +468,19 @@ pub(crate) enum EngineMessage {
         status: EngineStatus,
         downloads: Vec<DownloadRow>,
         settings: AppSettings,
+        queues: Vec<QueueInfo>,
+        countdown: Option<FinishCountdown>,
     },
     /// The engine's status changed.
     Status { status: EngineStatus },
     /// Settings changed.
     Settings { settings: AppSettings },
+    /// The queues changed (all of them, in order). Rows whose queue, place
+    /// or start time changed arrive in the next batch.
+    Queues { queues: Vec<QueueInfo> },
+    /// A finish action's countdown started (`null`: it ended or was
+    /// cancelled).
+    Countdown { countdown: Option<FinishCountdown> },
     /// Everything that changed during one tick (about 250 ms), coalesced:
     /// rows that were added or changed, rows that were removed, progress of
     /// running downloads, and what happened.
@@ -450,9 +619,15 @@ pub(crate) struct AddDownload {
     /// `sha256:<hex>` (also `md5`, `sha1`, `sha512`) or bare hex.
     #[specta(optional)]
     pub(crate) checksum: Option<String>,
-    /// Add it paused instead of starting it.
+    /// Add it paused instead of letting it wait for its turn.
     #[specta(optional)]
     pub(crate) paused: Option<bool>,
+    /// The queue it waits in; the default queue when absent.
+    #[specta(optional)]
+    pub(crate) queue: Option<QueueId>,
+    /// Start it at this time (Unix milliseconds), whatever its queue does.
+    #[specta(optional)]
+    pub(crate) start_at: Option<u64>,
 }
 
 /// What the add sheet offers before anything is typed.

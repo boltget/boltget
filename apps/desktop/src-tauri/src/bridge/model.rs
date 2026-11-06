@@ -261,6 +261,23 @@ impl Model {
         }
     }
 
+    /// A download's queue, place and start time, read again after the
+    /// queues changed; the row goes out only if one of them did.
+    pub(crate) fn set_queue_fields(&mut self, from: &DownloadRow) {
+        let Some(e) = self.rows.get_mut(&from.id) else {
+            return;
+        };
+        let row = &mut e.row;
+        if (row.queue, row.queue_position, row.start_at)
+            != (from.queue, from.queue_position, from.start_at)
+        {
+            row.queue = from.queue;
+            row.queue_position = from.queue_position;
+            row.start_at = from.start_at;
+            self.dirty.insert(from.id);
+        }
+    }
+
     /// The download whose file map streams with its progress.
     pub(crate) fn set_focus(&mut self, id: Option<DownloadId>) {
         if self.focus != id {
@@ -375,6 +392,9 @@ mod tests {
             error: None,
             created_at: 1,
             completed_at: None,
+            queue: super::super::dto::QueueId(1),
+            queue_position: i64::try_from(id).unwrap(),
+            start_at: None,
         }
     }
 
@@ -604,6 +624,21 @@ mod tests {
         assert_eq!(m.snapshot()[0].speed_limit, Some(1000));
         m.discard_pending();
         assert_eq!(m.tick(Vec::new(), Instant::now()), None);
+    }
+
+    #[test]
+    fn queue_fields_go_out_only_when_they_change() {
+        let mut m = Model::default();
+        m.load([row(1, DownloadState::Queued), row(2, DownloadState::Queued)]);
+        let mut moved = row(1, DownloadState::Queued);
+        moved.queue_position = 5;
+        moved.start_at = Some(99);
+        m.set_queue_fields(&moved);
+        m.set_queue_fields(&row(2, DownloadState::Queued));
+        let (rows, _, _, events) = batch(m.tick(Vec::new(), Instant::now()));
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0].queue_position, rows[0].start_at), (5, Some(99)));
+        assert_eq!(events, Vec::<DownloadEvent>::new());
     }
 
     #[test]

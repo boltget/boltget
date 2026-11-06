@@ -6,7 +6,9 @@
 // URL parameters: `?mock=500` seeds that many downloads (default 14, 0 for
 // the empty state); `?active=20` how many of them run; `?engine=starting|
 // locked|failed` holds the engine in that state; `?theme=light|dark`
-// (read by native.ts) forces a theme.
+// (read by native.ts) forces a theme; `?countdown=shut_down|sleep` shows a
+// finished queue's countdown. Queues are kept, not run: nothing starts on
+// its own.
 import type {
   AddDownload,
   AppSettings,
@@ -16,11 +18,18 @@ import type {
   DownloadState,
   EngineMessage,
   EngineStatus,
+  FinishAction,
+  FinishCountdown,
   LimitScope,
   ProgressItem,
+  QueueId,
+  QueueInfo,
+  QueuePatch,
   SegmentSpan,
   SettingsPatch,
+  ShiftDirection,
 } from "../bindings";
+import { placeOrder, queueOrder } from "../list/queue";
 import { DEFAULT_SETTINGS } from "../settings/model";
 import type { EngineApi, Result } from "./store.svelte";
 
@@ -97,6 +106,23 @@ export function mockEngineApi(search: string): EngineApi {
   let focused: DownloadId | null = null;
   let emit: (m: EngineMessage) => void = () => {};
   let nextId = 1;
+  let queues: QueueInfo[] = [
+    {
+      id: 1,
+      name: null,
+      isDefault: true,
+      maxConcurrent: 3,
+      started: true,
+      startTime: null,
+      stopTime: null,
+      onFinish: "nothing",
+    },
+  ];
+  let nextQueue = 2;
+  const forcedCountdown = params.get("countdown") as FinishAction | null;
+  let countdown: FinishCountdown | null = forcedCountdown
+    ? { queue: 1, action: forcedCountdown, deadline: Date.now() + 60_000 }
+    : null;
 
   function make(i: number, state: DownloadState): Sim {
     const [name, host, size] = FILES[i % FILES.length] as [string, string, number];
@@ -142,6 +168,9 @@ export function mockEngineApi(search: string): EngineApi {
         error,
         createdAt: now - age - 600_000,
         completedAt: state === "completed" ? now - age : null,
+        queue: 1,
+        queuePosition: id,
+        startAt: null,
       },
       segments: segs,
       rate: (6 + random() * 40) * MIB,
@@ -255,7 +284,14 @@ export function mockEngineApi(search: string): EngineApi {
   return {
     async subscribe(onMessage) {
       emit = onMessage;
-      onMessage({ type: "snapshot", status: status(), downloads: rows(), settings });
+      onMessage({
+        type: "snapshot",
+        status: status(),
+        downloads: rows(),
+        settings,
+        queues,
+        countdown,
+      });
       setInterval(tick, TICK);
     },
     commands: {
@@ -278,8 +314,18 @@ export function mockEngineApi(search: string): EngineApi {
         sim.row.completedAt = null;
         sim.row.downloaded = 0;
         sim.row.speedLimit = request.speedLimit ?? null;
+        sim.row.queue = request.queue ?? 1;
+        sim.row.queuePosition = sim.row.id;
+        sim.row.startAt = request.startAt ?? null;
         sim.segments = initialSegments(sim.row.total ?? MIB, 4, 0);
-        if (!paused) start(sim, false);
+        if (!paused) {
+          const q = queues.find((x) => x.id === sim.row.queue);
+          const busy = [...sims.values()].filter(
+            (s) => s.row.queue === sim.row.queue && s.row.state === "downloading",
+          ).length;
+          if (q?.started && !sim.row.startAt && busy < q.maxConcurrent) start(sim, false);
+          else sim.row.state = "queued";
+        }
         sims.set(sim.row.id, sim);
         recent = [folder, ...recent.filter((f) => f !== folder)].slice(0, 3);
         return ok({ ...sim.row });
@@ -350,6 +396,102 @@ export function mockEngineApi(search: string): EngineApi {
         if (sim.row.state === "completed") return err("error.invalid_state");
         setTimeout(() => start(sim, restart || sim.row.state === "corrupt"), 300);
         return ok(null);
+      },
+      async requeueDownload(id: DownloadId) {
+        const sim = sims.get(id);
+        if (!sim) return err("error.unknown_download");
+        changeRow(sim, { state: "queued", error: null });
+        return ok("queued" as const);
+      },
+      async setStartAt(id: DownloadId, at: number | null) {
+        const sim = sims.get(id);
+        if (!sim) return err("error.unknown_download");
+        const state = at !== null && sim.row.state === "paused" ? "queued" : sim.row.state;
+        changeRow(sim, { startAt: at, state });
+        return ok(state);
+      },
+      async createQueue(name: string) {
+        if (queues.some((q) => (q.name ?? "Main").toLowerCase() === name.trim().toLowerCase()))
+          return err("error.queue.name_taken");
+        const q: QueueInfo = {
+          id: nextQueue++,
+          name: name.trim(),
+          isDefault: false,
+          maxConcurrent: 3,
+          started: true,
+          startTime: null,
+          stopTime: null,
+          onFinish: "nothing",
+        };
+        queues = [...queues, q];
+        emit({ type: "queues", queues });
+        return ok(q);
+      },
+      async updateQueue(id: QueueId, patch: QueuePatch) {
+        const q = queues.find((x) => x.id === id);
+        if (!q) return err("error.unknown_queue");
+        const next: QueueInfo = {
+          ...q,
+          name: patch.name?.trim() ?? q.name,
+          maxConcurrent: patch.maxConcurrent ?? q.maxConcurrent,
+          startTime: patch.times ? patch.times.start : q.startTime,
+          stopTime: patch.times ? patch.times.stop : q.stopTime,
+          onFinish: patch.onFinish ?? q.onFinish,
+        };
+        queues = queues.map((x) => (x.id === id ? next : x));
+        emit({ type: "queues", queues });
+        return ok(next);
+      },
+      async deleteQueue(id: QueueId) {
+        queues = queues.filter((q) => q.id !== id || q.isDefault);
+        for (const s of sims.values()) if (s.row.queue === id) changeRow(s, { queue: 1 });
+        emit({ type: "queues", queues });
+        return ok(null);
+      },
+      async startQueue(id: QueueId) {
+        queues = queues.map((q) => (q.id === id ? { ...q, started: true } : q));
+        emit({ type: "queues", queues });
+        return ok(null);
+      },
+      async stopQueue(id: QueueId) {
+        queues = queues.map((q) => (q.id === id ? { ...q, started: false } : q));
+        emit({ type: "queues", queues });
+        return ok(null);
+      },
+      async moveDownloads(ids: DownloadId[], queue: QueueId, before: DownloadId | null) {
+        const items = [...sims.values()].map((s) => s.row);
+        const order = placeOrder(queueOrder(items, queue), ids, before);
+        const changed: DownloadRow[] = [];
+        order.forEach((id, i) => {
+          const sim = sims.get(id);
+          if (sim) {
+            sim.row.queue = queue;
+            sim.row.queuePosition = i + 1;
+            changed.push({ ...sim.row });
+          }
+        });
+        emit({ type: "batch", rows: changed, removed: [], progress: [], events: [] });
+        return ok(null);
+      },
+      async shiftDownload(id: DownloadId, direction: ShiftDirection) {
+        const sim = sims.get(id);
+        if (!sim) return err("error.unknown_download");
+        const items = [...sims.values()].map((s) => s.row);
+        const order = queueOrder(items, sim.row.queue);
+        const i = order.indexOf(id);
+        const before =
+          direction === "top"
+            ? (order[0] ?? null)
+            : direction === "bottom"
+              ? null
+              : direction === "up"
+                ? (order[i - 1] ?? order[0] ?? null)
+                : (order[i + 2] ?? null);
+        return this.moveDownloads([id], sim.row.queue, before);
+      },
+      async cancelFinishAction() {
+        countdown = null;
+        emit({ type: "countdown", countdown });
       },
       async removeDownload(id: DownloadId) {
         if (!sims.delete(id)) return err("error.unknown_download");

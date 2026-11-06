@@ -13,17 +13,21 @@ mod speed;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock, PoisonError};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use boltget_engine::{Engine, EngineConfig, Error, LimitScope, ResumeOptions, State};
+use boltget_engine::{Engine, EngineConfig, Error, LimitScope, ResumeOptions, State, SystemClock};
 use boltget_ipc::Ownership;
-use tokio::sync::watch;
+use tokio::sync::{Notify, broadcast, watch};
 
-use self::dto::{DownloadId, DownloadRow, DownloadState, EngineStatus};
+use self::dto::{
+    DownloadId, DownloadRow, DownloadState, EngineStatus, FinishAction, FinishCountdown, QueueId,
+    QueueInfo,
+};
 use self::hub::{HubHandle, Request};
 pub(crate) use self::hub::{Sink, TICK};
 use crate::error::UiError;
+use crate::power::Power;
 use crate::settings::{self, AppSettings};
 
 /// How often the app tries again to take the database while another process
@@ -41,6 +45,10 @@ const SESSION_END_TIMEOUT: Duration = Duration::from_secs(4);
 /// those that were running when the session ended (logoff, shutdown).
 const RESUME_ON_START_KEY: &str = "resume_on_start";
 
+/// How long a finished queue's sleep or shut down waits, cancellable
+/// (docs/APP-DESIGN.md, "Queues as built").
+pub(crate) const FINISH_COUNTDOWN: Duration = Duration::from_secs(60);
+
 /// The engine and the hub, managed as Tauri state.
 #[derive(Debug)]
 pub(crate) struct Bridge {
@@ -56,11 +64,26 @@ pub(crate) struct Bridge {
     settings: watch::Sender<AppSettings>,
     /// One settings change at a time.
     updating: tokio::sync::Mutex<()>,
+    /// Sleeps or shuts down at the end of a finish countdown.
+    power: Arc<dyn Power>,
+    /// How long that countdown is.
+    countdown_len: Duration,
+    /// Cancels the countdown running now, if any.
+    countdown: Mutex<Option<Arc<Notify>>>,
 }
 
 impl Bridge {
     /// Creates the bridge and the hub task, which the caller spawns.
     pub(crate) fn new(tick: Duration) -> (Self, impl Future<Output = ()> + Send + 'static) {
+        Self::with_power(tick, crate::power::for_this_build(), FINISH_COUNTDOWN)
+    }
+
+    /// The bridge with its own power control and countdown (tests).
+    pub(crate) fn with_power(
+        tick: Duration,
+        power: Arc<dyn Power>,
+        countdown_len: Duration,
+    ) -> (Self, impl Future<Output = ()> + Send + 'static) {
         let (hub, task) = HubHandle::new(tick);
         let bridge = Self {
             engine: OnceLock::new(),
@@ -70,6 +93,9 @@ impl Bridge {
             shut: AtomicBool::new(false),
             settings: watch::channel(AppSettings::default()).0,
             updating: tokio::sync::Mutex::new(()),
+            power,
+            countdown_len,
+            countdown: Mutex::new(None),
         };
         (bridge, task)
     }
@@ -204,6 +230,70 @@ impl Bridge {
         self.hub.notices()
     }
 
+    /// Carries out what finished queues ask for, for as long as the app
+    /// runs: a sleep or shut down after a cancellable countdown, with
+    /// `shown` called as it starts (to bring the window forward).
+    pub(crate) async fn run_finish_actions(&self, shown: impl Fn()) {
+        let mut finishes = self.hub.finishes();
+        loop {
+            match finishes.recv().await {
+                Ok((queue, action)) => self.finish_action(queue, action, &shown).await,
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    }
+
+    /// One finished queue: nothing, or a countdown, then the action unless
+    /// it was cancelled or the app is quitting.
+    async fn finish_action(&self, queue: QueueId, action: FinishAction, shown: &impl Fn()) {
+        if action == FinishAction::Nothing || self.shut.load(Ordering::Acquire) {
+            return;
+        }
+        let cancel = Arc::new(Notify::new());
+        *self
+            .countdown
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(cancel.clone());
+        let deadline = SystemTime::now() + self.countdown_len;
+        let deadline_ms = deadline
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        tracing::info!(?action, queue = queue.0, "a queue finished; counting down");
+        self.hub.send(Request::Countdown(Some(FinishCountdown {
+            queue,
+            action,
+            deadline: deadline_ms,
+        })));
+        shown();
+        let cancelled = tokio::select! {
+            () = tokio::time::sleep(self.countdown_len) => false,
+            () = cancel.notified() => true,
+        };
+        *self
+            .countdown
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+        self.hub.send(Request::Countdown(None));
+        if cancelled || self.shut.load(Ordering::Acquire) {
+            tracing::info!(?action, "the finish action was cancelled");
+        } else {
+            self.power.act(action);
+        }
+    }
+
+    /// Cancels the countdown of a finish action, if one runs.
+    pub(crate) fn cancel_finish_action(&self) {
+        if let Some(cancel) = self
+            .countdown
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            cancel.notify_one();
+        }
+    }
+
     /// Opens the engine in `dir`, waiting while another process owns the
     /// database, then resumes what a previous run left unfinished. Run once,
     /// in the background: the window does not wait for it.
@@ -247,6 +337,13 @@ impl Bridge {
             }
         };
         let rows: Vec<DownloadRow> = list.iter().map(DownloadRow::from).collect();
+        let queues: Vec<QueueInfo> = match engine.queues().await {
+            Ok(q) => q.iter().map(QueueInfo::from).collect(),
+            Err(e) => {
+                tracing::warn!(error = %e, "could not read the queues");
+                Vec::new()
+            }
+        };
         // The app's settings apply before anything continues.
         let mut prefs = match settings::load(&engine).await {
             Ok(prefs) => prefs,
@@ -259,7 +356,7 @@ impl Bridge {
         apply_proxy(&engine, &prefs);
         engine.set_max_connections(prefs.max_connections);
         self.settings.send_replace(prefs.clone());
-        let mut resume = to_resume(engine.recovered(), &rows);
+        let mut resume = to_resume(engine.recovered());
         resume.extend(take_session_end_list(&engine, &rows).await);
         resume.sort_unstable();
         resume.dedup();
@@ -272,8 +369,12 @@ impl Bridge {
             events,
             rows,
             settings: prefs,
+            queues,
         });
+        // What was interrupted continues first, in the slots it had; then
+        // the queues start what waits (docs/ENGINE.md, "Queues").
         resume_all(&engine, &resume).await;
+        engine.start_queues(Arc::new(SystemClock));
     }
 
     /// The OS reports no home directory, so there is nowhere to keep the
@@ -313,10 +414,14 @@ impl Bridge {
         if let Some(engine) = self.engine.get()
             && !self.shut.load(Ordering::Acquire)
         {
+            // Downloads that wait in a queue wait there on the next start
+            // too, and a running one in a started queue goes back to its
+            // place (Engine::shutdown); the paused ones on this list
+            // continue on the next start.
             let running: Vec<u64> = match engine.list().await {
                 Ok(list) => list
                     .iter()
-                    .filter(|s| s.state.is_active() || s.state == State::Queued)
+                    .filter(|s| s.state.is_active())
                     .map(|s| s.id.0)
                     .collect(),
                 Err(e) => {
@@ -357,15 +462,16 @@ impl Bridge {
         }
     }
 
-    /// Continues every paused download (the tray's "Resume all"; failed
-    /// ones wait for the user, as in the window).
+    /// Lets every paused download wait in its queue again (the tray's
+    /// "Resume all"): its queue starts it when its turn comes, so the
+    /// queues' limits hold. Failed ones wait for the user, as in the window.
     pub(crate) async fn resume_all(&self) {
         let Ok(engine) = self.engine() else { return };
         let Ok(list) = engine.list().await else {
             return;
         };
         for s in list.iter().filter(|s| s.state == State::Paused) {
-            if let Err(e) = engine.resume(s.id, ResumeOptions::default()).await {
+            if let Err(e) = engine.requeue(s.id).await {
                 tracing::warn!(id = s.id.0, error = %e, "could not resume");
             }
         }
@@ -390,19 +496,10 @@ fn apply_proxy(engine: &Engine, prefs: &AppSettings) {
 
 /// What to continue on start (docs/ARCHITECTURE.md, "Recovery on start"):
 /// downloads the engine found interrupted (the app was killed, or the
-/// machine went down) and downloads still queued, which only an interrupted
-/// add leaves behind while there is no scheduler. Downloads the user paused
-/// stay paused.
-pub(crate) fn to_resume(
-    recovered: &[boltget_engine::DownloadId],
-    rows: &[DownloadRow],
-) -> Vec<DownloadId> {
+/// machine went down). Downloads still queued wait for their queue, and
+/// downloads the user paused stay paused.
+pub(crate) fn to_resume(recovered: &[boltget_engine::DownloadId]) -> Vec<DownloadId> {
     let mut ids: Vec<DownloadId> = recovered.iter().copied().map(Into::into).collect();
-    ids.extend(
-        rows.iter()
-            .filter(|r| r.state == DownloadState::Queued)
-            .map(|r| r.id),
-    );
     ids.sort_unstable();
     ids.dedup();
     ids
