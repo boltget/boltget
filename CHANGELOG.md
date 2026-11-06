@@ -20,8 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Downloads that are running when you log off, restart or shut down are saved and continue when Boltget starts again (quitting from the tray still leaves them paused).
 - The `boltget` command line works together with the desktop app: while the app runs, `get`, `list`, `pause`, `resume`, `refresh`, `remove` and `config` go to it instead of stopping with "in use". `get` adds the download to the app and shows its progress in the terminal (Ctrl-C pauses it; `--detach` returns at once), `pause` reaches a download running anywhere, and several terminals can download at the same time. `--standalone` runs the download in the terminal's own process as before; a new exit code 10 means the app could not be reached or is from another release.
 
+- Settings (Ctrl+,): theme (follow Windows, light or dark), start with Windows, keep running in the tray when the window closes, notifications, the download folder, categories with their own file types and folder, connections per download, the speed limit, and the proxy: none, the one Windows uses (Boltget follows changes to it) or one you type. Everything applies as you change it, and a value that cannot work says why right under it. Search Settings with Ctrl+F.
+- The add sheet saves each file in its category's folder when you gave the category one, else in your download folder.
+- Offer copied links (off until you turn it on): copy a link to a file in another app and Boltget offers to download it, quietly, without adding anything until you say so. The clipboard is read only while this is on, and never for what password managers mark private.
+- The command palette (Ctrl+K) reaches every action, setting and download by typing a few letters, even a word that means the same ("throttle" finds the speed limits), and shows each action's shortcut. Settings lists all the keyboard shortcuts.
+
 ### Changed
 
+- Search downloads moved to Ctrl+F (or /); Ctrl+K opens the command palette.
 - `boltget list` now only reads your downloads, never opening them as their owner, so running it after Boltget was closed unexpectedly no longer stops the app from continuing those downloads when it starts again.
 - The name is now written Boltget, with one capital, everywhere: the CLI's messages, the website, the logo and the documentation. Commands, paths and settings (`boltget`, `BOLTGET_DATA_DIR`) do not change.
 

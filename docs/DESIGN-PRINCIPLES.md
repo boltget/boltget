@@ -81,6 +81,7 @@ Everything can be done without a mouse. Default shortcuts (all remappable later)
 | Settings | `Ctrl+,` |
 | Move through list | arrow keys, `Home`, `End`, `PageUp`, `PageDown` |
 
+- The desktop app's full list, as built, is in [APP-DESIGN.md](APP-DESIGN.md#settings-the-palette-and-shortcuts-as-built); Settings shows it under Shortcuts.
 - The command palette exposes every action, including settings ("limit speed to 2 MB/s", "open downloads folder").
 - Destructive actions are undoable where possible (remove from list shows an "Undo" toast for a few seconds) and confirmed only when not undoable (deleting files from disk).
 
