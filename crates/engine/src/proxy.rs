@@ -174,6 +174,12 @@ pub(crate) fn base64(bytes: &[u8]) -> String {
 pub struct NoProxy {
     all: bool,
     entries: Vec<String>,
+    /// Windows' `<local>`: host names without a dot.
+    local: bool,
+    /// Windows' implicit loopback bypass (`localhost`, `127.*`, `[::1]`).
+    loopback: bool,
+    /// Windows wildcard entries such as `10.*` or `*.corp.example`.
+    patterns: Vec<String>,
 }
 
 impl NoProxy {
@@ -203,6 +209,49 @@ impl NoProxy {
         np
     }
 
+    /// Parses a Windows bypass list (the `ProxyOverride` of the `WinINet`
+    /// settings, "Don't use the proxy server for addresses beginning with"):
+    /// entries separated by `;` (commas and spaces are tolerated), `*`
+    /// wildcards anywhere (`*.corp.example`, `10.*`), `<local>` for host names
+    /// without a dot, and `<-loopback>` to stop bypassing loopback addresses,
+    /// which Windows otherwise always reaches directly. A scheme or a `:port`
+    /// on an entry is ignored.
+    pub fn parse_windows(s: &str) -> Self {
+        let mut np = NoProxy {
+            loopback: true,
+            ..NoProxy::default()
+        };
+        for raw in s
+            .split([';', ',', ' '])
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+        {
+            let lower = raw.to_ascii_lowercase();
+            match lower.as_str() {
+                "<local>" => np.local = true,
+                "<-loopback>" => np.loopback = false,
+                "*" => np.all = true,
+                _ => {
+                    let e = lower
+                        .split_once("://")
+                        .map_or(lower.as_str(), |(_, rest)| rest);
+                    let e = match e.strip_prefix('[') {
+                        Some(v6) => v6.split(']').next().unwrap_or(""),
+                        None if e.matches(':').count() == 1 => e.split(':').next().unwrap_or(""),
+                        None => e,
+                    };
+                    let e = e.trim_end_matches('/');
+                    if e.contains('*') {
+                        np.patterns.push(e.to_owned());
+                    } else if !e.is_empty() {
+                        np.entries.push(e.trim_start_matches('.').to_owned());
+                    }
+                }
+            }
+        }
+        np
+    }
+
     /// Whether `host` (as in a URL, IPv6 in brackets) bypasses the proxy.
     pub fn matches(&self, host: &str) -> bool {
         if self.all {
@@ -213,6 +262,20 @@ impl NoProxy {
             .trim_end_matches(']')
             .trim_end_matches('.')
             .to_ascii_lowercase();
+        if self.local && !h.contains(['.', ':']) {
+            return true;
+        }
+        if self.loopback
+            && (h == "localhost"
+                || h == "::1"
+                || h.parse::<std::net::Ipv4Addr>()
+                    .is_ok_and(|ip| ip.is_loopback()))
+        {
+            return true;
+        }
+        if self.patterns.iter().any(|p| wildcard(p, &h)) {
+            return true;
+        }
         self.entries.iter().any(|e| {
             h == *e
                 || (h.len() > e.len()
@@ -220,6 +283,28 @@ impl NoProxy {
                     && h.as_bytes()[h.len() - e.len() - 1] == b'.')
         })
     }
+}
+
+/// Whether `text` matches `pattern`, where `*` stands for any run of
+/// characters (both lowercase).
+fn wildcard(pattern: &str, text: &str) -> bool {
+    let mut parts = pattern.split('*');
+    let first = parts.next().unwrap_or("");
+    let Some(mut rest) = text.strip_prefix(first) else {
+        return false;
+    };
+    let parts: Vec<&str> = parts.collect();
+    let Some((last, middle)) = parts.split_last() else {
+        // No `*` at all: an exact match.
+        return rest.is_empty();
+    };
+    for part in middle {
+        match rest.find(part) {
+            Some(at) => rest = &rest[at + part.len()..],
+            None => return false,
+        }
+    }
+    rest.ends_with(last)
 }
 
 /// Which proxy each URL uses.
@@ -278,6 +363,78 @@ impl ProxyRules {
                 .map(|v| NoProxy::parse(&v))
                 .unwrap_or_default(),
         }
+    }
+
+    /// Rules from the Windows proxy settings (`WinINet`, as the "Proxy" page of
+    /// Windows Settings writes them): `server` is the `ProxyServer` value,
+    /// either `host:port` for every protocol or a list such as
+    /// `http=host:port;https=host:port;socks=host:port`; `bypass` is the
+    /// `ProxyOverride` value ([`NoProxy::parse_windows`]). The `https=` entry
+    /// is the proxy for `https` links, reached over plain HTTP like the
+    /// others (unless it names a scheme itself). A `socks=` entry is used for
+    /// both when no `http=`/`https=` entry is given; Boltget speaks SOCKS5 to
+    /// it. Entries for other protocols (`ftp=`) and invalid entries are
+    /// skipped, the latter with a warning that does not repeat them. An empty
+    /// `server` is direct.
+    pub fn from_windows(server: &str, bypass: &str) -> Self {
+        let parse = |name: &str, value: &str, default_scheme: &str| -> Option<Proxy> {
+            let value = value.trim();
+            if value.is_empty() {
+                return None;
+            }
+            let url = if value.contains("://") {
+                value.to_owned()
+            } else {
+                format!("{default_scheme}://{value}")
+            };
+            match Proxy::parse(&url) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    tracing::warn!(entry = name, error = %e, "ignoring a Windows proxy entry");
+                    None
+                }
+            }
+        };
+        let server = server.trim();
+        let mut rules = Self {
+            no_proxy: NoProxy::parse_windows(bypass),
+            ..Self::default()
+        };
+        if server.is_empty() {
+            return rules;
+        }
+        if !server.contains('=') {
+            let p = parse("all", server, "http");
+            rules.http.clone_from(&p);
+            rules.https = p;
+            return rules;
+        }
+        let mut socks = None;
+        for entry in server
+            .split([';', ' '])
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+        {
+            let Some((protocol, value)) = entry.split_once('=') else {
+                continue;
+            };
+            match protocol.trim().to_ascii_lowercase().as_str() {
+                "http" => rules.http = parse("http", value, "http"),
+                "https" => rules.https = parse("https", value, "http"),
+                "socks" => socks = parse("socks", value, "socks5"),
+                _ => {}
+            }
+        }
+        if rules.http.is_none() && rules.https.is_none() {
+            rules.http.clone_from(&socks);
+            rules.https = socks;
+        }
+        rules
+    }
+
+    /// Whether every URL goes direct.
+    pub fn is_direct(&self) -> bool {
+        self.http.is_none() && self.https.is_none()
     }
 
     /// The proxy for a request to `https`/`host`, if any.
@@ -501,6 +658,79 @@ mod tests {
         let e = Proxy::parse("ftp://user:secret@x").unwrap_err();
         assert!(!e.contains("secret"), "{e}");
         assert!(Proxy::parse("http://").is_err());
+    }
+
+    #[test]
+    fn windows_proxy_settings() {
+        // One proxy for everything.
+        let r = ProxyRules::from_windows("proxy.corp:8080", "");
+        let p = r.for_target(true, "example.com").unwrap();
+        assert_eq!(p.without_credentials(), "http://proxy.corp:8080");
+        assert_eq!(r.for_target(false, "example.com"), Some(p));
+        // Per protocol: `https=` is reached over plain HTTP.
+        let r = ProxyRules::from_windows("http=h.corp:3128;https=s.corp:3129;ftp=f.corp:21", "");
+        assert_eq!(
+            r.for_target(false, "x.test").unwrap().without_credentials(),
+            "http://h.corp:3128"
+        );
+        assert_eq!(
+            r.for_target(true, "x.test").unwrap().without_credentials(),
+            "http://s.corp:3129"
+        );
+        // Only one protocol: the other goes direct.
+        let r = ProxyRules::from_windows("https=s.corp:3129", "");
+        assert!(r.for_target(false, "x.test").is_none());
+        assert!(r.for_target(true, "x.test").is_some());
+        // SOCKS alone serves both, as SOCKS5.
+        let r = ProxyRules::from_windows("socks=127.0.0.2:1080", "");
+        assert_eq!(r.https.as_ref().unwrap().kind(), ProxyKind::Socks5);
+        assert_eq!(r.http.as_ref().unwrap().kind(), ProxyKind::Socks5);
+        // A scheme in an entry is kept.
+        let r = ProxyRules::from_windows("https=https://s.corp", "");
+        assert_eq!(r.https.unwrap().kind(), ProxyKind::Https);
+        // The bypass list applies.
+        let r = ProxyRules::from_windows("proxy.corp:8080", "*.corp.example");
+        assert!(r.for_target(true, "files.corp.example").is_none());
+        assert!(r.for_target(true, "localhost").is_none());
+        // Empty and garbage: direct.
+        assert!(ProxyRules::from_windows("", "").is_direct());
+        assert!(ProxyRules::from_windows("  ", "<local>").is_direct());
+        assert!(ProxyRules::from_windows("ftp=f.corp:21", "").is_direct());
+        assert!(ProxyRules::from_windows("http=", "").is_direct());
+        assert!(ProxyRules::from_windows("http=h.corp:port", "").is_direct());
+    }
+
+    #[test]
+    fn windows_bypass_lists() {
+        let np = NoProxy::parse_windows("*.corp.example;10.*; <local> ;intranet.test:8080;");
+        assert!(np.matches("files.corp.example"));
+        assert!(!np.matches("corp.example.evil"));
+        assert!(np.matches("10.1.2.3"));
+        assert!(!np.matches("110.1.2.3"));
+        assert!(np.matches("printer"));
+        assert!(!np.matches("example.com"));
+        assert!(np.matches("intranet.test"));
+        assert!(np.matches("a.intranet.test"));
+        // Loopback is always direct on Windows, unless removed.
+        assert!(np.matches("localhost"));
+        assert!(np.matches("127.0.0.1"));
+        assert!(np.matches("[::1]"));
+        let np = NoProxy::parse_windows("<-loopback>");
+        assert!(!np.matches("127.0.0.1"));
+        assert!(!np.matches("localhost"));
+        // Wildcards in the middle, a scheme, and `*` alone.
+        let np = NoProxy::parse_windows("*internal*;http://192.168.*");
+        assert!(np.matches("my-internal-host.test"));
+        assert!(np.matches("192.168.0.10"));
+        assert!(!np.matches("192.169.0.10"));
+        assert!(NoProxy::parse_windows("*").matches("anything.test"));
+        // The curl form keeps its rules: no implicit loopback.
+        assert!(!NoProxy::parse("example.com").matches("localhost"));
+        assert!(super::wildcard("a*b*c", "a-x-b-y-c"));
+        assert!(!super::wildcard("a*b*c", "a-x-c"));
+        assert!(super::wildcard("*", ""));
+        assert!(!super::wildcard("abc", "abcd"));
+        assert!(!super::wildcard("ab*ba", "aba"));
     }
 
     #[test]

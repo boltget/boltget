@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::SystemTime;
 
 use ::http::{HeaderName, HeaderValue};
@@ -332,7 +332,12 @@ pub struct Removed {
 
 #[derive(Debug)]
 struct Inner {
-    cfg: Arc<EngineConfig>,
+    /// The configuration new work starts with; [`Engine::set_proxy`] and
+    /// [`Engine::set_max_connections`] replace it while the engine runs.
+    cfg: RwLock<Arc<EngineConfig>>,
+    /// The starting connection count as configured, before it was clamped
+    /// to a lower maximum (restored when the maximum rises again).
+    initial_connections: u32,
     env: Env,
     events: broadcast::Sender<EngineEvent>,
     next_id: AtomicU64,
@@ -421,6 +426,7 @@ impl Engine {
         next_id: u64,
         recovered: Vec<DownloadId>,
     ) -> Result<Self> {
+        let initial_connections = config.initial_connections;
         let cfg = Arc::new(config.normalized());
         let tls = http::tls_config(&cfg.extra_root_certificates)?;
         let limits = Limits::new(cfg.max_per_host, cfg.max_total);
@@ -434,7 +440,8 @@ impl Engine {
                     reserved: Arc::new(Mutex::new(HashSet::new())),
                     global_limit: Arc::new(RateLimiter::new(cfg.speed_limit)),
                 },
-                cfg,
+                cfg: RwLock::new(cfg),
+                initial_connections,
                 events,
                 next_id: AtomicU64::new(next_id),
                 downloads: Mutex::new(HashMap::new()),
@@ -445,9 +452,46 @@ impl Engine {
         })
     }
 
-    /// The effective configuration.
-    pub fn config(&self) -> &EngineConfig {
-        &self.inner.cfg
+    /// The effective configuration: what downloads that start now use.
+    pub fn config(&self) -> Arc<EngineConfig> {
+        self.inner
+            .cfg
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Changes the configuration for work that starts from now on: probes,
+    /// link refreshes and downloads that start or resume. Running downloads
+    /// keep the configuration they started with.
+    fn reconfigure(&self, change: impl FnOnce(&mut EngineConfig)) {
+        let mut cfg = self
+            .inner
+            .cfg
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut next = (**cfg).clone();
+        change(&mut next);
+        *cfg = Arc::new(next.normalized());
+    }
+
+    /// Replaces [`EngineConfig::proxy`], the proxies of downloads that do not
+    /// choose their own, while the engine runs (`docs/ENGINE.md`, "Proxies"):
+    /// downloads that start or resume from now on use them; running ones keep
+    /// theirs until they are paused.
+    pub fn set_proxy(&self, rules: crate::proxy::ProxyRules) {
+        self.reconfigure(|c| c.proxy = rules);
+    }
+
+    /// Replaces [`EngineConfig::max_connections`] (clamped to 1–32; the
+    /// starting count is lowered to match) for downloads that start or resume
+    /// from now on.
+    pub fn set_max_connections(&self, max: u32) {
+        let initial = self.inner.initial_connections;
+        self.reconfigure(|c| {
+            c.max_connections = max;
+            c.initial_connections = initial;
+        });
     }
 
     /// The downloads that a previous process left running (it was killed, or
@@ -490,7 +534,7 @@ impl Engine {
     /// patience: an unreachable server is reported within two connect
     /// timeouts.
     pub async fn probe(&self, ctx: &RequestContext) -> Result<ProbeResult> {
-        let mut cfg = (*self.inner.cfg).clone();
+        let mut cfg = (*self.config()).clone();
         cfg.max_attempts = cfg.max_attempts.min(PROBE_ATTEMPTS);
         let connector = Connector::new(
             self.inner.env.tls.clone(),
@@ -635,7 +679,8 @@ impl Engine {
     }
 
     fn spawn(&self, shared: Arc<Shared>, job: Job) -> DownloadHandle {
-        let env = self.inner.env.clone();
+        let mut env = self.inner.env.clone();
+        env.cfg = self.config();
         let task_shared = shared.clone();
         let inner = self.inner.clone();
         let join = tokio::spawn(async move {
@@ -808,7 +853,7 @@ impl Engine {
         }
         let connector = Connector::new(
             self.inner.env.tls.clone(),
-            self.inner.cfg.clone(),
+            self.config(),
             ctx.proxy().clone(),
         );
         let cancel = self.inner.root.child_token();

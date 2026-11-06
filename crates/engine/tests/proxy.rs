@@ -217,3 +217,54 @@ async fn https_through_connect_and_socks5_real_world() {
     }
     assert_eq!(digests[0], digests[1]);
 }
+
+#[tokio::test]
+async fn proxy_rules_change_while_the_engine_runs() {
+    let srv = TestServer::start().await;
+    let proxy = TestProxy::start(ProxyMode::Http, None).await;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(cfg()).unwrap();
+    let url = srv.url("/data?size=4096&seed=8");
+    let default = |name: &str| {
+        boltget_engine::AddRequest::new(
+            RequestContext::new(&url).expect("valid URL"),
+            boltget_engine::Destination::File(dir.path().join(name)),
+        )
+    };
+
+    // Direct at first.
+    get_with(&engine, default("a.bin")).await.unwrap();
+    assert_eq!(proxy.records().len(), 0);
+
+    // Through the proxy once the rules change; probes too.
+    engine.set_proxy(ProxyRules::all(Proxy::parse(&proxy.url()).unwrap()));
+    assert!(!engine.config().proxy.is_direct());
+    get_with(&engine, default("b.bin")).await.unwrap();
+    let after_download = proxy.records().len();
+    assert!(after_download >= 1);
+    engine
+        .probe(&RequestContext::new(&url).unwrap())
+        .await
+        .unwrap();
+    assert!(proxy.records().len() > after_download);
+
+    // And direct again.
+    engine.set_proxy(ProxyRules::direct());
+    let before = proxy.records().len();
+    get_with(&engine, default("c.bin")).await.unwrap();
+    assert_eq!(proxy.records().len(), before);
+}
+
+#[test]
+fn the_connection_cap_changes_while_the_engine_runs() {
+    let engine = Engine::new(boltget_engine::EngineConfig::default()).unwrap();
+    assert_eq!(engine.config().max_connections, 16);
+    assert_eq!(engine.config().initial_connections, 4);
+    engine.set_max_connections(2);
+    assert_eq!(engine.config().max_connections, 2);
+    assert_eq!(engine.config().initial_connections, 2);
+    // Raising it again restores the configured start.
+    engine.set_max_connections(64);
+    assert_eq!(engine.config().max_connections, 32);
+    assert_eq!(engine.config().initial_connections, 4);
+}
