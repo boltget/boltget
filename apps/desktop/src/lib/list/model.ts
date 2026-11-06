@@ -5,10 +5,23 @@
 //
 // Pure functions over plain values, so they are tested without a DOM; the
 // components feed them the store's reactive `Download`s.
-import type { DownloadId, DownloadState } from "../bindings";
+import type { DownloadId, DownloadState, QueueId } from "../bindings";
 import { categoryOf, type Category } from "./category";
+import { inQueue } from "./queue";
 
-export type View = "all" | "active" | "completed" | "scheduled" | Category;
+/** A queue's own view: its downloads in its order. */
+export type QueueView = `queue:${number}`;
+export type View = "all" | "active" | "completed" | "scheduled" | Category | QueueView;
+
+/** The view of a queue. */
+export function queueView(id: QueueId): QueueView {
+  return `queue:${id}`;
+}
+
+/** The queue a view shows, if it is a queue's view. */
+export function queueOfView(view: View): QueueId | null {
+  return view.startsWith("queue:") ? Number(view.slice(6)) : null;
+}
 export type Sort = "default" | "name" | "size" | "added";
 export type Section = "active" | "waiting" | "today" | "yesterday" | "week" | "earlier";
 
@@ -21,6 +34,10 @@ export interface ListItem {
   total: number | null;
   createdAt: number;
   completedAt: number | null;
+  queue: QueueId;
+  queuePosition: number;
+  /** When it starts on its own, if the user chose a time. */
+  startAt: number | null;
 }
 
 export type Entry =
@@ -78,8 +95,15 @@ export const SECTION_ORDER: readonly Section[] = [
   "earlier",
 ];
 
-/** Whether a download belongs in a view. Scheduled has no backing yet. */
+/** Waits for a time the user chose. */
+export function isScheduled(item: Pick<ListItem, "state" | "startAt">): boolean {
+  return item.startAt !== null && item.state !== "completed";
+}
+
+/** Whether a download belongs in a view. */
 export function inView(item: ListItem, view: View): boolean {
+  const queue = queueOfView(view);
+  if (queue !== null) return inQueue(item, queue);
   switch (view) {
     case "all":
       return true;
@@ -88,7 +112,7 @@ export function inView(item: ListItem, view: View): boolean {
     case "completed":
       return item.state === "completed";
     case "scheduled":
-      return false;
+      return isScheduled(item);
     default:
       return categoryOf(item.name) === view;
   }
@@ -149,8 +173,16 @@ export function buildLayout(items: readonly ListItem[], options: BuildOptions): 
   const entries: Entry[] = [];
   const order: DownloadId[] = [];
 
-  if (options.sort !== "default") {
-    shown.sort(compare(options.sort));
+  // A queue shows its order and Scheduled the times, each as one flat list:
+  // the order is what the user arranges there.
+  const flat =
+    queueOfView(options.view) !== null
+      ? (a: ListItem, b: ListItem) => a.queuePosition - b.queuePosition || a.id - b.id
+      : options.view === "scheduled"
+        ? (a: ListItem, b: ListItem) => (a.startAt ?? 0) - (b.startAt ?? 0) || a.id - b.id
+        : null;
+  if (options.sort !== "default" || flat) {
+    shown.sort(options.sort !== "default" ? compare(options.sort) : (flat ?? compare("default")));
     for (const item of shown) {
       sections.set(item.id, sectionOf(item, options.now));
       entries.push({ kind: "row", key: `r${item.id}`, id: item.id, index: order.length });
@@ -184,15 +216,17 @@ export function buildLayout(items: readonly ListItem[], options: BuildOptions): 
 
 /** How many downloads each view holds, for the sidebar. */
 export function viewCounts(
-  items: readonly { state: DownloadState }[],
+  items: readonly { state: DownloadState; startAt: number | null }[],
 ): Record<"all" | "active" | "completed" | "scheduled", number> {
   let active = 0;
   let completed = 0;
+  let scheduled = 0;
   for (const item of items) {
     if (isActive(item.state)) active += 1;
     else if (item.state === "completed") completed += 1;
+    if (isScheduled(item)) scheduled += 1;
   }
-  return { all: items.length, active, completed, scheduled: 0 };
+  return { all: items.length, active, completed, scheduled };
 }
 
 // Virtual scrolling ---------------------------------------------------------

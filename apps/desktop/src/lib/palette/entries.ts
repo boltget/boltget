@@ -7,13 +7,14 @@ import type {
   AppSettings,
   DownloadId,
   DownloadState,
+  QueueId,
   SettingsPatch,
   ThemeSetting,
 } from "../bindings";
 import type { IconName } from "../Icon.svelte";
 import { canPause, canRestart, canResume, type ActionId } from "../list/actions";
 import { CATEGORIES, CATEGORY_LABELS, categoryIcon } from "../list/category";
-import type { View } from "../list/model";
+import { queueView, type View } from "../list/model";
 import { ROWS, SECTIONS, type RowId } from "../settings/registry";
 import { keysOf, type ShortcutId } from "../shortcuts";
 
@@ -50,6 +51,14 @@ export interface PaletteItem {
   id: DownloadId;
   name: string;
   state: DownloadState;
+  queue?: QueueId;
+}
+
+/** A queue as the palette offers it. */
+export interface PaletteQueue {
+  id: QueueId;
+  name: string;
+  started: boolean;
 }
 
 /** What the palette can do; the app passes its own actions. */
@@ -69,6 +78,13 @@ export interface PaletteActions {
   act(action: ActionId, ids: DownloadId[]): void;
   /** Selects a download and shows its details. */
   reveal(id: DownloadId): void;
+  /** Queues: start or stop one, open its settings (`null`: a new one). */
+  toggleQueue(id: QueueId): void;
+  editQueue(id: QueueId | null): void;
+  /** Downloads: start now, choose a time, move to a queue. */
+  startNow(ids: DownloadId[]): void;
+  startLater(ids: DownloadId[]): void;
+  moveTo(ids: DownloadId[], queue: QueueId): void;
 }
 
 export interface PaletteContext {
@@ -76,6 +92,7 @@ export interface PaletteContext {
   compact: boolean;
   selection: readonly PaletteItem[];
   downloads: readonly PaletteItem[];
+  queues: readonly PaletteQueue[];
   stateLabel: (state: DownloadState) => string;
   do: PaletteActions;
 }
@@ -132,6 +149,32 @@ export function buildEntries(ctx: PaletteContext): PaletteEntry[] {
     }
     if (one?.state === "needs_new_link") act("refresh", "action.refresh", "link");
     if (states.some(canRestart)) act("restart", "action.restart", "retry");
+    const queued = (run: () => void, id: string, label: string, icon: IconName) =>
+      out.push({
+        id: `selection.${id}`,
+        group: "selection",
+        label,
+        hint,
+        icon,
+        synonyms: t("keywords.queue"),
+        run,
+      });
+    if (states.some((st) => st === "queued")) {
+      queued(() => d.startNow(ids), "start_now", t("action.start_now"), "play");
+    }
+    if (states.some((st) => st === "queued" || canResume(st))) {
+      queued(() => d.startLater(ids), "start_later", t("action.start_later"), "scheduled");
+    }
+    const here = new Set(selected.map((i) => i.queue));
+    for (const q of ctx.queues) {
+      if (here.size === 1 && here.has(q.id)) continue;
+      queued(
+        () => d.moveTo(ids, q.id),
+        `move.${q.id}`,
+        t("command.move_to", { queue: q.name }),
+        "queue",
+      );
+    }
     if (one) act("show", "action.show", "folder", "show");
     act("copy", "action.copy", "copy", "copy");
     act("remove", "action.remove", "trash", "remove");
@@ -247,6 +290,26 @@ export function buildEntries(ctx: PaletteContext): PaletteEntry[] {
     "keywords.tray",
     (closeToTray) => ({ closeToTray }),
   );
+  // Queues: start or stop each, their settings, a new one.
+  for (const q of ctx.queues) {
+    action(
+      `queue.toggle.${q.id}`,
+      t(q.started ? "command.queue.stop" : "command.queue.start", { name: q.name }),
+      q.started ? "stop" : "play",
+      () => d.toggleQueue(q.id),
+      { synonyms: t("keywords.queue") },
+    );
+    action(
+      `queue.settings.${q.id}`,
+      t("command.queue.settings", { name: q.name }),
+      "settings",
+      () => d.editQueue(q.id),
+      { synonyms: t("keywords.queue_settings") },
+    );
+  }
+  action("queue.new", t("command.queue.new"), "plus", () => d.editQueue(null), {
+    synonyms: t("keywords.queue"),
+  });
   action("quit", t("command.quit"), "close", d.quit, { synonyms: t("keywords.quit") });
 
   // Views and categories -------------------------------------------------
@@ -257,6 +320,17 @@ export function buildEntries(ctx: PaletteContext): PaletteEntry[] {
       label: t("command.go", { view: t(v.label) }),
       icon: v.icon,
       run: () => d.view(v.view),
+    });
+  }
+
+  for (const q of ctx.queues) {
+    out.push({
+      id: `go.queue.${q.id}`,
+      group: "go",
+      label: t("command.go", { view: q.name }),
+      icon: "queue",
+      synonyms: t("keywords.queue"),
+      run: () => d.view(queueView(q.id)),
     });
   }
 

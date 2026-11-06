@@ -31,6 +31,9 @@
     type ShellRequest,
   } from "./lib/native";
   import Palette from "./lib/palette/Palette.svelte";
+  import Countdown from "./lib/queues/Countdown.svelte";
+  import QueueSettings from "./lib/queues/QueueSettings.svelte";
+  import StartLater from "./lib/queues/StartLater.svelte";
   import { openAddFromClipboard, openAddFromText } from "./lib/paste";
   import Settings from "./lib/settings/Settings.svelte";
   import { withCtrl } from "./lib/shortcuts";
@@ -170,8 +173,10 @@
       if (!app.adding) app.palette = !app.palette;
       return;
     }
-    // The add sheet and the palette are modal: the window's shortcuts wait.
-    if (app.adding || app.palette) return;
+    // The add sheet, the palette and the dialogs are modal: the window's
+    // shortcuts wait.
+    if (app.adding || app.palette || app.queueEditing || app.startingLater) return;
+    if (downloads.countdown) return;
     if (withCtrl(event) && event.code === "KeyN") {
       event.preventDefault();
       if (status.state === "ready") void openAddFromClipboard();
@@ -254,6 +259,9 @@
 <AddSheet />
 <Palette />
 <ConfirmDialog />
+<QueueSettings />
+<StartLater />
+<Countdown />
 <div class="visually-hidden" aria-live="polite">{app.announcement}</div>
 
 <style>

@@ -27,12 +27,21 @@ function context(patch: Partial<PaletteContext> = {}): PaletteContext {
     update: vi.fn(),
     act: vi.fn(),
     reveal: vi.fn(),
+    toggleQueue: vi.fn(),
+    editQueue: vi.fn(),
+    startNow: vi.fn(),
+    startLater: vi.fn(),
+    moveTo: vi.fn(),
   };
   return {
     settings: DEFAULT_SETTINGS,
     compact: false,
     selection: [],
     downloads: [],
+    queues: [
+      { id: 1, name: "Main", started: true },
+      { id: 2, name: "Night", started: false },
+    ],
     stateLabel: (s) => s,
     do: actions,
     ...patch,
@@ -41,6 +50,39 @@ function context(patch: Partial<PaletteContext> = {}): PaletteContext {
 
 const find = (ctx: PaletteContext, query: string) =>
   rank(buildEntries(ctx), query, (e) => ({ label: e.label, synonyms: e.synonyms }));
+
+describe("queue commands", () => {
+  it("start or stop each queue, open its settings and make new ones", () => {
+    const ctx = context();
+    const entries = buildEntries(ctx);
+    const labels = entries.map((e) => e.label);
+    expect(labels).toContain("Stop queue Main");
+    expect(labels).toContain("Start queue Night");
+    expect(labels).toContain("Queue settings: Night");
+    expect(labels).toContain("Go to Night");
+    entries.find((e) => e.label === "Start queue Night")?.run();
+    expect(ctx.do.toggleQueue).toHaveBeenCalledWith(2);
+    entries.find((e) => e.id === "queue.new")?.run();
+    expect(ctx.do.editQueue).toHaveBeenCalledWith(null);
+    expect(find(ctx, "start night")[0]?.label).toBe("Start queue Night");
+    expect(find(ctx, "line night").map((e) => e.label)).toContain("Start queue Night");
+  });
+
+  it("move the selection to another queue, start it now or later", () => {
+    const ctx = context({
+      selection: [{ id: 7, name: "a.iso", state: "queued", queue: 1 }],
+    });
+    const entries = buildEntries(ctx);
+    const labels = entries.filter((e) => e.group === "selection").map((e) => e.label);
+    expect(labels).toContain("Move to Night");
+    expect(labels).not.toContain("Move to Main");
+    expect(labels).toContain(t("action.start_now"));
+    entries.find((e) => e.label === "Move to Night")?.run();
+    expect(ctx.do.moveTo).toHaveBeenCalledWith([7], 2);
+    entries.find((e) => e.id === "selection.start_later")?.run();
+    expect(ctx.do.startLater).toHaveBeenCalledWith([7]);
+  });
+});
 
 describe("palette entries", () => {
   it("shows actions with their shortcuts", () => {

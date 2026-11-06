@@ -182,6 +182,29 @@ export function formatWhen(ms: number, now: number = Date.now()): string {
   return daysWithYear.format(date);
 }
 
+const dayAndTime = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/**
+ * A time something will happen (a download's start): `2:30 PM` today,
+ * `tomorrow, 2:00 AM`, else `Nov 8, 2:30 PM`.
+ */
+export function formatUpcoming(ms: number, now: number = Date.now()): string {
+  const date = new Date(ms);
+  const today = new Date(now);
+  if (date.toDateString() === today.toDateString()) return times.format(date);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (date.toDateString() === tomorrow.toDateString()) {
+    return t("time.tomorrow", { time: times.format(date) });
+  }
+  return dayAndTime.format(date);
+}
+
 /** `48 %` style percentages as whole numbers, never 100 before the end. */
 export function percent(downloaded: number, total: number | null): number | null {
   if (total === null || total <= 0) return null;

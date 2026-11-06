@@ -22,7 +22,9 @@ export type ShortcutId =
   | "menu"
   | "details"
   | "density"
-  | "move";
+  | "move"
+  | "reorder"
+  | "reorderEnds";
 
 export interface Shortcut {
   id: ShortcutId;
@@ -51,6 +53,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: "details", keys: "shortcut.details", label: "command.details" },
   { id: "density", keys: "shortcut.density", label: "density.compact" },
   { id: "move", keys: "shortcut.move", label: "shortcuts.move" },
+  { id: "reorder", keys: "shortcut.reorder", label: "shortcuts.reorder" },
+  { id: "reorderEnds", keys: "shortcut.reorder_ends", label: "shortcuts.reorder_ends" },
 ];
 
 const BY_ID = new Map(SHORTCUTS.map((s) => [s.id, s]));

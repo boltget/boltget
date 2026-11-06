@@ -6,6 +6,8 @@ import {
   entryAt,
   inView,
   offsets,
+  queueOfView,
+  queueView,
   scrollToReveal,
   sectionOf,
   viewCounts,
@@ -26,9 +28,44 @@ function item(id: number, state: DownloadState, extra: Partial<ListItem> = {}): 
     total: id * 100,
     createdAt: NOW - id * HOUR,
     completedAt: state === "completed" ? NOW - id * HOUR : null,
+    queue: 1,
+    queuePosition: id,
+    startAt: null,
     ...extra,
   };
 }
+
+describe("queue and scheduled views", () => {
+  it("show a queue in its order, without sections or finished downloads", () => {
+    const items = [
+      item(1, "queued", { queuePosition: 3 }),
+      item(2, "downloading", { queuePosition: 1 }),
+      item(3, "completed", { queuePosition: 0 }),
+      item(4, "paused", { queuePosition: 2 }),
+      item(5, "queued", { queue: 2, queuePosition: 1 }),
+    ];
+    const layout = buildLayout(items, { ...options, view: queueView(1) });
+    expect(layout.order).toEqual([2, 4, 1]);
+    expect(layout.entries.every((e) => e.kind === "row")).toBe(true);
+    expect(queueOfView(queueView(2))).toBe(2);
+    expect(queueOfView("all")).toBeNull();
+    // A sort on request still applies.
+    const byName = buildLayout(items, { ...options, view: queueView(1), sort: "name" });
+    expect(byName.order).toEqual([1, 2, 4]);
+  });
+
+  it("show downloads with a start time, soonest first", () => {
+    const items = [
+      item(1, "queued", { startAt: NOW + 2 * HOUR }),
+      item(2, "queued"),
+      item(3, "queued", { startAt: NOW + HOUR }),
+      item(4, "completed", { startAt: NOW - HOUR }),
+    ];
+    const layout = buildLayout(items, { ...options, view: "scheduled" });
+    expect(layout.order).toEqual([3, 1]);
+    expect(viewCounts(items).scheduled).toBe(2);
+  });
+});
 
 const options: BuildOptions = { view: "all", query: "", sort: "default", now: NOW };
 

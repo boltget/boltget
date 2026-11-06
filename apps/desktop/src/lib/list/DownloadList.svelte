@@ -9,6 +9,11 @@
   resumes; Enter opens; Ctrl+Enter shows in folder; Delete removes (undoable);
   Shift+Delete deletes the file (confirmed); Ctrl+C copies the link; the
   Menu key or Shift+F10 opens the context menu.
+
+  A queue's view is its order (APP-DESIGN, "Queues as built"): rows are
+  dragged to a new place (a line shows where they land), and Alt+Up,
+  Alt+Down, Alt+Home and Alt+End move the selection. Rows of any view can
+  be dragged onto a queue in the sidebar.
 -->
 <script lang="ts">
   import { t } from "@boltget/ui/messages";
@@ -19,14 +24,18 @@
   import { downloads } from "../engine";
   import { displayName } from "../format";
   import { popupMenu } from "../menu";
+  import { dragIds, isDownloadDrag, setDragIds } from "./drag";
   import {
     buildLayout,
+    entryAt,
     offsets,
+    queueOfView,
     scrollToReveal,
     visibleRange,
     type ListItem,
     type Section,
   } from "./model";
+  import { dropBefore, placeOrder, type Shift } from "./queue";
   import Notice from "./Notice.svelte";
   import Row from "./Row.svelte";
   import { rowMenu } from "./rowMenu";
@@ -78,8 +87,19 @@
         total: d.total,
         createdAt: d.createdAt,
         completedAt: d.completedAt,
+        queue: d.queue,
+        queuePosition: d.queuePosition,
+        startAt: d.startAt,
       })),
   );
+
+  /** The queue whose order this view shows and lets the user change. */
+  const ordering = $derived(
+    app.sort === "default" && !app.query.trim() ? queueOfView(app.view) : null,
+  );
+  /** The rows being dragged, and the slot they would land in. */
+  let dragging = $state.raw<ReadonlySet<DownloadId> | null>(null);
+  let dropSlot = $state<number | null>(null);
 
   const layout = $derived.by(() => {
     void clock.day;
@@ -125,6 +145,11 @@
     if (held === null) held = layout.sections;
     clearTimeout(releaseTimer);
     releaseTimer = setTimeout(() => (held = null), delay);
+  }
+
+  function nameOf(id: DownloadId): string {
+    const d = downloads.get(id);
+    return d ? displayName(d.fileName, d.url) : "";
   }
 
   function idAt(target: EventTarget | null): DownloadId | null {
@@ -204,11 +229,28 @@
     reveal(app.selection.active);
   }
 
+  const SHIFTS: Record<string, Shift> = {
+    ArrowUp: "up",
+    ArrowDown: "down",
+    Home: "top",
+    End: "bottom",
+  };
+
   function onkeydown(event: KeyboardEvent) {
     keyboard = true;
     hold();
     const page = Math.max(1, Math.floor(viewport / rowHeight) - 1);
     const ctrl = event.ctrlKey || event.metaKey;
+    const shift = SHIFTS[event.key];
+    if (event.altKey && !ctrl && !event.shiftKey && shift) {
+      // Alt+arrows move the selection in its queue (in a queue's view).
+      event.preventDefault();
+      if (ordering !== null) {
+        app.shift(selected(), shift, app.selection.active ?? undefined);
+        queueMicrotask(() => reveal(app.selection.active));
+      }
+      return;
+    }
     switch (event.key) {
       case "ArrowDown":
         return step(1, event);
@@ -272,9 +314,79 @@
     }
   }
 
+  // Dragging rows: in a queue's view to a new place, anywhere onto a queue
+  // in the sidebar.
+  function ondragstart(event: DragEvent) {
+    const id = idAt(event.target);
+    if (id === null || !event.dataTransfer) return;
+    const ids = app.selection.ids.has(id) ? selected() : [id];
+    setDragIds(event.dataTransfer, ids);
+    dragging = new Set(ids);
+  }
+
+  function slotAt(event: DragEvent): number | null {
+    if (!scroller) return null;
+    const box = scroller.getBoundingClientRect();
+    const y = event.clientY - box.top + scroller.scrollTop - PAD;
+    if (layout.entries.length === 0) return 0;
+    const index = entryAt(tops, Math.max(0, y));
+    const entry = layout.entries[index];
+    if (!entry || entry.kind !== "row") return null;
+    const top = tops[index] ?? 0;
+    const bottom = tops[index + 1] ?? top;
+    const slot = entry.index + (y > (top + bottom) / 2 ? 1 : 0);
+    return Math.min(slot, order.length);
+  }
+
+  function ondragover(event: DragEvent) {
+    if (ordering === null || !isDownloadDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    dropSlot = slotAt(event);
+  }
+
+  function ondrop(event: DragEvent) {
+    const queue = ordering;
+    const slot = dropSlot;
+    const moving = dragging;
+    dropSlot = null;
+    if (queue === null || slot === null || !isDownloadDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const ids = moving ? order.filter((id) => moving.has(id)) : dragIds(event.dataTransfer);
+    if (ids.length === 0) return;
+    const before = dropBefore(order, slot, new Set(ids));
+    const next = placeOrder(order, ids, before);
+    if (next.every((id, i) => id === order[i])) return;
+    void downloads.moveDownloads(ids, queue, before, order);
+    app.announce(
+      t("announce.moved", {
+        count: ids.length,
+        name: nameOf(ids[0] as DownloadId),
+        place: next.indexOf(ids[0] as DownloadId) + 1,
+        total: next.length,
+      }),
+    );
+  }
+
+  function ondragend() {
+    dragging = null;
+    dropSlot = null;
+  }
+
+  /** Where the drop line is drawn. */
+  const dropTop = $derived.by(() => {
+    if (dropSlot === null) return null;
+    const row = layout.entries.findIndex((e) => e.kind === "row" && e.index === dropSlot);
+    const y = row >= 0 ? (tops[row] ?? 0) : total;
+    return y + PAD;
+  });
+
   // A view with nothing in it says why, in one line.
   const emptyText = $derived.by(() => {
     if (app.query.trim()) return t("empty.search", { query: app.query.trim() });
+    const queue = queueOfView(app.view);
+    if (queue !== null) return t("empty.view.queue", { queue: app.queueName(queue) });
     switch (app.view) {
       case "all":
         return "";
@@ -283,7 +395,11 @@
       case "scheduled":
         return t(`empty.view.${app.view}`);
       default:
-        return t("empty.view.category", { category: t(`category.${app.view}`).toLowerCase() });
+        return t("empty.view.category", {
+          category: t(
+            `category.${app.view as Exclude<typeof app.view, `queue:${number}`>}`,
+          ).toLowerCase(),
+        });
     }
   });
 
@@ -323,9 +439,19 @@
   {oncontextmenu}
   {onkeydown}
   {onfocus}
+  {ondragstart}
+  {ondragover}
+  {ondrop}
+  {ondragend}
+  ondragleave={(event) => {
+    if (!scroller?.contains(event.relatedTarget as Node | null)) dropSlot = null;
+  }}
   onblur={() => (focused = false)}
 >
   <div class="spacer" style:height="{total + 2 * PAD}px">
+    {#if dropTop !== null}
+      <div class="drop-line" style:transform="translateY({dropTop - 1}px)" aria-hidden="true"></div>
+    {/if}
     {#each visible as entry, i (entry.key)}
       {@const index = range[0] + i}
       <div class="slot" style:transform="translateY({(tops[index] ?? 0) + PAD}px)">
@@ -338,6 +464,8 @@
           {@const d = downloads.get(entry.id)}
           {#if d}
             <Row
+              draggable
+              dragged={dragging?.has(d.id) ?? false}
               download={d}
               selected={app.selection.ids.has(d.id)}
               active={app.selection.active === d.id}
@@ -379,6 +507,16 @@
     left: var(--space-2);
     right: var(--space-2);
     will-change: transform;
+  }
+  .drop-line {
+    position: absolute;
+    top: 0;
+    left: var(--space-4);
+    right: var(--space-4);
+    z-index: 2;
+    height: 2px;
+    background: var(--color-accent);
+    pointer-events: none;
   }
   .section {
     display: flex;

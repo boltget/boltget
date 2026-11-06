@@ -14,18 +14,40 @@ export type MenuEntry =
       checked?: boolean;
       run: () => void;
     }
+  | {
+      text: string;
+      enabled?: boolean;
+      /** A submenu ("Move to queue ▸"). */
+      items: MenuEntry[];
+    }
   | "separator";
 
-/** Shows a menu at the pointer, or at `at` (CSS pixels from the window's top left). */
-export async function popupMenu(
-  entries: MenuEntry[],
-  at?: { x: number; y: number },
-): Promise<void> {
-  if (!isTauri()) return;
-  const items = entries.map((entry, i) => {
-    if (entry === "separator") return { item: "Separator" as const };
+type NativeItem =
+  | { item: "Separator" }
+  | {
+      id: string;
+      text: string;
+      enabled: boolean;
+      accelerator?: string;
+      checked?: boolean;
+      action: () => void;
+    }
+  | { id: string; text: string; enabled: boolean; items: NativeItem[] };
+
+function native(entries: MenuEntry[], prefix: string): NativeItem[] {
+  return entries.map((entry, i): NativeItem => {
+    if (entry === "separator") return { item: "Separator" };
+    const id = `${prefix}${i}`;
+    if ("items" in entry) {
+      return {
+        id,
+        text: entry.text,
+        enabled: entry.enabled ?? entry.items.length > 0,
+        items: native(entry.items, `${id}.`),
+      };
+    }
     const base = {
-      id: `m${i}`,
+      id,
       text: entry.text,
       enabled: entry.enabled ?? true,
       accelerator: entry.accelerator,
@@ -33,6 +55,14 @@ export async function popupMenu(
     };
     return entry.checked === undefined ? base : { ...base, checked: entry.checked };
   });
-  const menu = await Menu.new({ items });
+}
+
+/** Shows a menu at the pointer, or at `at` (CSS pixels from the window's top left). */
+export async function popupMenu(
+  entries: MenuEntry[],
+  at?: { x: number; y: number },
+): Promise<void> {
+  if (!isTauri()) return;
+  const menu = await Menu.new({ items: native(entries, "m") });
   await menu.popup(at ? new LogicalPosition(at.x, at.y) : undefined);
 }

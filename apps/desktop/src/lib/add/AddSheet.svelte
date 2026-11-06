@@ -11,7 +11,10 @@
   (name, size, type, host, resume, a server checksum), warns before a bad
   download rather than after, and asks for one decision: Enter downloads.
   The file name and the folder are the visible fields; connections, the
-  speed limit, the checksum and "Add paused" wait under "More options".
+  speed limit, the queue, a start time, the checksum and "Add paused" wait
+  under "More options". A download waits in its queue for its turn (the
+  queue of the view the sheet was opened from, else Main), or for the time
+  chosen.
   Several links become a checklist with one folder for all.
 
   A native modal <dialog>: it traps focus and Esc closes it.
@@ -20,6 +23,8 @@
   import Button from "@boltget/ui/components/Button.svelte";
   import Checkbox from "@boltget/ui/components/Checkbox.svelte";
   import IconButton from "@boltget/ui/components/IconButton.svelte";
+  import Select from "@boltget/ui/components/Select.svelte";
+  import TextField from "@boltget/ui/components/TextField.svelte";
   import { t } from "@boltget/ui/messages";
   import { untrack } from "svelte";
   import { app } from "../app.svelte";
@@ -28,6 +33,8 @@
   import { displayName, formatBytes, formatWhen, hostOf, splitFolder } from "../format";
   import Icon from "../Icon.svelte";
   import { CATEGORY_LABELS, categoryIcon, categoryOf } from "../list/category";
+  import { queueOfView } from "../list/model";
+  import { dateTimeValue, nextHour, parseDateTime } from "../list/queue";
   import { folderFor } from "../settings/model";
   import { popupMenu, type MenuEntry } from "../menu";
   import { inTauri } from "../native";
@@ -73,6 +80,11 @@
   let limit = $state("");
   let checksum = $state("");
   let paused = $state(false);
+  /** The queue it waits in, and whether it waits for its turn or a time. */
+  let queueChoice = $state("1");
+  let startMode = $state<"turn" | "later">("turn");
+  let startAt = $state("");
+  let laterProblem = $state<string | null>(null);
   /** Links of a list the user unticked. */
   let excluded = $state.raw<ReadonlySet<string>>(new Set());
 
@@ -198,12 +210,19 @@
     },
   );
 
+  const queueOptions = $derived(
+    downloads.queues.map((q) => ({ value: String(q.id), label: app.queueName(q) })),
+  );
+  const later = $derived(startMode === "later" && !paused);
+
   const submitLabel = $derived.by(() => {
     if (many) {
       const count = selected.length;
+      if (later) return t("add.submit.many_later", { count });
       return paused ? t("add.submit.many_paused", { count }) : t("add.submit.many", { count });
     }
     if (paused) return t("add.submit.paused");
+    if (later) return t("add.submit.later");
     return duplicate?.kind === "downloaded" ? t("add.submit.again") : t("add.submit");
   });
 
@@ -230,6 +249,13 @@
     limit = "";
     checksum = "";
     paused = false;
+    const viewQueue = queueOfView(app.view);
+    queueChoice = String(
+      viewQueue !== null && downloads.queue(viewQueue) ? viewQueue : (downloads.queues[0]?.id ?? 1),
+    );
+    startMode = "turn";
+    startAt = dateTimeValue(nextHour(Date.now()));
+    laterProblem = null;
     excluded = new Set();
     problems = {};
     submitError = null;
@@ -411,8 +437,10 @@
       checksum: k.ok ? undefined : k.problem,
       name: n.ok ? undefined : n.problem,
     };
-    if (!c.ok || !l.ok || !k.ok || !n.ok) {
-      if (!c.ok || !l.ok || !k.ok) more = true;
+    const at = later ? parseDateTime(startAt) : null;
+    laterProblem = later && (at === null || at <= Date.now()) ? t("later.past") : null;
+    if (!c.ok || !l.ok || !k.ok || !n.ok || laterProblem) {
+      if (!c.ok || !l.ok || !k.ok || laterProblem) more = true;
       return;
     }
     // A name the user typed travels; the probed one the engine finds again.
@@ -430,6 +458,8 @@
         speedLimit: l.value ?? undefined,
         checksum: k.value ?? undefined,
         paused,
+        queue: Number(queueChoice),
+        startAt: at ?? undefined,
       });
       if (result.status === "error") {
         submitError = errorText(result.error);
@@ -707,6 +737,37 @@
               <span class="unit">{t("add.limit.unit")}</span>
             </div>
           </div>
+          <div class="field">
+            <label for="add-queue">{t("add.queue")}</label>
+            <Select id="add-queue" bind:value={queueChoice} options={queueOptions} />
+          </div>
+          <div class="field">
+            <label for="add-start">{t("add.start")}</label>
+            <Select
+              id="add-start"
+              bind:value={startMode}
+              disabled={paused}
+              options={[
+                { value: "turn", label: t("add.start.turn") },
+                { value: "later", label: t("add.start.later") },
+              ]}
+            />
+          </div>
+          {#if later}
+            <div class="field wide">
+              <label for="add-start-at">{t("add.start.at")}</label>
+              <TextField
+                id="add-start-at"
+                type="datetime-local"
+                bind:value={startAt}
+                invalid={!!laterProblem}
+                oninput={() => (laterProblem = null)}
+              />
+            </div>
+          {/if}
+          {#if laterProblem}
+            <p class="line error wide" role="alert">{laterProblem}</p>
+          {/if}
           {#if !many}
             <div class="field wide">
               <label for="add-checksum">{t("add.checksum")}</label>

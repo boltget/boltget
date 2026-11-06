@@ -4,10 +4,11 @@
 // asks for, and the actions every surface shares (row buttons, the context
 // menu, shortcuts, the palette and the details pane).
 import { t } from "@boltget/ui/messages";
-import type { DownloadId } from "./bindings";
+import type { DownloadId, QueueId, QueueInfo } from "./bindings";
 import { downloads, errorText } from "./engine";
 import { canPause, canRestart, canResume, toggleIntent, type ActionId } from "./list/actions";
-import type { Sort, View } from "./list/model";
+import { queueView, type Sort, type View } from "./list/model";
+import { placeOrder, queueOrder, shiftSelection, type Shift } from "./list/queue";
 import type { RowId, SectionId } from "./settings/registry";
 import { sectionOf } from "./settings/registry";
 import { EMPTY, type Selection } from "./list/selection";
@@ -78,6 +79,10 @@ class AppState {
    * with, and a number that changes when more arrive while it is open.
    */
   adding = $state<{ text: string; key: number } | null>(null);
+  /** The queue settings while open: a queue's id, or `null` for a new one. */
+  queueEditing = $state<{ id: QueueId | null } | null>(null);
+  /** The downloads "Start later" is choosing a time for. */
+  startingLater = $state<DownloadId[] | null>(null);
   #toastId = 0;
   #addKey = 0;
   #targetKey = 0;
@@ -215,11 +220,104 @@ class AppState {
     );
   }
 
+  /**
+   * Resume all: paused downloads wait in their queues again, so each
+   * queue's limit holds (a single Resume starts one now).
+   */
   resumeAll(): void {
-    this.run(
-      "resume",
-      downloads.downloads.filter((d) => d.state === "paused").map((d) => d.id),
+    this.requeue(downloads.downloads.filter((d) => d.state === "paused").map((d) => d.id));
+  }
+
+  // Queues ------------------------------------------------------------------
+
+  /** A queue's name as the user sees it ("Main" for the default queue). */
+  queueName(queue: QueueInfo | QueueId | undefined): string {
+    const q = typeof queue === "number" ? downloads.queue(queue) : queue;
+    return q?.name ?? t("queue.main");
+  }
+
+  /** Starts stopped or waiting downloads now, whatever their queue does. */
+  startNow(ids: readonly DownloadId[]): void {
+    for (const id of ids) {
+      const d = downloads.get(id);
+      if (d && (d.state === "queued" || canResume(d.state))) void downloads.resume(id);
+    }
+  }
+
+  /** Lets stopped downloads wait in their queue again. */
+  requeue(ids: readonly DownloadId[]): void {
+    for (const id of ids) {
+      const d = downloads.get(id);
+      if (d && canResume(d.state)) void downloads.requeue(id);
+    }
+  }
+
+  /** Asks for a time to start these at. */
+  startLater(ids: readonly DownloadId[]): void {
+    const waiting = ids.filter((id) => {
+      const d = downloads.get(id);
+      return d && d.state !== "completed" && (d.state === "queued" || canResume(d.state));
+    });
+    if (waiting.length) this.startingLater = waiting;
+  }
+
+  /** Forgets the time these were to start at: they wait for their turn. */
+  clearStart(ids: readonly DownloadId[]): void {
+    for (const id of ids)
+      if (downloads.get(id)?.startAt != null) void downloads.setStartAt(id, null);
+  }
+
+  /** Moves downloads to the end of another queue. */
+  moveTo(ids: readonly DownloadId[], queue: QueueId): void {
+    const moving = ids.filter((id) => downloads.get(id)?.queue !== queue);
+    if (moving.length === 0) return;
+    const order = queueOrder(downloads.downloads, queue);
+    void downloads.moveDownloads(moving, queue, null, order);
+    this.announce(
+      t("announce.moved_to_queue", {
+        count: moving.length,
+        name: this.#nameOf(moving[0]),
+        queue: this.queueName(queue),
+      }),
     );
+  }
+
+  /**
+   * Moves selected downloads within their queue (Alt+arrow keys, the
+   * menu): the selection moves as one block in the queue of `anchor`.
+   */
+  shift(ids: readonly DownloadId[], by: Shift, anchor = ids[0]): void {
+    const queue = anchor === undefined ? undefined : downloads.get(anchor)?.queue;
+    if (queue === undefined) return;
+    const order = queueOrder(downloads.downloads, queue);
+    const move = shiftSelection(order, new Set(ids), by);
+    if (!move) return;
+    void downloads.moveDownloads(move.ids, queue, move.before, order);
+    const next = placeOrder(order, move.ids, move.before);
+    this.announce(
+      t("announce.moved", {
+        count: move.ids.length,
+        name: this.#nameOf(move.ids[0]),
+        place: next.indexOf(move.ids[0] as DownloadId) + 1,
+        total: next.length,
+      }),
+    );
+  }
+
+  /** Starts a queue, or stops it. */
+  toggleQueue(id: QueueId): void {
+    const q = downloads.queue(id);
+    if (q) void downloads.setQueueStarted(id, !q.started);
+  }
+
+  /** Opens a queue's settings, or a new queue's with `null`. */
+  editQueue(id: QueueId | null): void {
+    this.queueEditing = { id };
+  }
+
+  /** Shows a queue's view. */
+  showQueue(id: QueueId): void {
+    this.showView(queueView(id));
   }
 
   async #copy(text: string, count: number): Promise<void> {

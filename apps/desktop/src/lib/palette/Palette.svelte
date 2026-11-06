@@ -67,6 +67,11 @@
       }),
     act: (action, ids) => app.run(action, ids),
     reveal: (id) => app.reveal(id),
+    toggleQueue: (id) => app.toggleQueue(id),
+    editQueue: (id) => app.editQueue(id),
+    startNow: (ids) => app.startNow(ids),
+    startLater: (ids) => app.startLater(ids),
+    moveTo: (ids, queue) => app.moveTo(ids, queue),
   };
 
   const entries = $derived.by(() => {
@@ -75,6 +80,7 @@
       id: d.id,
       name: displayName(d.fileName, d.url),
       state: d.state,
+      queue: d.queue,
     });
     const visible = downloads.downloads.filter((d) => !app.hidden.has(d.id));
     return buildEntries({
@@ -82,6 +88,11 @@
       compact: app.density === "compact",
       selection: visible.filter((d) => app.selection.ids.has(d.id)).map(toItem),
       downloads: visible.map(toItem),
+      queues: downloads.queues.map((q) => ({
+        id: q.id,
+        name: app.queueName(q),
+        started: q.started,
+      })),
       stateLabel: (s) => t(`state.${s}` as PlainMessageKey),
       do: actions,
     });

@@ -1,14 +1,23 @@
 <!--
   Views, not a tree (APP-DESIGN #2): All, Active, Completed and Scheduled with
-  counts, then the categories by file type, and Settings at the bottom. Under
+  counts, then the categories by file type, then the queues with their
+  counts (APP-DESIGN, "Queues as built"), and Settings at the bottom. Under
   900 px of window width it collapses to an icon rail.
+
+  A queue takes downloads dropped on it (dragged from the list), and its
+  context menu starts or stops it, opens its settings or deletes it.
 -->
 <script lang="ts">
+  import IconButton from "@boltget/ui/components/IconButton.svelte";
   import { t, type PlainMessageKey } from "@boltget/ui/messages";
   import { app } from "./app.svelte";
+  import type { QueueInfo } from "./bindings";
   import { downloads } from "./engine";
   import Icon, { type IconName } from "./Icon.svelte";
-  import { viewCounts, type View } from "./list/model";
+  import { dragIds, isDownloadDrag } from "./list/drag";
+  import { queueView, viewCounts, type View } from "./list/model";
+  import { queueCounts } from "./list/queue";
+  import { popupMenu } from "./menu";
 
   interface Entry {
     id: View | "settings";
@@ -38,9 +47,57 @@
 
   const numbers = new Intl.NumberFormat("en");
 
+  // Counts read only each download's state and queue.
+  const perQueue = $derived(queueCounts(downloads.downloads.filter((d) => !app.hidden.has(d.id))));
+  /** The queue a drag is over, for its highlight. */
+  let dropping = $state<number | null>(null);
+
   function choose(id: Entry["id"]) {
     if (id === "settings") app.openSettings();
     else app.view = id;
+  }
+
+  function queueMenu(q: QueueInfo, event: MouseEvent) {
+    event.preventDefault();
+    void popupMenu([
+      {
+        text: t(q.started ? "queue.stop" : "queue.start"),
+        run: () => app.toggleQueue(q.id),
+      },
+      { text: t("queue.settings"), run: () => app.editQueue(q.id) },
+      ...(q.isDefault
+        ? []
+        : [
+            "separator" as const,
+            {
+              text: t("queue.delete"),
+              run: () => {
+                const name = app.queueName(q);
+                void downloads.deleteQueue(q.id).then((r) => {
+                  if (r.status === "ok") {
+                    if (app.view === queueView(q.id)) app.view = queueView(1);
+                    app.toast(t("queue.deleted", { name, main: t("queue.main") }));
+                  }
+                });
+              },
+            },
+          ]),
+    ]);
+  }
+
+  function ondragover(q: QueueInfo, event: DragEvent) {
+    if (!isDownloadDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    dropping = q.id;
+  }
+
+  function ondrop(q: QueueInfo, event: DragEvent) {
+    dropping = null;
+    if (!isDownloadDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    app.moveTo(dragIds(event.dataTransfer), q.id);
   }
 </script>
 
@@ -75,6 +132,45 @@
     {#each CATEGORIES as entry (entry.id)}{@render item(entry)}{/each}
   </ul>
 
+  <div class="heading-row">
+    <h2 class="heading" id="sidebar-queues">{t("sidebar.queues")}</h2>
+    <span class="add-queue">
+      <IconButton label={t("queue.new")} onclick={() => app.editQueue(null)}>
+        <Icon name="plus" size={14} />
+      </IconButton>
+    </span>
+  </div>
+  <ul class="group" aria-labelledby="sidebar-queues">
+    {#each downloads.queues as q (q.id)}
+      {@const name = app.queueName(q)}
+      {@const count = perQueue.get(q.id) ?? 0}
+      {@const view = queueView(q.id)}
+      <li>
+        <button
+          class="item"
+          class:drop={dropping === q.id}
+          type="button"
+          aria-current={app.view === view ? "page" : undefined}
+          title={q.started ? name : `${name} · ${t("queue.stopped")}`}
+          onclick={() => (app.view = view)}
+          oncontextmenu={(event) => queueMenu(q, event)}
+          ondragover={(event) => ondragover(q, event)}
+          ondragleave={() => (dropping = null)}
+          ondrop={(event) => ondrop(q, event)}
+        >
+          <Icon name="queue" />
+          <span class="label">{name}</span>
+          {#if !q.started}
+            <span class="stopped" aria-label={t("queue.stopped")}
+              ><Icon name="pause" size={12} /></span
+            >
+          {/if}
+          <span class="count" aria-label={t("view.count", { count })}>{numbers.format(count)}</span>
+        </button>
+      </li>
+    {/each}
+  </ul>
+
   <ul class="group footer">
     {@render item({ id: "settings", label: "sidebar.settings", icon: "settings" })}
   </ul>
@@ -100,6 +196,26 @@
   .footer {
     margin-top: auto;
     padding-top: var(--space-2);
+  }
+  .heading-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .heading-row .heading {
+    flex: 1;
+  }
+  .add-queue {
+    margin: 0 var(--space-1) 2px 0;
+  }
+  .stopped {
+    display: inline-flex;
+    color: var(--color-text-subtle);
+  }
+  .item.drop {
+    background: var(--color-accent-tint);
+    outline: 1px dashed var(--color-accent);
+    outline-offset: -1px;
   }
   .heading {
     margin: var(--space-5) 0 var(--space-1);
@@ -184,7 +300,9 @@
       padding: 0;
     }
     .label,
-    .count {
+    .count,
+    .add-queue,
+    .stopped {
       display: none;
     }
     .heading {

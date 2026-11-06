@@ -23,6 +23,7 @@
     formatEta,
     formatProgress,
     formatSpeed,
+    formatUpcoming,
     formatWhen,
     hostOf,
     percent,
@@ -46,6 +47,10 @@
     position: number;
     count: number;
     onmore: (event: MouseEvent) => void;
+    /** It can be dragged (to its queue's order, or onto a queue). */
+    draggable?: boolean;
+    /** It is being dragged. */
+    dragged?: boolean;
   }
 
   let {
@@ -58,6 +63,8 @@
     position,
     count,
     onmore,
+    draggable = false,
+    dragged = false,
   }: Props = $props();
 
   const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -115,6 +122,9 @@
       case "verifying":
         return join(d.total ? formatBytes(d.total) : "", t("state.verifying"));
       case "queued":
+        return d.startAt !== null
+          ? join(t("row.starts", { time: formatUpcoming(d.startAt, clock.now) }), hostOf(d.url))
+          : join(t("row.waiting_in", { queue: app.queueName(d.queue) }), hostOf(d.url));
       case "probing":
         return hostOf(d.url);
       case "completed":
@@ -136,6 +146,7 @@
         : t("percent", { value: pct });
     }
     if (d.state === "completed") return d.completedAt ? formatWhen(d.completedAt, clock.now) : "";
+    if (d.state === "queued" && d.startAt !== null) return formatUpcoming(d.startAt, clock.now);
     return t(`state.${d.state}` as PlainMessageKey);
   });
 
@@ -161,8 +172,10 @@
   class:active
   class:ring
   class:attention
+  class:dragged
   data-id={d.id}
   data-state={d.state}
+  {draggable}
   role="option"
   aria-selected={selected}
   aria-posinset={position}
@@ -251,6 +264,9 @@
     bottom: 8px;
     width: 2px;
     background: var(--color-accent);
+  }
+  .row.dragged {
+    opacity: 0.45;
   }
   .row.ring {
     outline: var(--focus-ring);
