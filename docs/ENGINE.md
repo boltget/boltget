@@ -27,14 +27,15 @@ Related documents: [ARCHITECTURE.md](ARCHITECTURE.md) (process model, data model
 13. [Retries, backoff and stall detection](#retries-backoff-and-stall-detection)
 14. [Link refresh](#link-refresh)
 15. [Bandwidth limiting](#bandwidth-limiting)
-16. [Integrity](#integrity)
-17. [Proxies](#proxies)
-18. [Authentication and cookies](#authentication-and-cookies)
-19. [Mirrors and multi-source (later)](#mirrors-and-multi-source-later)
-20. [Public API sketch](#public-api-sketch)
-21. [Testing strategy](#testing-strategy)
-22. [Benchmarks plan vs IDM](#benchmarks-plan-vs-idm)
-23. [Open questions](#open-questions)
+16. [Queues](#queues)
+17. [Integrity](#integrity)
+18. [Proxies](#proxies)
+19. [Authentication and cookies](#authentication-and-cookies)
+20. [Mirrors and multi-source (later)](#mirrors-and-multi-source-later)
+21. [Public API sketch](#public-api-sketch)
+22. [Testing strategy](#testing-strategy)
+23. [Benchmarks plan vs IDM](#benchmarks-plan-vs-idm)
+24. [Open questions](#open-questions)
 
 ## Goals
 
@@ -585,6 +586,34 @@ Throttling is applied to **reads from the socket**. When a worker stops reading,
 
 Queues and the scheduler (v0.5) can change limits by time of day ("unlimited from 01:00 to 07:00, 2 MB/s otherwise"). The engine exposes `set_limit(scope, rate)`; the schedule logic lives in the manager.
 
+> **v0.2:** basic queues exist ([Queues](#queues)); per-queue speed limits and speed by time of day are still v0.5, and the per-queue token bucket with them.
+
+## Queues
+
+*Implemented (v0.2, basic queues; `crates/engine/src/queue.rs`).* The "Manager actor" of [ARCHITECTURE.md](ARCHITECTURE.md#engine-internals-at-a-glance) is the engine's queue scheduler: queues live in the engine, next to the downloads they order, so every front end (the app, the CLI through the app's pipe, later the browser's native host) sees the same queues.
+
+**What a queue is.** Every download belongs to a queue: the default queue (id 1, shown as "Main"; it cannot be deleted) unless placed elsewhere. A queue has a name, an order, a limit of downloads it runs at once (1 to 32, 3 by default), a started or stopped state, optional daily start and stop times, and a finish action (nothing, sleep, shut down). Its order covers every download in it that is not completed; a new download goes to the end.
+
+**The scheduler runs only in a long-running owner.** `Engine::start_queues(clock)` turns it on (the desktop app does, once the downloads it recovers have continued). Without it — a standalone `boltget get`, `resume` or `list` — nothing starts on its own, so a command-line run never starts other people's queued downloads behind their back. The scheduler is one task that looks at the queues whenever something changes (a download's task ends, a download is added, moved, requeued, a queue changes) and at the next timed event (a start time, a daily time), at least every 30 s:
+
+1. **Daily times** act on edges, not as a window: when the most recent daily start or stop at or before now is later than the last one acted on (`queue.window_applied`), the queue starts or stops. So a user who stops a queue by hand inside its window is not overruled until the next boundary, and of a start and a stop that both passed while the engine was closed, the later one counts. Setting new times records "now" as acted on: a time already past today waits for tomorrow. Times are local wall-clock minutes; the `Clock` gives the local offset at that moment (`SystemClock` uses the system time zone; tests pass a clock they move by hand).
+2. **Start times.** A waiting download whose `start_at` has come starts, whatever its queue does and beyond its limit: the user picked that moment. A time that passed while the engine was closed starts it at the next pass. Starting clears the time.
+3. **Slots.** Each started queue fills its free slots (limit minus its downloads running now, whoever started them) with its waiting downloads in order, skipping those that wait for a start time.
+
+A download the scheduler cannot start (its partial file is gone, say) fails with that error instead of blocking its queue.
+
+**Starting outside the order.** `Engine::add` and `Engine::resume` start a download now, whatever its queue does ("start now"): they do not wait for a slot, but the download takes one while it runs, so the queue starts nothing more until it is back under its limit. `Engine::enqueue` records a download waiting (`Queued`) and `Engine::requeue` lets a paused, failed or cancelled one wait again in its place. A paused download is out of the order until it is resumed or requeued; pausing a running one frees its slot. `boltget get` without `--queue` keeps starting at once, as it always did.
+
+**Stopping and starting a queue.** `stop_queue` stops its running downloads (each writes its checkpoint) and sets them back to `Queued` in their place, so `start_queue` continues them first. Downloads with a start time still start at it in a stopped queue.
+
+**Moving.** `move_downloads(ids, queue, before)` puts downloads into a queue (the same one or another) before a given download or at the end, in the order given; `shift(id, Up | Down | Top | Bottom)` moves one within its queue. Positions are renumbered 1, 2, … for the queue's unfinished downloads on each move; completed downloads keep theirs. Deleting a queue moves its downloads to the end of the default queue in their order; running ones keep running.
+
+**Finishing.** A started queue *finishes* when a download in it ends on its own — completes, fails, turns out corrupt or needs a new link; a pause or a cancel by the user does not count — and nothing in it runs or waits any more (a download waiting for a start time still waits). The engine then sends `EngineEvent::QueueFinished { queue, action }` once; acting on it (a countdown, then sleep or shut down) is the front end's business (the app: [APP-DESIGN.md, Queues as built](APP-DESIGN.md#queues-as-built)).
+
+**Shutting down.** While the scheduler runs, `Engine::shutdown` stops running downloads and sets those of started queues back to `Queued` in their place: the next owner with a scheduler continues them in order. Downloads of stopped queues (started by hand) are paused, as before. A process that dies leaves its downloads running in the database; `Engine::open` marks them paused and lists them in `Engine::recovered`, unchanged.
+
+**Persistence** (schema version 5): the `queue` table (`name` NULL for the default queue, `sort_order`, `max_concurrent`, `started`, `start_minute`, `stop_minute`, `window_applied`, `on_finish`) and `download.queue_id`, `queue_position` and `start_at` (Unix ms). A database from an earlier version puts every download in the default queue, in id order. `DownloadSummary` reports `queue`, `queue_name`, `queue_position` and `start_at`; `EngineEvent::QueuesChanged` says that queues, their order or a start time changed (read them again).
+
 ## Integrity
 
 ### What can go wrong
@@ -701,6 +730,8 @@ pub enum EngineEvent {
 
 > **Implementation notes (v0.1 phase 3):** added `Engine::refresh_link(id, RequestContext) -> RefreshOutcome { id, evidence, final_url }`, `Engine::sources(id)`, `Engine::set_limit(LimitScope::{Global, Download(id)}, Option<u64>)`, `Engine::limit(scope)`, `Engine::settings()` and `Engine::peek_settings(dir)` (`Settings { speed_limit }`); `AddRequest::{speed_limit, checksum, server_digest}`; `ResumeOptions::{speed_limit, checksum, proxy, cookie_file, cookies}`; `RequestContext::{with_proxy, with_cookie_file, with_cookies, cookie, add_cookie}`; `Completed::verified`; `DownloadSummary::checksum`; `EngineConfig::{speed_limit, proxy, adaptive, adapt_*, host_ceiling_ttl, tail_split_size, tail_eta, tail_slow_window}`; `parse_rate`, `basic_auth`, `Checksum`, `HashAlgo`, `ChecksumSource`, `Proxy`, `ProxyChoice`, `ProxyRules`, `NoProxy`, `Cookie`, `CookieJar`. New states `Verifying`, `Corrupt`, `NeedsNewLink`; new errors `ChecksumMismatch` (`Integrity`), `LinkExpired` (`LinkExpired`), `RefreshRejected` (`ResourceChanged`), `ProxyAuth` (`Permanent`).
 
+> **Implementation notes (v0.2, queues):** `Engine::{queues, queue_named, create_queue, update_queue(id, QueueChange), delete_queue, start_queue, stop_queue, enqueue, requeue, set_start_at, move_downloads, shift, start_queues(Arc<dyn Clock>), wake_queues}`, `AddRequest::{queue, start_at}`, `Queue`, `QueueId`, `QueueChange`, `DailyWindow`, `FinishAction`, `Shift`, `Clock`, `SystemClock`, `QueueProblem`; errors `UnknownQueue` (`NotFound`, `error.unknown_queue`) and `QueueRefused` (`InvalidState`, `error.queue.*`); events `QueuesChanged` and `QueueFinished`. `boltget get --json` does not print the two queue events (they belong to no download). See [Queues](#queues).
+>
 > **Implementation notes (v0.2):** `Engine::recovered() -> &[DownloadId]` lists the downloads `Engine::open` found interrupted (left running by a process that died) and marked paused, so a front end can continue them (the desktop app does; see [ARCHITECTURE.md, Recovery on start](ARCHITECTURE.md#recovery-on-start)). `DownloadSummary::speed_limit` reports a download's own limit. For the app's add sheet: `ProbeResult::server_digest` (the digest a download would verify, filled by `Engine::probe`), `Engine::probe` tries a transient failure at most twice (`PROBE_ATTEMPTS`) rather than `max_attempts` times, since someone is waiting for it, `Engine::add_paused` (records a download in the `Paused` state without starting it; `resume` probes and starts it like a fresh one; needs a database), `Engine::free_path(dir, name)` (the path a download would get now: sanitized, with the ` (n)` collision rule over existing files, partial files and other downloads' reserved paths), `available_space(dir)`, and `Engine::app_setting` / `set_app_setting` (a front end's own values, stored in the `setting` table under `app.<key>`).
 
 The CLI maps directly onto this API:
@@ -719,6 +750,8 @@ boltget bench <url> [--runs 5] [--connections 8,16,32] [--json]
 > **Implementation note (v0.1 phase 3):** the checksum flag is `--checksum sha256:<hex>` (also `md5`, `sha1`, `sha512`, or bare hex), not `--sha256`. Without `-c` the connection count adapts (`--max-connections` caps it). Also added: `--limit`, `--no-server-digest`, `resume --no-checksum`, `--proxy`, `--no-proxy`, `--cookie-file`, `--cookie`/`-b`, `--user`/`-u`, `boltget refresh <id> <new-url>` and `boltget config list|get|set|unset limit`. New exit code 9 (checksum mismatch); exit 6 also covers a link that needs refreshing and a rejected new link. `boltget bench` is implemented as `boltget bench [<url>...] [--targets <file>] [-t <name>] [--runs 5] [--warmup 1] [-c auto,8] [--lab <url>] [--json] [--csv <file>]`; see [Benchmarks plan](#benchmarks-plan-vs-idm) and `boltget help bench`.
 
 > **v0.2:** client mode exists: while the desktop app owns the database, the CLI's commands run in the app over its named pipe (`boltget-ipc`, protocol in [ARCHITECTURE.md, CLI to app](ARCHITECTURE.md#3-cli-to-app-named-pipe)); the engine itself has no pipe code. The paragraph below describes standalone mode, which is unchanged.
+>
+> **v0.2, queues:** `boltget get <url> --queue <name>` lets the download wait in that queue of the running app (the name ignoring case, `main` for the default queue, or its id) and follows it through the wait; with `--json` a `queued {id, queue}` line follows `added`. Without the app it is a usage error (exit 2): queues run in the app. An unknown queue exits with 8. `boltget list` gains a QUEUE column (`Main`, or `Main #2` for a download waiting its turn) and `--json` the fields `queue`, `queue_name`, `queue_position` and `start_at`.
 >
 > **Implementation note (v0.1 phase 2):** the CLI runs in standalone mode only (client mode over the named pipe is v0.2, see [ARCHITECTURE.md](ARCHITECTURE.md#the-cli-boltgetexe)). `get` and `resume` run the download in the foreground of that invocation. A second invocation that needs the database while another one owns it exits with code 7 and says why; `pause <id>` cannot reach the running process yet and tells the user to press Ctrl-C there, while `list` reads the owner's last checkpoint without the lock. `--state <dir>` (or `BOLTGET_DATA_DIR`) selects the database directory and `get --no-state` downloads without recording anything (no sidecar resume file yet).
 

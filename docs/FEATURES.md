@@ -49,7 +49,7 @@ This document lists every planned Boltget feature, the milestone that targets it
 | Live segment visualization | Yes | v0.2 | Yes | ? | No | n/a |
 | Categories (by file type, with destination folders) | Yes | v0.2 | Yes | Yes | No | n/a |
 | Queues with concurrency limits | Yes | v0.2 (basic), v0.5 (polish) | Yes | Yes | Yes | Yes (`-j`) |
-| Scheduler (time windows, start/stop, shutdown after) | Yes | v0.5 | Yes | ? | No | No |
+| Scheduler (time windows, start/stop, shutdown after) | Yes | v0.2 (daily start and stop, start later, sleep or shut down when done), v0.5 (days of the week, speed by time) | Yes | ? | No | No |
 | Clipboard URL monitoring | Opt-in | v0.2 | Yes | Yes | ? | n/a |
 | Batch add (URL list, numbered patterns) | Yes | v0.5 | Yes | ? | ? | Yes (input file) |
 | Tray icon with download animation | Yes | v0.2 | Yes | Yes | Yes | n/a |

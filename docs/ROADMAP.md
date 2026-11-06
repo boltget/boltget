@@ -67,7 +67,8 @@ Exit criteria:
 - [x] TypeScript bindings for engine messages are generated, not hand-written; CI fails if they are stale
   *Done (2026-11-01):* tauri-specta generates `apps/desktop/src/lib/bindings.ts` (commands, the engine stream and their types) from the Rust IPC types ([TECH-STACK.md, ADR-017](TECH-STACK.md#adr-017-tauri-specta-for-generated-ipc-bindings)); a Rust test fails when it is stale, in `ci.yml` and in `desktop.yml`'s `bindings:check` step.
 - [ ] All [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) checklist items pass for every screen: themes, keyboard, reduced motion, screen reader basics
-  *Progress (2026-11-06):* Settings, categories, clipboard monitoring (opt-in), the system proxy and the command palette with the shortcut list are built ([APP-DESIGN.md](APP-DESIGN.md#settings-the-palette-and-shortcuts-as-built)) and were checked in the running app in light and dark, keyboard only for the palette and Settings. Still to do for this item: a pass with Narrator and NVDA over every screen. Basic queues are the remaining v0.2 scope.
+  *Progress (2026-11-06):* Settings, categories, clipboard monitoring (opt-in), the system proxy and the command palette with the shortcut list are built ([APP-DESIGN.md](APP-DESIGN.md#settings-the-palette-and-shortcuts-as-built)) and were checked in the running app in light and dark, keyboard only for the palette and Settings. Still to do for this item: a pass with Narrator and NVDA over every screen.
+  *Progress (2026-11-06, step 7):* basic queues, the last piece of v0.2's scope, are built ([APP-DESIGN.md](APP-DESIGN.md#queues-as-built), [ENGINE.md](ENGINE.md#queues)): queues with a limit and an order, reordered by dragging or Alt+arrow keys, started and stopped by hand or at daily times, start later, a cancellable finish action, and `boltget get --queue`. They were checked in the running app in light and dark, with the reordering also done from the keyboard.
 - [ ] All user-facing strings come from the string catalog (a lint rule enforces no literals in components)
 - [ ] 500 downloads in the list stay smooth (no dropped frames during progress updates on a mid-range laptop) — design target, verified with the WebView2 performance profiler
   *Progress (2026-11-01):* the list is virtualised and was measured with 500 simulated downloads in Chromium with the CPU throttled 4× (no long tasks, no frame over 33 ms while flinging through it; [APP-DESIGN.md](APP-DESIGN.md#the-list-and-the-details-pane-as-built)). Still to do: the WebView2 profiler on a real mid-range laptop.
@@ -117,7 +118,9 @@ Goal: everything a heavy IDM user expects day to day, and a round of polish on t
 Exit criteria:
 
 - [ ] Multiple queues with concurrency limits and per-queue speed limits; drag to reorder
+  *Status (2026-11-06):* queues with concurrency limits and drag to reorder shipped in v0.2 ([ENGINE.md, Queues](ENGINE.md#queues)); per-queue speed limits remain.
 - [ ] Scheduler: time windows per queue, days of week, start/stop, speed-limit schedules, "when done" actions (sleep, shut down, with a cancelable countdown)
+  *Status (2026-11-06):* a daily start and stop time per queue, start later for a download, and "when done" (sleep, shut down, with a 60 s cancellable countdown) shipped in v0.2; days of the week and speed-limit schedules remain.
 - [ ] Batch add (URL lists, numbered patterns like `file[001-100].zip`)
 - [ ] Automatic checksum discovery from server headers; "Repair" mode for corrupted files
 - [ ] Optional Microsoft Defender scan after download
