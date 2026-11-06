@@ -74,6 +74,15 @@ export async function onShellRequest(
   return events.shellRequest.listen((event) => handler(event.payload));
 }
 
+/**
+ * Links clipboard monitoring offers (one per line); it sends them only
+ * while the setting is on.
+ */
+export async function onClipboardOffer(handler: (links: string) => void): Promise<() => void> {
+  if (!inTauri) return () => {};
+  return events.clipboardOffer.listen((event) => handler(event.payload.links));
+}
+
 /** The links Boltget was started with (`Boltget.exe <url>`), once. */
 export async function takeLaunchLinks(): Promise<string | null> {
   return inTauri ? commands.takeLaunchLinks() : null;

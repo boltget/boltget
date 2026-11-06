@@ -39,8 +39,8 @@
   const numbers = new Intl.NumberFormat("en");
 
   function choose(id: Entry["id"]) {
-    // Settings opens its own window in a later step.
-    if (id !== "settings") app.view = id;
+    if (id === "settings") app.openSettings();
+    else app.view = id;
   }
 </script>
 

@@ -3,7 +3,9 @@
   chrome is one grey surface; the content sits on it as a white sheet with a
   hairline edge, like the website's hero card. The content is the list with
   its header and, on the right, the details pane; or, before there is a list,
-  the engine's state or the empty state.
+  the engine's state or the empty state. Settings takes the place of the
+  sidebar and the content (APP-DESIGN, "Settings as built"); the command
+  palette (Ctrl+K) floats over either.
 -->
 <script lang="ts">
   import { t } from "@boltget/ui/messages";
@@ -21,15 +23,27 @@
   import ListHeader from "./lib/list/ListHeader.svelte";
   import Notice from "./lib/list/Notice.svelte";
   import AddSheet from "./lib/add/AddSheet.svelte";
-  import { onShellRequest, takeLaunchLinks, type ShellRequest } from "./lib/native";
+  import { hostOf } from "./lib/format";
+  import {
+    onClipboardOffer,
+    onShellRequest,
+    takeLaunchLinks,
+    type ShellRequest,
+  } from "./lib/native";
+  import Palette from "./lib/palette/Palette.svelte";
   import { openAddFromClipboard, openAddFromText } from "./lib/paste";
+  import Settings from "./lib/settings/Settings.svelte";
+  import { withCtrl } from "./lib/shortcuts";
   import Sidebar from "./lib/Sidebar.svelte";
+  import { setThemeSetting } from "./lib/theme";
   import TitleBar from "./lib/TitleBar.svelte";
   import Toasts from "./lib/Toasts.svelte";
 
   let count = $state(0);
   /** Links from outside (a launch, the tray) waiting for the engine. */
   let incoming = $state<string | null>(null);
+  /** How long a copied-link offer stays. */
+  const OFFER_MS = 12_000;
   let clipboardWanted = $state(false);
   const status = $derived(downloads.status);
   const empty = $derived(downloads.ids.length === 0 && app.hidden.size === 0);
@@ -49,6 +63,7 @@
       }
     });
     const stopShell = onShellRequest(onRequest);
+    const stopOffers = onClipboardOffer(offer);
     void takeLaunchLinks().then((links) => {
       if (links) incoming = links;
     });
@@ -56,8 +71,42 @@
       stopErrors();
       stopEvents();
       void stopShell.then((stop) => stop());
+      void stopOffers.then((stop) => stop());
     };
   });
+
+  // The Theme setting, once the stored one is known (until then the page
+  // keeps the theme it started with).
+  $effect(() => {
+    const theme = downloads.settings.theme;
+    if (status.state === "ready") setThemeSetting(theme);
+  });
+
+  /**
+   * Clipboard monitoring found links (APP-DESIGN #9): a quiet offer, never
+   * a download. The add sheet opens only if the user takes it.
+   */
+  function offer(links: string) {
+    const list = links.split("\n").filter(Boolean);
+    const first = list[0];
+    if (!first) return;
+    const text =
+      list.length === 1
+        ? t("clipboard.offer", { name: displayName(null, first), host: hostOf(first) })
+        : t("clipboard.offer.many", { count: list.length });
+    const id = app.toast(
+      text,
+      {
+        label: t("clipboard.offer.action"),
+        run: () => {
+          app.dismiss(id);
+          app.closeSettings();
+          openAddFromText(links);
+        },
+      },
+      OFFER_MS,
+    );
+  }
 
   // The add sheet opens once the engine can probe.
   $effect(() => {
@@ -82,12 +131,9 @@
         break;
       case "select": {
         // Show it wherever it is: every download is in "All".
-        app.view = "all";
-        app.query = "";
-        app.select([request.id]);
+        app.reveal(request.id);
         const d = downloads.get(request.id);
         if (request.fix && d?.state === "needs_new_link") app.run("refresh", [request.id]);
-        else app.togglePane(true);
         break;
       }
     }
@@ -116,23 +162,34 @@
     if (openAddFromText(text)) event.preventDefault();
   }
 
+  // The window's shortcuts (src/lib/shortcuts.ts lists them for the user).
   function onkeydown(event: KeyboardEvent) {
-    const ctrl = event.ctrlKey || event.metaKey;
-    // The add sheet is modal: the window's shortcuts wait until it closes.
-    if (app.adding) return;
-    if (ctrl && !event.altKey && !event.shiftKey && event.code === "KeyN") {
+    // Ctrl+K opens the palette, and closes it again.
+    if (withCtrl(event) && event.code === "KeyK") {
+      event.preventDefault();
+      if (!app.adding) app.palette = !app.palette;
+      return;
+    }
+    // The add sheet and the palette are modal: the window's shortcuts wait.
+    if (app.adding || app.palette) return;
+    if (withCtrl(event) && event.code === "KeyN") {
       event.preventDefault();
       if (status.state === "ready") void openAddFromClipboard();
-    } else if (ctrl && !event.altKey && event.code === "KeyI" && !event.shiftKey) {
+    } else if (withCtrl(event) && (event.code === "Comma" || event.key === ",")) {
       event.preventDefault();
+      if (app.screen === "settings") app.closeSettings();
+      else app.openSettings();
+    } else if (withCtrl(event) && event.code === "KeyI") {
+      event.preventDefault();
+      app.closeSettings();
       app.togglePane();
-    } else if (ctrl && event.shiftKey && event.code === "KeyD") {
+    } else if (withCtrl(event, true) && event.code === "KeyD") {
       event.preventDefault();
       app.setDensity(app.density === "compact" ? "comfortable" : "compact");
-    } else if (ctrl && event.shiftKey && event.code === "KeyP") {
+    } else if (withCtrl(event, true) && event.code === "KeyP") {
       event.preventDefault();
       app.pauseAll();
-    } else if (ctrl && event.shiftKey && event.code === "KeyR") {
+    } else if (withCtrl(event, true) && event.code === "KeyR") {
       event.preventDefault();
       app.resumeAll();
     }
@@ -144,53 +201,58 @@
 <div class="window">
   <TitleBar />
   <div class="body">
-    <Sidebar />
-    <main class="content">
-      {#if status.state === "starting"}
-        <Notice title={t("engine.starting")} delayed />
-      {:else if status.state === "locked"}
-        <Notice
-          icon="lock"
-          tone="warning"
-          title={t("engine.locked.title")}
-          body={t("engine.locked")}
-          detail={status.dir}
-        />
-      {:else if status.state === "failed"}
-        <Notice
-          icon="alert"
-          tone="error"
-          title={t("engine.failed.title")}
-          body={errorText(status.error)}
-          detail={status.error.message ?? undefined}
-        />
-      {:else if empty}
-        <EmptyState />
-      {:else}
-        <div class="split">
-          <section class="list" aria-label={t("list.label")}>
-            <ListHeader {count} />
-            <div class="list-body">
-              <DownloadList oncount={(n) => (count = n)} />
-            </div>
-          </section>
-          {#if app.paneOpen && app.selection.ids.size > 0}
-            <div
-              class="pane"
-              in:fly={{ x: reduced ? 0 : 12, duration: reduced ? 0 : 220, easing: cubicOut }}
-              out:fly={{ x: reduced ? 0 : 8, duration: reduced ? 0 : 150 }}
-            >
-              <DetailsPane />
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <Toasts />
-    </main>
+    {#if app.screen === "settings"}
+      <Settings />
+    {:else}
+      <Sidebar />
+      <main class="content">
+        {#if status.state === "starting"}
+          <Notice title={t("engine.starting")} delayed />
+        {:else if status.state === "locked"}
+          <Notice
+            icon="lock"
+            tone="warning"
+            title={t("engine.locked.title")}
+            body={t("engine.locked")}
+            detail={status.dir}
+          />
+        {:else if status.state === "failed"}
+          <Notice
+            icon="alert"
+            tone="error"
+            title={t("engine.failed.title")}
+            body={errorText(status.error)}
+            detail={status.error.message ?? undefined}
+          />
+        {:else if empty}
+          <EmptyState />
+        {:else}
+          <div class="split">
+            <section class="list" aria-label={t("list.label")}>
+              <ListHeader {count} />
+              <div class="list-body">
+                <DownloadList oncount={(n) => (count = n)} />
+              </div>
+            </section>
+            {#if app.paneOpen && app.selection.ids.size > 0}
+              <div
+                class="pane"
+                in:fly={{ x: reduced ? 0 : 12, duration: reduced ? 0 : 220, easing: cubicOut }}
+                out:fly={{ x: reduced ? 0 : 8, duration: reduced ? 0 : 150 }}
+              >
+                <DetailsPane />
+              </div>
+            {/if}
+          </div>
+        {/if}
+        <Toasts />
+      </main>
+    {/if}
   </div>
 </div>
 
 <AddSheet />
+<Palette />
 <ConfirmDialog />
 <div class="visually-hidden" aria-live="polite">{app.announcement}</div>
 

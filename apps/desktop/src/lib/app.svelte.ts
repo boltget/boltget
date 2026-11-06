@@ -1,16 +1,20 @@
-// The window's own state, outside the engine: which view and search, the
-// selection, density, the details pane, quiet notices (toasts), the one
-// confirmation the app asks for, and the actions every surface shares (row
-// buttons, the context menu, shortcuts and the details pane).
+// The window's own state, outside the engine: which screen (the downloads
+// or Settings), view and search, the selection, density, the details pane,
+// the command palette, quiet notices (toasts), the one confirmation the app
+// asks for, and the actions every surface shares (row buttons, the context
+// menu, shortcuts, the palette and the details pane).
 import { t } from "@boltget/ui/messages";
 import type { DownloadId } from "./bindings";
 import { downloads, errorText } from "./engine";
 import { canPause, canRestart, canResume, toggleIntent, type ActionId } from "./list/actions";
 import type { Sort, View } from "./list/model";
+import type { RowId, SectionId } from "./settings/registry";
+import { sectionOf } from "./settings/registry";
 import { EMPTY, type Selection } from "./list/selection";
 import { displayName } from "./format";
 
 export type Density = "comfortable" | "compact";
+export type Screen = "downloads" | "settings";
 
 export interface Toast {
   id: number;
@@ -47,6 +51,14 @@ function store(key: string, value: string): void {
 }
 
 class AppState {
+  screen = $state<Screen>("downloads");
+  /** The Settings section on show, and its search. */
+  settingsSection = $state<SectionId>("general");
+  settingsQuery = $state("");
+  /** A setting to scroll to and focus once Settings shows it. */
+  settingsTarget = $state<{ row: RowId; key: number } | null>(null);
+  /** Whether the command palette is open. */
+  palette = $state(false);
   view = $state<View>("all");
   query = $state("");
   sort = $state<Sort>("default");
@@ -68,6 +80,29 @@ class AppState {
   adding = $state<{ text: string; key: number } | null>(null);
   #toastId = 0;
   #addKey = 0;
+  #targetKey = 0;
+
+  /** Shows Settings, at a setting if one is named (the palette, a link). */
+  openSettings(row?: RowId): void {
+    this.screen = "settings";
+    if (row) {
+      this.settingsQuery = "";
+      this.settingsSection = sectionOf(row);
+      this.settingsTarget = { row, key: ++this.#targetKey };
+    }
+  }
+
+  /** Back to the downloads. */
+  closeSettings(): void {
+    this.screen = "downloads";
+    this.settingsQuery = "";
+  }
+
+  /** Shows a view of the list (the sidebar, the palette). */
+  showView(view: View): void {
+    this.closeSettings();
+    this.view = view;
+  }
 
   /** Opens the add sheet with `text` in its link field (or adds it there). */
   openAdd(text = ""): void {
@@ -93,6 +128,16 @@ class AppState {
   togglePane(open = !this.paneOpen): void {
     this.paneOpen = open;
     store("boltget.pane", open ? "open" : "closed");
+  }
+
+  /** Selects a download and shows it, wherever it is: every one is in "All". */
+  reveal(id: DownloadId): void {
+    this.closeSettings();
+    if (!downloads.get(id)) return;
+    this.view = "all";
+    this.query = "";
+    this.select([id]);
+    this.togglePane(true);
   }
 
   toast(text: string, action?: Toast["action"], ms = TOAST_MS): number {

@@ -17,6 +17,8 @@
   import { openAddFromClipboard } from "./paste";
 
   let focused = $state(true);
+  const settings = $derived(app.screen === "settings");
+  const searchLabel = $derived(settings ? t("settings.search") : t("titlebar.search"));
   let search: HTMLInputElement | undefined = $state();
 
   onMount(() => {
@@ -25,13 +27,14 @@
     return () => off?.();
   });
 
-  // Ctrl+K will open the command palette; until it exists it focuses
-  // search, as do Ctrl+F and "/" (DESIGN-PRINCIPLES #6).
+  // Ctrl+F and "/" focus search (DESIGN-PRINCIPLES #6): the downloads', or
+  // in Settings the settings'. Ctrl+K is the command palette (App.svelte).
   function onkeydown(event: KeyboardEvent) {
+    if (app.adding || app.palette) return;
     const plain = !event.shiftKey && !event.altKey;
-    const typing = (event.target as HTMLElement | null)?.closest("input, textarea");
+    const typing = (event.target as HTMLElement | null)?.closest("input, textarea, select");
     if (
-      (event.ctrlKey && plain && (event.code === "KeyK" || event.code === "KeyF")) ||
+      (event.ctrlKey && plain && event.code === "KeyF") ||
       (event.key === "/" && !event.ctrlKey && !typing)
     ) {
       event.preventDefault();
@@ -41,6 +44,18 @@
   }
 
   function onsearchkey(event: KeyboardEvent) {
+    if (settings) {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        if (app.settingsQuery) app.settingsQuery = "";
+        else search?.blur();
+      } else if (event.key === "ArrowDown" || event.key === "Enter") {
+        // Into the first setting found.
+        event.preventDefault();
+        document.querySelector<HTMLElement>("[data-setting] :is(input, select, button)")?.focus();
+      }
+      return;
+    }
     if (event.key === "Escape") {
       if (app.query) app.query = "";
       else search?.blur();
@@ -77,11 +92,15 @@
     <span class="search-icon"><Icon name="search" /></span>
     <input
       bind:this={search}
-      bind:value={app.query}
+      bind:value={
+        () => (settings ? app.settingsQuery : app.query),
+        (v) => (settings ? (app.settingsQuery = v) : (app.query = v))
+      }
       onkeydown={onsearchkey}
+      id="titlebar-search"
       type="search"
-      placeholder={t("titlebar.search")}
-      aria-label={t("titlebar.search")}
+      placeholder={searchLabel}
+      aria-label={searchLabel}
       spellcheck="false"
       autocomplete="off"
     />

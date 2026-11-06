@@ -5,7 +5,7 @@ import { commands } from "./lib/bindings";
 import { downloads } from "./lib/engine";
 import { markWindowShown } from "./lib/lifecycle";
 import { appInfo, showMainWindow } from "./lib/native";
-import { enableThemeToggle, parseThemeSetting, startTheme } from "./lib/theme";
+import { cachedThemeSetting, enableThemeToggle, parseThemeSetting, startTheme } from "./lib/theme";
 
 const target = document.getElementById("app");
 if (!target) throw new Error("index.html has no #app element");
@@ -35,7 +35,7 @@ async function boot(): Promise<void> {
   void downloads.connect().then(reportVisibility);
   document.addEventListener("visibilitychange", reportVisibility);
   const info = await appInfo();
-  await startTheme(parseThemeSetting(info.devTheme));
+  await startTheme(cachedThemeSetting(), info.devTheme ? parseThemeSetting(info.devTheme) : null);
   await within(500, document.fonts.ready);
   await nextFrame();
   await showMainWindow();
