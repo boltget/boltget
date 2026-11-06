@@ -14,7 +14,7 @@ use boltget_ipc::{Endpoint, Owner, Server};
 use tauri::{AppHandle, Manager};
 
 use crate::bridge::Bridge;
-use crate::bridge::dto::{AppSettings, DownloadRow};
+use crate::bridge::dto::DownloadRow;
 
 /// Keeps the app's list current with what clients change.
 struct App(AppHandle);
@@ -29,9 +29,7 @@ impl Owner for App {
     }
 
     fn limit_changed(&self, bytes_per_second: Option<u64>) {
-        self.0.state::<Bridge>().settings_changed(AppSettings {
-            speed_limit: bytes_per_second,
-        });
+        self.0.state::<Bridge>().limit_changed(bytes_per_second);
     }
 }
 

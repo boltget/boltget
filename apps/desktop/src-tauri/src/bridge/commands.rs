@@ -16,6 +16,7 @@ use super::dto::{
 };
 use super::hub::new_row;
 use crate::error::UiError;
+use crate::settings::{self, SettingsPatch, SystemProxyInfo};
 
 /// Whether the engine is running, and if not, why.
 #[tauri::command]
@@ -74,10 +75,7 @@ pub(crate) async fn add_download(
     let ctx = RequestContext::new(request.url.trim())?;
     let dir = match request.directory.as_deref().map(str::trim) {
         Some(d) if !d.is_empty() => PathBuf::from(d),
-        _ => app
-            .path()
-            .download_dir()
-            .map_err(|e| UiError::with_message("error.no_download_folder", e.to_string()))?,
+        _ => default_folder(&app, &bridge, request.file_name.as_deref())?,
     };
     let destination = match request.file_name.as_deref().map(str::trim) {
         Some(name) if !name.is_empty() => Destination::File(dir.join(plain_file_name(name)?)),
@@ -109,6 +107,18 @@ pub(crate) async fn add_download(
     bridge.upsert(row.clone());
     remember_folder(engine, &dir).await;
     Ok(row)
+}
+
+/// Where a download goes when the page names no folder: its category's
+/// folder, the default download folder, or Windows' Downloads folder.
+fn default_folder(
+    app: &AppHandle,
+    bridge: &Bridge,
+    name: Option<&str>,
+) -> Result<PathBuf, UiError> {
+    let downloads = app.path().download_dir().ok();
+    settings::folder_for(&bridge.settings(), name, downloads.as_deref())
+        .ok_or_else(|| UiError::key("error.no_download_folder"))
 }
 
 /// How many folders the add sheet offers (APP-DESIGN #6).
@@ -152,7 +162,9 @@ pub(crate) async fn add_defaults(
 ) -> Result<AddDefaults, UiError> {
     let engine = bridge.engine()?;
     Ok(AddDefaults {
-        downloads_folder: app.path().download_dir().ok().map(|p| path_string(&p)),
+        downloads_folder: default_folder(&app, &bridge, None)
+            .ok()
+            .map(|p| path_string(&p)),
         recent_folders: recent_folders(engine).await,
     })
 }
@@ -170,10 +182,7 @@ pub(crate) async fn check_destination(
     let engine = bridge.engine()?;
     let dir = match directory.as_deref().map(str::trim) {
         Some(d) if !d.is_empty() => PathBuf::from(d),
-        _ => app
-            .path()
-            .download_dir()
-            .map_err(|e| UiError::with_message("error.no_download_folder", e.to_string()))?,
+        _ => default_folder(&app, &bridge, Some(file_name.trim()))?,
     };
     plain_file_name(file_name.trim())?;
     let path = engine
@@ -320,33 +329,65 @@ pub(crate) async fn set_speed_limit(
     engine.set_limit(scope.into(), bytes_per_second).await?;
     let limit = bytes_per_second.filter(|&r| r > 0);
     match scope {
-        LimitScope::Global => bridge.settings_changed(AppSettings { speed_limit: limit }),
+        LimitScope::Global => bridge.limit_changed(limit),
         LimitScope::Download { id } => bridge.speed_limit(id, limit),
     }
     Ok(())
 }
 
-/// The settings the engine keeps.
+/// Every setting, as stored (docs/APP-DESIGN.md, "Settings as built").
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_settings(bridge: State<'_, Bridge>) -> Result<AppSettings, UiError> {
-    Ok(AppSettings::from(&bridge.engine()?.settings().await?))
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn get_settings(bridge: State<'_, Bridge>) -> Result<AppSettings, UiError> {
+    bridge.engine()?;
+    Ok(bridge.settings())
 }
 
-/// Replaces the settings; returns them as stored.
+/// Changes some settings; returns them all as stored, or what is wrong
+/// with the change (a `settings.problem.*` key) without changing anything.
+/// The change is in effect when this returns. The global speed limit is
+/// changed with `set_speed_limit`.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn update_settings(
     bridge: State<'_, Bridge>,
-    settings: AppSettings,
+    patch: SettingsPatch,
 ) -> Result<AppSettings, UiError> {
-    let engine = bridge.engine()?;
-    engine
-        .set_limit(boltget_engine::LimitScope::Global, settings.speed_limit)
-        .await?;
-    let stored = AppSettings::from(&engine.settings().await?);
-    bridge.settings_changed(stored.clone());
-    Ok(stored)
+    bridge.update_settings(&patch).await
+}
+
+/// What Windows' proxy settings say now, for the Network section.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn system_proxy() -> SystemProxyInfo {
+    SystemProxyInfo::from(&crate::platform::system_proxy())
+}
+
+/// Opens the default download folder in Explorer (the palette, the tray).
+#[tauri::command]
+#[specta::specta]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn open_downloads_folder(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+) -> Result<(), UiError> {
+    open_default_folder(&app, &bridge)
+}
+
+/// Opens the default download folder, creating it if it is missing.
+pub(crate) fn open_default_folder(app: &AppHandle, bridge: &Bridge) -> Result<(), UiError> {
+    let dir = default_folder(app, bridge, None)?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| UiError::with_message("error.open_failed", e.to_string()))?;
+    tauri_plugin_opener::open_path(&dir, None::<&str>)
+        .map_err(|e| UiError::with_message("error.open_failed", e.to_string()))
 }
 
 /// The file map of a running download, now (`null` if it is not running).

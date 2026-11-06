@@ -24,9 +24,13 @@ import type {
   ProbePreview,
   ProgressItem,
   SegmentSpan,
+  SettingsPatch,
+  SystemProxyInfo,
   UiError,
   commands,
 } from "../bindings";
+import { setCategories } from "../list/categoryTable.svelte";
+import { DEFAULT_SETTINGS } from "../settings/model";
 
 /** The result shape of every generated command that can fail. */
 export type Result<T> = { status: "ok"; data: T } | { status: "error"; error: UiError };
@@ -48,6 +52,9 @@ export interface EngineApi {
     | "refreshLink"
     | "setSpeedLimit"
     | "updateSettings"
+    | "systemProxy"
+    | "openDownloadsFolder"
+    | "quitApp"
     | "setFocusedDownload"
     | "setUiVisible"
     | "downloadDetails"
@@ -108,7 +115,7 @@ export class Download {
 
 export class DownloadStore {
   status = $state<EngineStatus>({ state: "starting" });
-  settings = $state<AppSettings>({ speedLimit: null });
+  settings = $state.raw<AppSettings>(DEFAULT_SETTINGS);
   /** Download ids, oldest first. Replaced only when the set changes. */
   ids = $state.raw<DownloadId[]>([]);
   /** The download whose file map streams (the details pane's). */
@@ -156,14 +163,14 @@ export class DownloadStore {
     switch (message.type) {
       case "snapshot":
         this.status = message.status;
-        this.settings = message.settings;
+        this.#setSettings(message.settings);
         this.#replaceAll(message.downloads);
         break;
       case "status":
         this.status = message.status;
         break;
       case "settings":
-        this.settings = message.settings;
+        this.#setSettings(message.settings);
         break;
       case "batch":
         this.#applyBatch(message);
@@ -307,16 +314,43 @@ export class DownloadStore {
     const result = await this.#api.commands.setSpeedLimit(scope, bytesPerSecond);
     if (this.#failed(result)) {
       if (d) d.speedLimit = before ?? null;
-      else if (scope.kind === "global")
+      else if (scope.kind === "global") {
         this.settings = { ...this.settings, speedLimit: before ?? null };
+      }
     }
     return result;
   }
 
-  async updateSettings(settings: AppSettings): Promise<Result<AppSettings>> {
-    const result = await this.#api.commands.updateSettings(settings);
-    if (!this.#failed(result)) this.settings = result.data;
+  #setSettings(settings: AppSettings): void {
+    if (settings.categories !== this.settings.categories) setCategories(settings.categories);
+    this.settings = settings;
+  }
+
+  /**
+   * Changes some settings. A refusal is returned, not recorded as the last
+   * error: Settings shows it next to the field.
+   */
+  async updateSettings(patch: SettingsPatch): Promise<Result<AppSettings>> {
+    const result = await this.#api.commands.updateSettings(patch);
+    if (result.status === "ok") this.#setSettings(result.data);
     return result;
+  }
+
+  /** What Windows' proxy settings say now. */
+  systemProxy(): Promise<SystemProxyInfo> {
+    return this.#api.commands.systemProxy();
+  }
+
+  /** Opens the default download folder in Explorer. */
+  async openDownloadsFolder(): Promise<Result<null>> {
+    const result = await this.#api.commands.openDownloadsFolder();
+    this.#failed(result);
+    return result;
+  }
+
+  /** Quits Boltget; downloads checkpoint and stay paused. */
+  quit(): Promise<void> {
+    return this.#api.commands.quitApp();
   }
 
   /** The checksum, links and partial file of a download, for the details pane. */

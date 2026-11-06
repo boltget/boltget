@@ -20,10 +20,11 @@ use boltget_engine::{Engine, EngineConfig, Error, LimitScope, ResumeOptions, Sta
 use boltget_ipc::Ownership;
 use tokio::sync::watch;
 
-use self::dto::{AppSettings, DownloadId, DownloadRow, DownloadState, EngineStatus};
+use self::dto::{DownloadId, DownloadRow, DownloadState, EngineStatus};
 use self::hub::{HubHandle, Request};
 pub(crate) use self::hub::{Sink, TICK};
 use crate::error::UiError;
+use crate::settings::{self, AppSettings};
 
 /// How often the app tries again to take the database while another process
 /// (a `boltget` CLI download) owns it.
@@ -50,6 +51,11 @@ pub(crate) struct Bridge {
     ownership: watch::Sender<Ownership>,
     /// Set once the engine has been shut down.
     shut: AtomicBool,
+    /// The settings as stored, for everything that reads them (defaults
+    /// until the engine is open).
+    settings: watch::Sender<AppSettings>,
+    /// One settings change at a time.
+    updating: tokio::sync::Mutex<()>,
 }
 
 impl Bridge {
@@ -62,6 +68,8 @@ impl Bridge {
             status: Mutex::new(EngineStatus::Starting),
             ownership: watch::channel(Ownership::Starting).0,
             shut: AtomicBool::new(false),
+            settings: watch::channel(AppSettings::default()).0,
+            updating: tokio::sync::Mutex::new(()),
         };
         (bridge, task)
     }
@@ -116,8 +124,61 @@ impl Bridge {
         self.hub.send(Request::SpeedLimit(id, limit));
     }
 
-    pub(crate) fn settings_changed(&self, settings: AppSettings) {
+    /// The settings now.
+    pub(crate) fn settings(&self) -> AppSettings {
+        self.settings.borrow().clone()
+    }
+
+    /// The settings, as they change.
+    pub(crate) fn watch_settings(&self) -> watch::Receiver<AppSettings> {
+        self.settings.subscribe()
+    }
+
+    /// Records new settings and sends them to every page.
+    fn settings_changed(&self, settings: AppSettings) {
+        self.settings.send_replace(settings.clone());
         self.hub.send(Request::Settings(settings));
+    }
+
+    /// The global speed limit changed (here, in the tray or from the CLI).
+    pub(crate) fn limit_changed(&self, limit: Option<u64>) {
+        let mut next = self.settings();
+        next.speed_limit = limit.filter(|&b| b > 0);
+        self.settings_changed(next);
+    }
+
+    /// Applies a settings change: validated, stored, then in effect.
+    pub(crate) async fn update_settings(
+        &self,
+        patch: &settings::SettingsPatch,
+    ) -> Result<AppSettings, UiError> {
+        let engine = self.engine()?;
+        let _one_at_a_time = self.updating.lock().await;
+        let old = self.settings();
+        let new = settings::patched(&old, patch)?;
+        settings::store(engine, &old, &new).await?;
+        if old.proxy != new.proxy {
+            apply_proxy(engine, &new);
+        }
+        if old.max_connections != new.max_connections {
+            engine.set_max_connections(new.max_connections);
+        }
+        // The speed limit may have changed meanwhile (the tray, the CLI).
+        let mut stored = new;
+        stored.speed_limit = self.settings().speed_limit;
+        self.settings_changed(stored.clone());
+        Ok(stored)
+    }
+
+    /// Windows' proxy settings changed: downloads follow them if they use
+    /// the system proxy.
+    pub(crate) fn system_proxy_changed(&self) {
+        if let Ok(engine) = self.engine() {
+            let current = self.settings();
+            if current.proxy.mode == settings::ProxyMode::System {
+                apply_proxy(engine, &current);
+            }
+        }
     }
 
     pub(crate) fn focus(&self, id: Option<DownloadId>) {
@@ -186,6 +247,18 @@ impl Bridge {
             }
         };
         let rows: Vec<DownloadRow> = list.iter().map(DownloadRow::from).collect();
+        // The app's settings apply before anything continues.
+        let mut prefs = match settings::load(&engine).await {
+            Ok(prefs) => prefs,
+            Err(e) => {
+                tracing::warn!(error = ?e, "could not read the settings; using the defaults");
+                AppSettings::default()
+            }
+        };
+        prefs.speed_limit = settings.speed_limit;
+        apply_proxy(&engine, &prefs);
+        engine.set_max_connections(prefs.max_connections);
+        self.settings.send_replace(prefs.clone());
         let mut resume = to_resume(engine.recovered(), &rows);
         resume.extend(take_session_end_list(&engine, &rows).await);
         resume.sort_unstable();
@@ -198,7 +271,7 @@ impl Bridge {
             engine: engine.clone(),
             events,
             rows,
-            settings: AppSettings::from(&settings),
+            settings: prefs,
         });
         resume_all(&engine, &resume).await;
     }
@@ -303,10 +376,16 @@ impl Bridge {
         let Ok(engine) = self.engine() else { return };
         let limit = bytes_per_second.filter(|&b| b > 0);
         match engine.set_limit(LimitScope::Global, limit).await {
-            Ok(()) => self.settings_changed(AppSettings { speed_limit: limit }),
+            Ok(()) => self.limit_changed(limit),
             Err(e) => tracing::warn!(error = %e, "could not change the speed limit"),
         }
     }
+}
+
+/// Gives the engine the proxy rules of `prefs` (reading Windows' settings
+/// only for the system proxy).
+fn apply_proxy(engine: &Engine, prefs: &AppSettings) {
+    engine.set_proxy(settings::rules(&prefs.proxy, crate::platform::system_proxy));
 }
 
 /// What to continue on start (docs/ARCHITECTURE.md, "Recovery on start"):

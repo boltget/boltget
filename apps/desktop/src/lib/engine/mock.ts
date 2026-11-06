@@ -19,7 +19,9 @@ import type {
   LimitScope,
   ProgressItem,
   SegmentSpan,
+  SettingsPatch,
 } from "../bindings";
+import { DEFAULT_SETTINGS } from "../settings/model";
 import type { EngineApi, Result } from "./store.svelte";
 
 const MIB = 1024 * 1024;
@@ -90,7 +92,7 @@ export function mockEngineApi(search: string): EngineApi {
   const random = mulberry(7);
   const now = Date.now();
   const sims = new Map<DownloadId, Sim>();
-  let settings: AppSettings = { speedLimit: null };
+  let settings: AppSettings = { ...DEFAULT_SETTINGS };
   let recent: string[] = [];
   let focused: DownloadId | null = null;
   let emit: (m: EngineMessage) => void = () => {};
@@ -363,7 +365,7 @@ export function mockEngineApi(search: string): EngineApi {
       async setSpeedLimit(scope: LimitScope, bytesPerSecond: number | null) {
         const limit = bytesPerSecond && bytesPerSecond > 0 ? bytesPerSecond : null;
         if (scope.kind === "global") {
-          settings = { speedLimit: limit };
+          settings = { ...settings, speedLimit: limit };
           emit({ type: "settings", settings });
         } else {
           const sim = sims.get(scope.id);
@@ -371,10 +373,45 @@ export function mockEngineApi(search: string): EngineApi {
         }
         return ok(null);
       },
-      async updateSettings(next: AppSettings) {
+      async updateSettings(patch: SettingsPatch) {
+        // The simulated backend checks what the page checks; the real one
+        // checks again (src-tauri/src/settings.rs).
+        await new Promise((r) => setTimeout(r, 60));
+        const next: AppSettings = { ...settings };
+        if (patch.maxConnections != null) next.maxConnections = patch.maxConnections;
+        if (patch.downloadFolder != null) next.downloadFolder = patch.downloadFolder.trim() || null;
+        if (patch.category) {
+          const change = patch.category;
+          next.categories = settings.categories.map((c) =>
+            c.id !== change.id
+              ? c
+              : {
+                  ...c,
+                  extensions:
+                    change.extensions == null || c.id === "other"
+                      ? c.extensions
+                      : change.extensions.split(/[\s,;]+/).filter(Boolean),
+                  folder: change.folder == null ? c.folder : change.folder.trim() || null,
+                },
+          );
+        }
+        if (patch.proxy) next.proxy = patch.proxy;
+        if (patch.theme != null) next.theme = patch.theme;
+        if (patch.notifications != null) next.notifications = patch.notifications;
+        if (patch.closeToTray != null) next.closeToTray = patch.closeToTray;
+        if (patch.startWithWindows != null) next.startWithWindows = patch.startWithWindows;
+        if (patch.clipboard != null) next.clipboard = patch.clipboard;
         settings = next;
+        emit({ type: "settings", settings });
         return ok(settings);
       },
+      async systemProxy() {
+        return { proxy: params.get("proxy"), script: params.has("pac") };
+      },
+      async openDownloadsFolder() {
+        return ok(null);
+      },
+      async quitApp() {},
       async setFocusedDownload(id: DownloadId | null) {
         focused = id;
       },

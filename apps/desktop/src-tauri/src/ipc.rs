@@ -9,7 +9,7 @@
 use tauri_specta::{Builder, collect_commands, collect_events};
 
 use crate::bridge::commands as engine;
-use crate::{commands, shell};
+use crate::{clipboard, commands, shell};
 
 /// The generated file, relative to this crate.
 #[cfg(test)]
@@ -23,6 +23,7 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             commands::show_main_window,
             commands::set_window_chrome,
             commands::set_caption_layout,
+            commands::quit_app,
             engine::engine_status,
             engine::subscribe_engine,
             engine::list_downloads,
@@ -38,6 +39,8 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             engine::set_speed_limit,
             engine::get_settings,
             engine::update_settings,
+            engine::system_proxy,
+            engine::open_downloads_folder,
             engine::download_segments,
             engine::download_details,
             engine::open_download,
@@ -46,7 +49,11 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             engine::set_ui_visible,
             shell::take_launch_links,
         ])
-        .events(collect_events![commands::CaptionMaximize, shell::ShellRequest])
+        .events(collect_events![
+            commands::CaptionMaximize,
+            shell::ShellRequest,
+            clipboard::ClipboardOffer
+        ])
         // Byte counts are u64; as JavaScript numbers they are exact up to
         // 2^53 (8 PiB), far beyond any file. Ids are small integers.
         .dangerously_cast_bigints_to_number()

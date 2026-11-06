@@ -8,6 +8,7 @@ import type {
   UiError,
 } from "../bindings";
 import { errorText } from "./index";
+import { DEFAULT_SETTINGS } from "../settings/model";
 import { DownloadStore, type EngineApi, type Result } from "./store.svelte";
 
 function row(id: number, extra: Partial<DownloadRow> = {}): DownloadRow {
@@ -69,7 +70,12 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
     removeDownload: vi.fn(() => ok(null)),
     refreshLink: vi.fn(() => ok(null)),
     setSpeedLimit: vi.fn(() => ok(null)),
-    updateSettings: vi.fn((s) => ok({ speedLimit: s.speedLimit ?? null })),
+    updateSettings: vi.fn((patch) =>
+      ok({ ...DEFAULT_SETTINGS, maxConnections: patch.maxConnections ?? 16 }),
+    ),
+    systemProxy: vi.fn(() => Promise.resolve({ proxy: null, script: false })),
+    openDownloadsFolder: vi.fn(() => ok(null)),
+    quitApp: vi.fn(() => Promise.resolve()),
     setFocusedDownload: vi.fn(() => Promise.resolve()),
     setUiVisible: vi.fn(() => Promise.resolve()),
     downloadDetails: vi.fn((id) => ok({ id, partialPath: null, checksum: null, sources: [] })),
@@ -94,7 +100,7 @@ async function connected(overrides: Partial<EngineApi["commands"]> = {}, rows = 
     type: "snapshot",
     status: { state: "ready" },
     downloads: rows,
-    settings: { speedLimit: null },
+    settings: DEFAULT_SETTINGS,
   });
   return { store, ...fake };
 }
@@ -177,7 +183,7 @@ describe("DownloadStore", () => {
       type: "snapshot",
       status: { state: "ready" },
       downloads: [row(1, { downloaded: 500 }), row(5)],
-      settings: { speedLimit: 1000 },
+      settings: { ...DEFAULT_SETTINGS, speedLimit: 1000 },
     });
     expect(store.ids).toEqual([1, 5]);
     expect(store.get(1)).toBe(one);
@@ -189,7 +195,7 @@ describe("DownloadStore", () => {
     const { store, emit } = await connected();
     emit({ type: "status", status: { state: "locked", dir: "C:\\Boltget" } });
     expect(store.status).toEqual({ state: "locked", dir: "C:\\Boltget" });
-    emit({ type: "settings", settings: { speedLimit: 42 } });
+    emit({ type: "settings", settings: { ...DEFAULT_SETTINGS, speedLimit: 42 } });
     expect(store.settings.speedLimit).toBe(42);
   });
 
@@ -307,5 +313,25 @@ describe("errorText", () => {
     expect(errorText({ key: "error.from_a_newer_engine" })).toBe(
       "Something went wrong. Try again.",
     );
+  });
+});
+
+describe("settings", () => {
+  it("records what the backend stored, and leaves refusals to the form", async () => {
+    const { store, commands } = await connected({
+      updateSettings: vi
+        .fn<EngineApi["commands"]["updateSettings"]>()
+        .mockImplementationOnce(() => ok({ ...DEFAULT_SETTINGS, maxConnections: 8 }))
+        .mockImplementationOnce(() => fail("settings.problem.connections")),
+    });
+    const done = await store.updateSettings({ maxConnections: 8 });
+    expect(commands.updateSettings).toHaveBeenCalledWith({ maxConnections: 8 });
+    expect(done.status).toBe("ok");
+    expect(store.settings.maxConnections).toBe(8);
+
+    const refused = await store.updateSettings({ maxConnections: 99 });
+    expect(refused.status).toBe("error");
+    expect(store.settings.maxConnections).toBe(8);
+    expect(store.lastError).toBeNull();
   });
 });

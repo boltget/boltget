@@ -27,7 +27,8 @@
   import { downloads, errorText } from "../engine";
   import { displayName, formatBytes, formatWhen, hostOf, splitFolder } from "../format";
   import Icon from "../Icon.svelte";
-  import { categoryIcon } from "../list/category";
+  import { CATEGORY_LABELS, categoryIcon, categoryOf } from "../list/category";
+  import { folderFor } from "../settings/model";
   import { popupMenu, type MenuEntry } from "../menu";
   import { inTauri } from "../native";
   import {
@@ -60,6 +61,7 @@
   let version = $state(0);
 
   let defaults = $state<AddDefaults>({ downloadsFolder: null, recentFolders: [] });
+  /** A folder the user chose; `null` while the sheet picks one by category. */
   let folder = $state<string | null>(null);
 
   let name = $state("");
@@ -121,7 +123,28 @@
   const selected = $derived(urls.filter((u) => !excluded.has(u)));
   const targets = $derived(many ? selected : single ? [single] : []);
 
-  const folderPath = $derived(folder ?? defaults.downloadsFolder);
+  /**
+   * The folder the sheet picks (APP-DESIGN #6): the category's folder for
+   * the file's type, else the default download folder. A list goes to the
+   * category folder its files share, else the default.
+   */
+  const automatic = $derived.by((): { path: string | null; category: string | null } => {
+    const settings = downloads.settings;
+    const names = many
+      ? selected.map((u) => entryName(u))
+      : single && (preview || name)
+        ? [shownName]
+        : [];
+    const paths = new Set(names.map((n) => folderFor(n, settings, defaults.downloadsFolder)));
+    const [only] = paths;
+    if (paths.size !== 1 || !only || only === defaults.downloadsFolder) {
+      return { path: defaults.downloadsFolder, category: null };
+    }
+    const category = categoryOf(names[0] ?? "");
+    return { path: only, category: t(CATEGORY_LABELS[category]) };
+  });
+  const folderPath = $derived(folder ?? automatic.path);
+  const folderCategory = $derived(folder === null ? automatic.category : null);
   const folderParts = $derived(
     folderPath ? splitFolder(folderPath) : { parent: "", leaf: t("add.folder.downloads") },
   );
@@ -220,7 +243,6 @@
     void downloads.addDefaults().then((result) => {
       if (result.status !== "ok" || !open) return;
       defaults = result.data;
-      folder ??= result.data.recentFolders[0] ?? result.data.downloadsFolder;
     });
     queueMicrotask(() => {
       dialog?.showModal();
@@ -641,6 +663,9 @@
           <Icon name="down" size={14} />
         </button>
       </div>
+      {#if folderCategory}
+        <p class="line muted indent">{t("add.folder.category", { category: folderCategory })}</p>
+      {/if}
       {#if dest && !dest.folderExists}
         <p class="line muted indent">{t("add.folder.new")}</p>
       {/if}

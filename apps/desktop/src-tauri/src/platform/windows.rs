@@ -17,6 +17,11 @@
 //!   animations (the tray mark stays still when it does not).
 //!
 //! All of this runs on the main (UI) thread, which owns the windows.
+//!
+//! The settings that live in Windows are here too, each on a thread of its
+//! own: the proxy Windows uses (read with `WinHTTP`, watched in the
+//! registry), the Run key that starts Boltget at sign-in, and the clipboard
+//! listener (a message-only window).
 #![expect(
     unsafe_code,
     reason = "Win32, DWM and WebView2 FFI; every unsafe block states why it is sound"
@@ -32,7 +37,9 @@ use tauri_specta::Event as _;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2Controller, ICoreWebView2Settings3, ICoreWebView2Settings5, ICoreWebView2Settings6,
 };
-use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{
+    COLORREF, HGLOBAL, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Dwm::{
     DWMWA_BORDER_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
     DWMWCP_ROUND, DWMWINDOWATTRIBUTE, DwmSetWindowAttribute,
@@ -55,6 +62,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{Interface, PCWSTR, w};
 
 use crate::commands::{CaptionMaximize, CaptionRect};
+use crate::settings::SystemProxy;
 
 /// `HTMAXBUTTON` as an `LRESULT` value.
 #[expect(clippy::cast_possible_wrap, reason = "HTMAXBUTTON is 9")]
@@ -461,4 +469,416 @@ fn warn(what: &str, error: impl Display) {
     if cfg!(debug_assertions) {
         eprintln!("boltget-desktop: {what}: {error}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Settings that live in Windows (docs/APP-DESIGN.md, "Settings as built"):
+// the proxy Windows is set to use, starting with Windows, and the clipboard.
+// ---------------------------------------------------------------------------
+
+/// Where `WinINet` keeps the proxy settings (and its per-connection blobs).
+const INTERNET_SETTINGS: PCWSTR =
+    w!("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings");
+/// The current user's Run key, which starts programs at sign-in.
+const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+/// The value Boltget uses in the Run key.
+const RUN_VALUE: PCWSTR = w!("Boltget");
+
+/// Takes a string `WinHTTP` allocated: its text, and frees it.
+///
+/// # Safety
+///
+/// `text` must be null or a NUL-terminated string allocated with
+/// `GlobalAlloc` that nothing else frees.
+unsafe fn take_global_string(text: windows::core::PWSTR) -> Option<String> {
+    if text.is_null() {
+        return None;
+    }
+    // SAFETY: per the contract, `text` is a live NUL-terminated string.
+    let value = unsafe { text.to_string() }.ok();
+    // SAFETY: per the contract, we own the allocation and free it once.
+    let _ = unsafe { windows::Win32::Foundation::GlobalFree(Some(HGLOBAL(text.0.cast()))) };
+    value.filter(|v| !v.trim().is_empty())
+}
+
+/// The proxy Windows is set to use for the current user (Settings >
+/// Network & internet > Proxy), as `WinINet` keeps it.
+pub(crate) fn system_proxy() -> SystemProxy {
+    use windows::Win32::Networking::WinHttp::{
+        WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, WinHttpGetIEProxyConfigForCurrentUser,
+    };
+    let mut config = WINHTTP_CURRENT_USER_IE_PROXY_CONFIG::default();
+    // SAFETY: `config` is a valid out pointer; on success its strings are
+    // ours to free with GlobalFree, which `take_global_string` does.
+    if let Err(error) = unsafe { WinHttpGetIEProxyConfigForCurrentUser(&raw mut config) } {
+        tracing::warn!(%error, "could not read the Windows proxy settings");
+        return SystemProxy::default();
+    }
+    // SAFETY: each string comes from the call above and is taken once.
+    unsafe {
+        SystemProxy {
+            server: take_global_string(config.lpszProxy),
+            bypass: take_global_string(config.lpszProxyBypass),
+            script: take_global_string(config.lpszAutoConfigUrl),
+        }
+    }
+}
+
+/// Calls `changed` (on a thread of its own) after the Windows proxy
+/// settings change, for as long as the app runs. A burst of changes is read
+/// once, half a second after it starts.
+pub(crate) fn watch_system_proxy(changed: impl Fn() + Send + 'static) {
+    use windows::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, REG_NOTIFY_CHANGE_LAST_SET, RegCloseKey,
+        RegNotifyChangeKeyValue, RegOpenKeyExW,
+    };
+    let spawned = std::thread::Builder::new()
+        .name("boltget-proxy-watch".into())
+        .spawn(move || {
+            let mut key = HKEY::default();
+            // SAFETY: opening a key of the current user with a static name;
+            // `key` is a valid out pointer.
+            let opened = unsafe {
+                RegOpenKeyExW(
+                    HKEY_CURRENT_USER,
+                    INTERNET_SETTINGS,
+                    None,
+                    KEY_NOTIFY,
+                    &raw mut key,
+                )
+            };
+            if opened.is_err() {
+                tracing::warn!(error = ?opened, "cannot watch the Windows proxy settings");
+                return;
+            }
+            loop {
+                // SAFETY: `key` is open with KEY_NOTIFY; the synchronous call
+                // blocks this thread until something under it changes.
+                let waited = unsafe {
+                    RegNotifyChangeKeyValue(key, true, REG_NOTIFY_CHANGE_LAST_SET, None, false)
+                };
+                if waited.is_err() {
+                    tracing::warn!(error = ?waited, "stopped watching the Windows proxy settings");
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                changed();
+            }
+            // SAFETY: closing the key opened above, once.
+            let _ = unsafe { RegCloseKey(key) };
+        });
+    if let Err(error) = spawned {
+        tracing::warn!(%error, "cannot watch the Windows proxy settings");
+    }
+}
+
+/// The command line the Run key starts: this executable, in the tray.
+fn autostart_command() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    Some(format!("\"{}\" --background", exe.display()))
+}
+
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// Whether the Run key starts this Boltget at sign-in.
+pub(crate) fn autostart_enabled() -> bool {
+    use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegGetValueW};
+    let mut buffer = vec![0u16; 1024];
+    let mut bytes = u32::try_from(buffer.len() * 2).unwrap_or(u32::MAX);
+    // SAFETY: `buffer` has room for `bytes` bytes; RegGetValueW writes at
+    // most that many and NUL-terminates REG_SZ data.
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            RUN_KEY,
+            RUN_VALUE,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&raw mut bytes),
+        )
+    };
+    if read.is_err() {
+        return false;
+    }
+    let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    let value = String::from_utf16_lossy(&buffer[..len]).to_lowercase();
+    std::env::current_exe()
+        .is_ok_and(|exe| value.contains(&exe.display().to_string().to_lowercase()))
+}
+
+/// Adds Boltget to the current user's Run key, or removes it.
+pub(crate) fn set_autostart(enabled: bool) -> Result<(), String> {
+    use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
+    use windows::Win32::System::Registry::{
+        HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW,
+    };
+    if !enabled {
+        // SAFETY: deleting a named value under a key of the current user,
+        // with static names.
+        let deleted = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE) };
+        return if deleted.is_ok() || deleted == ERROR_FILE_NOT_FOUND {
+            Ok(())
+        } else {
+            Err(format!("RegDeleteKeyValueW failed: {deleted:?}"))
+        };
+    }
+    let command = autostart_command().ok_or("the executable's path is unknown")?;
+    let data = wide(&command);
+    let bytes = u32::try_from(data.len() * 2).map_err(|e| e.to_string())?;
+    // SAFETY: `data` is a NUL-terminated UTF-16 string of `bytes` bytes, as
+    // REG_SZ requires, and lives across the call.
+    let set = unsafe {
+        RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            RUN_KEY,
+            RUN_VALUE,
+            REG_SZ.0,
+            Some(data.as_ptr().cast()),
+            bytes,
+        )
+    };
+    if set.is_ok() {
+        Ok(())
+    } else {
+        Err(format!("RegSetKeyValueW failed: {set:?}"))
+    }
+}
+
+/// Clipboard text longer than this is not a link someone copied.
+const CLIPBOARD_MAX_CHARS: usize = 64 * 1024;
+const CLIPBOARD_CLASS: PCWSTR = w!("BoltgetClipboardListener");
+
+/// The callback of a clipboard listener thread.
+type OnText = Box<dyn Fn(String)>;
+
+thread_local! {
+    /// The listener thread's callback; its window procedure runs on it.
+    static ON_CLIPBOARD: std::cell::RefCell<Option<OnText>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Listens for clipboard changes while it lives (Windows' change
+/// notification, no polling); dropping it stops listening.
+#[derive(Debug)]
+pub(crate) struct ClipboardWatch {
+    /// The listener's message-only window, as an integer so this is `Send`.
+    hwnd: isize,
+}
+
+impl Drop for ClipboardWatch {
+    fn drop(&mut self) {
+        use windows::Win32::UI::WindowsAndMessaging::WM_CLOSE;
+        // SAFETY: posting WM_CLOSE carries no pointers; if the window is
+        // already gone the call fails harmlessly.
+        let _ = unsafe {
+            PostMessageW(
+                Some(HWND(self.hwnd as *mut c_void)),
+                WM_CLOSE,
+                WPARAM(0),
+                LPARAM(0),
+            )
+        };
+    }
+}
+
+/// Starts listening: `on_text` gets the clipboard's text each time another
+/// program puts text there. Text Boltget copied itself, and text marked as
+/// private (password managers set
+/// `ExcludeClipboardContentFromMonitorProcessing`), is never read.
+pub(crate) fn watch_clipboard(on_text: impl Fn(String) + Send + 'static) -> Option<ClipboardWatch> {
+    let (tx, rx) = std::sync::mpsc::channel::<isize>();
+    let spawned = std::thread::Builder::new()
+        .name("boltget-clipboard".into())
+        .spawn(move || clipboard_thread(Box::new(on_text), &tx));
+    if let Err(error) = spawned {
+        tracing::warn!(%error, "cannot watch the clipboard");
+        return None;
+    }
+    match rx.recv() {
+        Ok(hwnd) if hwnd != 0 => Some(ClipboardWatch { hwnd }),
+        _ => None,
+    }
+}
+
+fn clipboard_thread(on_text: OnText, ready: &std::sync::mpsc::Sender<isize>) {
+    use windows::Win32::System::DataExchange::AddClipboardFormatListener;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DestroyWindow, DispatchMessageW, GetMessageW, HWND_MESSAGE, MSG, WINDOW_STYLE,
+    };
+    static REGISTER: Once = Once::new();
+
+    // SAFETY: GetModuleHandleW(None) returns this executable's handle and
+    // takes no ownership.
+    let instance = unsafe { GetModuleHandleW(None) }
+        .map(|module| HINSTANCE(module.0))
+        .unwrap_or_default();
+    REGISTER.call_once(|| {
+        let class = WNDCLASSEXW {
+            cbSize: size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(clipboard_proc),
+            hInstance: instance,
+            lpszClassName: CLIPBOARD_CLASS,
+            ..Default::default()
+        };
+        // SAFETY: `class` is fully initialised and its strings are static.
+        if unsafe { RegisterClassExW(&raw const class) } == 0 {
+            tracing::warn!("could not register the clipboard listener's class");
+        }
+    });
+    ON_CLIPBOARD.with(|cell| *cell.borrow_mut() = Some(on_text));
+    // SAFETY: a message-only window of a registered class, owned by this
+    // thread, without create parameters.
+    let created = unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            CLIPBOARD_CLASS,
+            PCWSTR::null(),
+            WINDOW_STYLE(0),
+            0,
+            0,
+            0,
+            0,
+            Some(HWND_MESSAGE),
+            None,
+            Some(instance),
+            None,
+        )
+    };
+    let hwnd = match created {
+        Ok(hwnd) => hwnd,
+        Err(error) => {
+            tracing::warn!(%error, "could not create the clipboard listener");
+            let _ = ready.send(0);
+            return;
+        }
+    };
+    // SAFETY: `hwnd` is the live window created above, on this thread.
+    if let Err(error) = unsafe { AddClipboardFormatListener(hwnd) } {
+        tracing::warn!(%error, "could not listen to the clipboard");
+        // SAFETY: destroying the window this thread created.
+        let _ = unsafe { DestroyWindow(hwnd) };
+        let _ = ready.send(0);
+        return;
+    }
+    let _ = ready.send(hwnd.0 as isize);
+    let mut msg = MSG::default();
+    // SAFETY: a standard message loop for this thread's window; `msg` is a
+    // valid out pointer. It ends with WM_QUIT, posted in WM_DESTROY.
+    while unsafe { GetMessageW(&raw mut msg, None, 0, 0) }.as_bool() {
+        // SAFETY: dispatching the message just received.
+        unsafe { DispatchMessageW(&raw const msg) };
+    }
+    ON_CLIPBOARD.with(|cell| cell.borrow_mut().take());
+}
+
+unsafe extern "system" fn clipboard_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    use windows::Win32::System::DataExchange::RemoveClipboardFormatListener;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DestroyWindow, PostQuitMessage, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_DESTROY,
+    };
+    match msg {
+        WM_CLIPBOARDUPDATE => {
+            if let Some(text) = read_clipboard_text(hwnd) {
+                ON_CLIPBOARD.with(|cell| {
+                    if let Some(on_text) = cell.borrow().as_ref() {
+                        on_text(text);
+                    }
+                });
+            }
+            return LRESULT(0);
+        }
+        WM_CLOSE => {
+            // SAFETY: this thread's own window, still alive.
+            unsafe {
+                let _ = RemoveClipboardFormatListener(hwnd);
+                let _ = DestroyWindow(hwnd);
+            }
+            return LRESULT(0);
+        }
+        // SAFETY: ends this thread's message loop.
+        WM_DESTROY => unsafe { PostQuitMessage(0) },
+        _ => {}
+    }
+    // SAFETY: default processing with the arguments we were given.
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
+/// The clipboard's text, unless it is ours, private, not text or too long.
+fn read_clipboard_text(hwnd: HWND) -> Option<String> {
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, GetClipboardOwner, IsClipboardFormatAvailable,
+        OpenClipboard, RegisterClipboardFormatW,
+    };
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+    use windows::Win32::System::Ole::CF_UNICODETEXT;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    let text_format = u32::from(CF_UNICODETEXT.0);
+    // SAFETY: a format query; no pointers.
+    if unsafe { IsClipboardFormatAvailable(text_format) }.is_err() {
+        return None;
+    }
+    // SAFETY: registering (or finding) a named format; the name is static.
+    let private =
+        unsafe { RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitorProcessing")) };
+    // SAFETY: a format query; no pointers.
+    if private != 0 && unsafe { IsClipboardFormatAvailable(private) }.is_ok() {
+        return None;
+    }
+    // SAFETY: GetClipboardOwner takes no arguments.
+    if let Ok(owner) = unsafe { GetClipboardOwner() } {
+        let mut process = 0u32;
+        // SAFETY: `owner` is a window handle (possibly stale, which the call
+        // tolerates); the process id goes to a valid out pointer.
+        unsafe { GetWindowThreadProcessId(owner, Some(&raw mut process)) };
+        // SAFETY: no arguments.
+        if process == unsafe { GetCurrentProcessId() } {
+            return None;
+        }
+    }
+    // Another program may hold the clipboard for a moment.
+    let mut opened = false;
+    for _ in 0..5 {
+        // SAFETY: `hwnd` is this thread's live window.
+        if unsafe { OpenClipboard(Some(hwnd)) }.is_ok() {
+            opened = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    if !opened {
+        return None;
+    }
+    let text = (|| {
+        // SAFETY: the clipboard is open; the handle stays owned by it.
+        let handle = unsafe { GetClipboardData(text_format) }.ok()?;
+        let global = HGLOBAL(handle.0);
+        // SAFETY: CF_UNICODETEXT data is an HGLOBAL; locking gives a pointer
+        // valid until GlobalUnlock.
+        let ptr = unsafe { GlobalLock(global) }.cast::<u16>();
+        if ptr.is_null() {
+            return None;
+        }
+        // SAFETY: the size of the locked allocation, in bytes.
+        let units = (unsafe { GlobalSize(global) } / 2).min(CLIPBOARD_MAX_CHARS + 1);
+        // SAFETY: `ptr` points to at least `units` UTF-16 units while locked.
+        let slice = unsafe { std::slice::from_raw_parts(ptr, units) };
+        let len = slice.iter().position(|&c| c == 0).unwrap_or(slice.len());
+        let text = (len <= CLIPBOARD_MAX_CHARS).then(|| String::from_utf16_lossy(&slice[..len]));
+        // SAFETY: unlocking what was locked above.
+        let _ = unsafe { GlobalUnlock(global) };
+        text
+    })();
+    // SAFETY: closing the clipboard this thread opened.
+    let _ = unsafe { CloseClipboard() };
+    text
 }

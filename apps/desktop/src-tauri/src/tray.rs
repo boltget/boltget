@@ -202,14 +202,12 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
                 }
             });
         }
-        "folder" => match app.path().download_dir() {
-            Ok(dir) => {
-                if let Err(e) = tauri_plugin_opener::open_path(&dir, None::<&str>) {
-                    tracing::warn!(error = %e, "could not open the downloads folder");
-                }
+        "folder" => {
+            let opened = crate::bridge::commands::open_default_folder(app, &app.state::<Bridge>());
+            if let Err(e) = opened {
+                tracing::warn!(error = ?e, "could not open the downloads folder");
             }
-            Err(e) => tracing::warn!(error = %e, "no downloads folder"),
-        },
+        }
         "quit" => shell::quit(app),
         other => {
             if let Some(mib) = other

@@ -275,21 +275,8 @@ pub(crate) enum DownloadEvent {
     },
 }
 
-/// Settings the engine keeps. Grows with the settings window.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AppSettings {
-    /// Global speed limit in bytes per second; `null` is unlimited.
-    pub(crate) speed_limit: Option<u64>,
-}
-
-impl From<&engine::Settings> for AppSettings {
-    fn from(s: &engine::Settings) -> Self {
-        Self {
-            speed_limit: s.speed_limit,
-        }
-    }
-}
+/// Every setting (the engine's and the app's own) lives in `crate::settings`.
+pub(crate) use crate::settings::AppSettings;
 
 /// Whether the engine is running.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -472,7 +459,9 @@ pub(crate) struct AddDownload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AddDefaults {
-    /// The user's Downloads folder, if Windows has one.
+    /// Where downloads go when their category has no folder: the folder
+    /// set in Settings, else the user's Downloads folder (if Windows has
+    /// one).
     pub(crate) downloads_folder: Option<String>,
     /// Folders downloads were last added to, newest first (at most three).
     pub(crate) recent_folders: Vec<String>,

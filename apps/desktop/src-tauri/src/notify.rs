@@ -8,8 +8,12 @@
 //!
 //! Clicking a toast brings the window forward with the download selected;
 //! its buttons open the file, show it in its folder, or offer the fix.
+//!
+//! The Notifications setting turns all of them off, the copied-link offer of
+//! clipboard monitoring included (Windows' own per-app switch works too).
 
 use std::collections::VecDeque;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
@@ -42,12 +46,15 @@ pub(crate) enum Action {
     Open(DownloadId),
     Reveal(DownloadId),
     Fix(DownloadId),
+    /// Open the add sheet with the links clipboard monitoring offered last.
+    Offer,
 }
 
 impl Action {
     fn encode(self) -> String {
         match self {
             Self::Show => "show".into(),
+            Self::Offer => "offer".into(),
             Self::Select(id) => format!("select:{}", id.0),
             Self::Open(id) => format!("open:{}", id.0),
             Self::Reveal(id) => format!("reveal:{}", id.0),
@@ -56,8 +63,10 @@ impl Action {
     }
 
     fn decode(s: &str) -> Option<Self> {
-        if s == "show" {
-            return Some(Self::Show);
+        match s {
+            "show" => return Some(Self::Show),
+            "offer" => return Some(Self::Offer),
+            _ => {}
         }
         let (verb, id) = s.split_once(':')?;
         let id = DownloadId(id.parse().ok()?);
@@ -259,7 +268,7 @@ pub(crate) fn start(app: &AppHandle) {
             while let Ok(Ok(n)) = tokio::time::timeout_at(until, rx.recv()).await {
                 notices.push(n);
             }
-            if window_in_use(&app) {
+            if window_in_use(&app) || !app.state::<Bridge>().settings().notifications {
                 continue;
             }
             for toast in planner.plan(&notices, Instant::now()) {
@@ -275,6 +284,16 @@ fn act(app: &AppHandle, action: Action) {
         Action::Show => shell::show(app),
         Action::Select(id) => shell::request(app, &ShellRequest::Select { id, fix: false }),
         Action::Fix(id) => shell::request(app, &ShellRequest::Select { id, fix: true }),
+        Action::Offer => {
+            let links = OFFERED
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            match links {
+                Some(links) => shell::request(app, &ShellRequest::Add { links }),
+                None => shell::show(app),
+            }
+        }
         Action::Open(id) | Action::Reveal(id) => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
@@ -293,11 +312,53 @@ fn act(app: &AppHandle, action: Action) {
     }
 }
 
+/// The links of the last clipboard offer, for its notification's button.
+static OFFERED: Mutex<Option<String>> = Mutex::new(None);
+
+/// Clipboard monitoring found links to offer: while the window is not in
+/// front, a notification offers them too (the page shows its own chip).
+pub(crate) fn offer_links(app: &AppHandle, links: &[String]) {
+    let Some(first) = links.first() else { return };
+    *OFFERED.lock().unwrap_or_else(PoisonError::into_inner) = Some(links.join("\n"));
+    if window_in_use(app) || !app.state::<Bridge>().settings().notifications {
+        return;
+    }
+    show(app, offer_toast(first, links.len()));
+}
+
+/// The notification for copied links: the first one's name and host.
+fn offer_toast(first: &str, count: usize) -> Toast {
+    let rest = first.split_once("://").map_or(first, |(_, r)| r);
+    let rest = rest.split(['?', '#']).next().unwrap_or(rest);
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let host = host.rsplit('@').next().unwrap_or(host);
+    let name = path
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty())
+        .unwrap_or(host);
+    let name = crate::clipboard::percent_decode(name);
+    let title = if count == 1 {
+        catalog::tr("notify.offer", &[("name", Arg::Text(&name))])
+    } else {
+        catalog::tr("notify.offer.many", &[("count", Arg::Number(count as u64))])
+    };
+    Toast {
+        title,
+        body: Some(host.to_owned()),
+        click: Action::Offer,
+        buttons: vec![(catalog::t("notify.offer.add"), Action::Offer)],
+    }
+}
+
 /// The first time the window closes to the tray, says so (APP-DESIGN #15).
 pub(crate) fn explain_background(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let bridge = app.state::<Bridge>();
+        if !bridge.settings().notifications {
+            return;
+        }
         let Ok(engine) = bridge.engine() else { return };
         // Only when it is known not to have been said, and is now recorded:
         // a window closing as the app exits finds the database closed.
@@ -476,6 +537,17 @@ mod tests {
             toasts[0].body.as_deref(),
             Some("The link has expired. Give it a new link to continue.")
         );
+    }
+
+    #[test]
+    fn copied_links_are_offered_by_name() {
+        let toast = offer_toast("https://user@cdn.example.com/files/a%20b.iso?sig=1", 1);
+        assert_eq!(toast.title, "Download a b.iso?");
+        assert_eq!(toast.body.as_deref(), Some("cdn.example.com"));
+        assert_eq!(toast.click, Action::Offer);
+        assert_eq!(toast.buttons[0].1, Action::Offer);
+        let toast = offer_toast("https://x.test/a.zip", 3);
+        assert_eq!(toast.title, "Download 3 copied links?");
     }
 
     #[test]

@@ -24,6 +24,11 @@ export const commands = {
 	 *  over it gives the system the hit test it needs for snap layouts.
 	 */
 	setCaptionLayout: (maximize: CaptionRect) => __TAURI_INVOKE<void>("set_caption_layout", { maximize }),
+	/**
+	 *  Quits Boltget (the palette's "Quit Boltget"; the tray has its own):
+	 *  every download checkpoints and stays paused.
+	 */
+	quitApp: () => __TAURI_INVOKE<void>("quit_app"),
 	/**  Whether the engine is running, and if not, why. */
 	engineStatus: () => __TAURI_INVOKE<EngineStatus>("engine_status"),
 	/**
@@ -71,10 +76,19 @@ export const commands = {
 	 *  Takes effect at once, without reconnecting.
 	 */
 	setSpeedLimit: (scope: LimitScope, bytesPerSecond: number | null) => typedError<null, UiError>(__TAURI_INVOKE("set_speed_limit", { scope, bytesPerSecond })),
-	/**  The settings the engine keeps. */
+	/**  Every setting, as stored (docs/APP-DESIGN.md, "Settings as built"). */
 	getSettings: () => typedError<AppSettings, UiError>(__TAURI_INVOKE("get_settings")),
-	/**  Replaces the settings; returns them as stored. */
-	updateSettings: (settings: AppSettings) => typedError<AppSettings, UiError>(__TAURI_INVOKE("update_settings", { settings })),
+	/**
+	 *  Changes some settings; returns them all as stored, or what is wrong
+	 *  with the change (a `settings.problem.*` key) without changing anything.
+	 *  The change is in effect when this returns. The global speed limit is
+	 *  changed with `set_speed_limit`.
+	 */
+	updateSettings: (patch: SettingsPatch) => typedError<AppSettings, UiError>(__TAURI_INVOKE("update_settings", { patch })),
+	/**  What Windows' proxy settings say now, for the Network section. */
+	systemProxy: () => __TAURI_INVOKE<SystemProxyInfo>("system_proxy"),
+	/**  Opens the default download folder in Explorer (the palette, the tray). */
+	openDownloadsFolder: () => typedError<null, UiError>(__TAURI_INVOKE("open_downloads_folder")),
 	/**  The file map of a running download, now (`null` if it is not running). */
 	downloadSegments: (id: DownloadId) => typedError<SegmentSpan[] | null, UiError>(__TAURI_INVOKE("download_segments", { id })),
 	/**
@@ -109,13 +123,18 @@ export const commands = {
 /** Events */
 export const events = {
 	captionMaximize: makeEvent<CaptionMaximize, CaptionMaximize>("caption-maximize"),
+	clipboardOffer: makeEvent<ClipboardOffer, ClipboardOffer>("clipboard-offer"),
 	shellRequest: makeEvent<ShellRequest, ShellRequest>("shell-request"),
 };
 
 /* Types */
 /**  What the add sheet offers before anything is typed. */
 export type AddDefaults = {
-	/**  The user's Downloads folder, if Windows has one. */
+	/**
+	 *  Where downloads go when their category has no folder: the folder
+	 *  set in Settings, else the user's Downloads folder (if Windows has
+	 *  one).
+	 */
 	downloadsFolder: string | null,
 	/**  Folders downloads were last added to, newest first (at most three). */
 	recentFolders: string[],
@@ -149,10 +168,32 @@ export type AppInfo = {
 	devTheme: string | null,
 };
 
-/**  Settings the engine keeps. Grows with the settings window. */
+/**  Every setting, as the page sees it. */
 export type AppSettings = {
-	/**  Global speed limit in bytes per second; `null` is unlimited. */
+	/**
+	 *  Global speed limit in bytes per second; `null` is unlimited. Changed
+	 *  with `set_speed_limit`.
+	 */
 	speedLimit: number | null,
+	/**  Most connections one download may use (1 to 32). */
+	maxConnections: number,
+	/**
+	 *  Where downloads go when their category has no folder; `null` is the
+	 *  Windows Downloads folder.
+	 */
+	downloadFolder: string | null,
+	/**  The categories, in sidebar order, `other` last. */
+	categories: Category[],
+	proxy: ProxySettings,
+	theme: ThemeSetting,
+	/**  Windows notifications for finished downloads and problems. */
+	notifications: boolean,
+	/**  Closing the window keeps Boltget running in the tray. */
+	closeToTray: boolean,
+	/**  Boltget starts in the tray when the user signs in to Windows. */
+	startWithWindows: boolean,
+	/**  Offer links copied to the clipboard (off by default). */
+	clipboard: boolean,
 };
 
 /**
@@ -172,6 +213,34 @@ export type CaptionRect = {
 	height: number | null,
 };
 
+/**
+ *  One category: the extensions that put a file in it, and where its
+ *  downloads go (`null`: the default download folder).
+ */
+export type Category = {
+	id: CategoryId,
+	/**  Lowercase, without dots. */
+	extensions: string[],
+	folder: string | null,
+};
+
+/**  Built-in categories by file type (APP-DESIGN #2), in sidebar order. */
+export type CategoryId = "video" | "music" | "archives" | "programs" | "documents" | 
+/**  Everything else; it has no extensions of its own. */
+"other";
+
+/**  A change to one category. */
+export type CategoryPatch = {
+	id: CategoryId,
+	/**
+	 *  As typed: separated by spaces, commas or semicolons, with or without
+	 *  a leading `.` or `*.`. Absent: unchanged.
+	 */
+	extensions: string | null,
+	/**  Absent: unchanged; empty: the default download folder. */
+	folder: string | null,
+};
+
 /**  A checksum the download is verified against. */
 export type ChecksumInfo = {
 	/**  `md5`, `sha1`, `sha256` or `sha512`. */
@@ -185,6 +254,15 @@ export type ChecksumInfo = {
 	 *  otherwise the response header the server sent it in.
 	 */
 	header: string | null,
+};
+
+/**
+ *  Downloadable links were copied (sent to the page without showing the
+ *  window).
+ */
+export type ClipboardOffer = {
+	/**  One link per line. */
+	links: string,
 };
 
 /**  Where a download would be saved, for the add sheet. */
@@ -359,6 +437,30 @@ export type ProgressItem = {
 	segments: SegmentSpan[] | null,
 };
 
+/**  How downloads reach the internet. */
+export type ProxyMode = 
+/**  Direct. */
+"none" | 
+/**  The proxy Windows is set to use (docs/ENGINE.md, "Proxies"). */
+"system" | 
+/**  The proxy in `url`. */
+"manual";
+
+/**  The proxy setting. */
+export type ProxySettings = {
+	mode: ProxyMode,
+	/**
+	 *  `host:port`, or `http://`, `https://` or `socks5://` with it. Kept
+	 *  while another mode is chosen. Never holds a password.
+	 */
+	url: string,
+	/**
+	 *  Hosts that go direct with a manual proxy, as Windows writes them:
+	 *  `*.corp.example; 10.*; <local>`.
+	 */
+	bypass: string,
+};
+
 /**
  *  A byte range of a download and how far it has been received: one run of
  *  squares in the details pane's file map.
@@ -384,6 +486,23 @@ export type ServerChecksum = {
 	header: string,
 };
 
+/**
+ *  A change to some settings; absent fields stay as they are. Empty
+ *  strings clear a folder.
+ */
+export type SettingsPatch = {
+	maxConnections?: number | null,
+	downloadFolder?: string | null,
+	/**  One category's extensions and folder (others are unchanged). */
+	category?: CategoryPatch | null,
+	proxy?: ProxySettings | null,
+	theme?: ThemeSetting | null,
+	notifications?: boolean | null,
+	closeToTray?: boolean | null,
+	startWithWindows?: boolean | null,
+	clipboard?: boolean | null,
+};
+
 /**  What the page is asked to do from outside it. */
 export type ShellRequest = 
 /**
@@ -402,8 +521,22 @@ export type ShellRequest =
  */
 { kind: "select"; id: DownloadId; fix: boolean };
 
+/**  What the Network section shows about Windows' proxy. */
+export type SystemProxyInfo = {
+	/**
+	 *  The proxy `https` links would use (`host:port`, no credentials), or
+	 *  the `http` one; `null` when Windows uses none.
+	 */
+	proxy: string | null,
+	/**  Windows uses a setup script, which Boltget ignores. */
+	script: boolean,
+};
+
 /**  The resolved theme of the page. */
 export type ThemeName = "light" | "dark";
+
+/**  The app's theme. */
+export type ThemeSetting = "system" | "light" | "dark";
 
 /**
  *  An error the UI shows by looking up `key` in the string catalog

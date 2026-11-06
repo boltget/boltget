@@ -102,6 +102,18 @@ pub(crate) fn set_window_chrome(
     Ok(())
 }
 
+/// Quits Boltget (the palette's "Quit Boltget"; the tray has its own):
+/// every download checkpoints and stays paused.
+#[tauri::command]
+#[specta::specta]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn quit_app(app: tauri::AppHandle) {
+    crate::shell::quit(&app);
+}
+
 /// Where the maximize caption button is, in CSS pixels, measured from the
 /// window's top-right corner (the title bar is anchored there).
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Type)]

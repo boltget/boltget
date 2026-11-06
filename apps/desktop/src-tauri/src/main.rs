@@ -6,12 +6,14 @@
 //! engine and its database and streams it to the page. Around the window:
 //! one instance per session (`shell`), the tray and taskbar progress
 //! (`tray`), notifications (`notify`), the named pipe the CLI talks to
-//! (`pipe`), and the end of the session (`RunEvent::Exit` below).
+//! (`pipe`), the settings (`settings`, with clipboard monitoring in
+//! `clipboard`), and the end of the session (`RunEvent::Exit` below).
 // No console window behind the app in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
 mod catalog;
+mod clipboard;
 mod commands;
 mod error;
 mod ipc;
@@ -19,6 +21,7 @@ mod mark;
 mod notify;
 mod pipe;
 mod platform;
+mod settings;
 mod shell;
 mod theme;
 mod tray;
@@ -78,6 +81,7 @@ fn main() {
         .manage(StartHidden(AtomicBool::new(launch.background)))
         .manage(PendingLinks::new(launch.links))
         .manage(bridge)
+        .manage(clipboard::Monitor::default())
         .invoke_handler(ipc.invoke_handler())
         .setup(move |app| {
             ipc.mount_events(app);
@@ -93,6 +97,9 @@ fn main() {
             prepare_main_window(&window);
             tray::install(app.handle())?;
             notify::start(app.handle());
+            clipboard::start(app.handle());
+            let handle = app.handle().clone();
+            platform::watch_system_proxy(move || handle.state::<Bridge>().system_proxy_changed());
             Ok(())
         })
         .build(tauri::generate_context!());
@@ -176,11 +183,15 @@ fn prepare_main_window(window: &WebviewWindow) {
         WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
             platform::update_caption_layout(&events);
         }
-        // The window closes to the tray (APP-DESIGN #15); quitting is in the
-        // tray's menu.
+        // The window closes to the tray (APP-DESIGN #15), unless the user
+        // turned that off; quitting is in the tray's menu.
         WindowEvent::CloseRequested { api, .. } if !shell::quitting() => {
             api.prevent_close();
-            shell::hide_to_tray(&events);
+            if events.state::<Bridge>().settings().close_to_tray {
+                shell::hide_to_tray(&events);
+            } else {
+                shell::quit(events.app_handle());
+            }
         }
         WindowEvent::Focused(true) => events.state::<Bridge>().acknowledge(),
         _ => {}

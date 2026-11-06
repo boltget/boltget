@@ -54,7 +54,9 @@ tempfile.workspace = true
 
 # Window chrome on Windows (src/platform/windows.rs): the snap-layout overlay,
 # DWM attributes, WebView2 settings and the system's animation setting and
-# small icon size. Same versions as Tauri's own.
+# small icon size; and the settings that live in Windows: the system proxy
+# (WinHTTP, the registry), the Run key and the clipboard listener. Same
+# versions as Tauri's own.
 [target.'cfg(windows)'.dependencies]
 # Native toasts with click and button callbacks (src/notify.rs); Tauri's own
 # notification plugin has no click callbacks on Windows. Same `windows` crate.
@@ -64,7 +66,13 @@ windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    "Win32_Networking_WinHttp",
+    "Win32_System_DataExchange",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
