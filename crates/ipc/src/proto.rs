@@ -17,9 +17,10 @@ use serde::{Deserialize, Serialize};
 /// The protocol version this build speaks. It changes when a message changes
 /// meaning or a request gains a field (requests are strict); a response
 /// gaining a field does not change it.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
-/// The oldest client version the owner still serves.
+/// The oldest client version the owner still serves. Version 2 added
+/// [`AddSpec::queue`]; a version 1 client simply never sends it.
 pub const OLDEST_SUPPORTED: u32 = 1;
 
 /// The key of the error an owner answers a client of another version with.
@@ -65,7 +66,8 @@ pub enum Request {
     },
     /// Every download: [`Response::Downloads`].
     List,
-    /// Starts a download: [`Response::Added`].
+    /// Starts a download, or with [`AddSpec::queue`] records it waiting in
+    /// that queue: [`Response::Added`].
     Add(AddSpec),
     /// Pauses a download after its final checkpoint: [`Response::Paused`].
     Pause {
@@ -140,6 +142,10 @@ pub struct AddSpec {
     /// Record it paused instead of starting it.
     #[serde(default)]
     pub paused: bool,
+    /// Wait in this queue (its name, ignoring case, or its id) for a turn
+    /// instead of starting now. Version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<String>,
     /// Headers, cookies and proxy.
     #[serde(default)]
     pub request: RequestSpec,
@@ -159,6 +165,7 @@ impl AddSpec {
             checksum: None,
             server_digest: true,
             paused: false,
+            queue: None,
             request: RequestSpec::default(),
         }
     }
@@ -173,6 +180,7 @@ impl fmt::Debug for AddSpec {
             .field("connections", &self.connections)
             .field("limit", &self.limit)
             .field("paused", &self.paused)
+            .field("queue", &self.queue)
             .field("request", &self.request)
             .finish_non_exhaustive()
     }
@@ -553,7 +561,7 @@ mod tests {
     fn requests_are_strict() {
         assert!(parse(json!({"type": "pause", "id": 7, "force": true})).is_err());
         assert!(
-            parse(json!({"type": "add", "url": "u", "destination": "/d", "queue": "x"})).is_err()
+            parse(json!({"type": "add", "url": "u", "destination": "/d", "priority": 1})).is_err()
         );
         assert!(
             parse(json!({"type": "resume", "id": 1, "request": {"referer": "x"}})).is_err(),
@@ -571,6 +579,7 @@ mod tests {
             .headers
             .push(("Referer".into(), "https://x.test/".into()));
         add.request.proxy = Some("direct".into());
+        add.queue = Some("Night".into());
         let mut resume = ResumeSpec::new(3);
         resume.no_checksum = true;
         for req in [

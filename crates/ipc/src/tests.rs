@@ -460,3 +460,50 @@ async fn requests_with_bad_values_are_refused_with_reasons() {
     }
     owner.stop().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_with_a_queue_waits_there_for_its_turn() {
+    let srv = TestServer::start().await;
+    let owner = Owner::start().await;
+    let night = owner.engine.create_queue("Night").await.unwrap();
+    owner.engine.stop_queue(night.id).await.unwrap();
+    owner
+        .engine
+        .start_queues(Arc::new(boltget_engine::SystemClock));
+    let mut client = owner.client().await;
+    let mut spec = AddSpec::new(srv.url("/data?size=200000&seed=5"), owner.dir());
+    spec.queue = Some("night".into());
+    let Response::Added { id } = client.request(&Request::Add(spec)).await.unwrap() else {
+        panic!("expected added")
+    };
+    // It waits in the stopped queue; the list says where.
+    let Response::Downloads { downloads } = client.request(&Request::List).await.unwrap() else {
+        panic!("expected downloads")
+    };
+    assert_eq!(downloads[0]["id"], id);
+    assert_eq!(downloads[0]["state"], "queued");
+    assert_eq!(downloads[0]["queue"], night.id.0);
+    assert_eq!(downloads[0]["queue_name"], "Night");
+    assert!(downloads[0]["queue_position"].as_i64().is_some());
+
+    // Watching a waiting download follows it once the queue starts.
+    owner.engine.start_queue(night.id).await.unwrap();
+    let seen = watch(&mut client, id).await;
+    assert_eq!(finished(&seen).state, "completed");
+
+    // An unknown queue is refused, and nothing is added.
+    let mut spec = AddSpec::new(srv.url("/data?size=1000&seed=6"), owner.dir());
+    spec.queue = Some("Nope".into());
+    match client.request(&Request::Add(spec)).await.unwrap() {
+        Response::Error { error } => {
+            assert_eq!(error.key, "error.unknown_queue");
+            assert_eq!(
+                error.error_kind(),
+                Some(boltget_engine::ErrorKind::NotFound)
+            );
+        }
+        other => panic!("expected an error, got {other:?}"),
+    }
+    assert_eq!(owner.engine.list().await.unwrap().len(), 1);
+    owner.stop().await;
+}

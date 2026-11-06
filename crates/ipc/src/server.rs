@@ -231,7 +231,7 @@ impl Ctx {
     async fn handle(&self, req: Request) -> Response {
         let result = match req {
             Request::List => self.list().await,
-            Request::Add(spec) => self.add(spec),
+            Request::Add(spec) => self.add(spec).await,
             Request::Pause { id } => self.pause(DownloadId(id)).await,
             Request::Resume(spec) => self.resume(spec).await,
             Request::Remove { id, delete_file } => self.remove(DownloadId(id), delete_file).await,
@@ -286,7 +286,7 @@ impl Ctx {
         Ok(Response::Downloads { downloads })
     }
 
-    fn add(&self, spec: AddSpec) -> Result<Response, WireError> {
+    async fn add(&self, spec: AddSpec) -> Result<Response, WireError> {
         let ctx = context(&spec.url, &spec.request)?;
         if !spec.destination.is_absolute() {
             return Err(invalid("the destination must be an absolute path"));
@@ -311,8 +311,19 @@ impl Ctx {
         if spec.overwrite {
             req = req.conflict(ConflictPolicy::Overwrite);
         }
+        let queued = match &spec.queue {
+            Some(name) => {
+                req = req.queue(self.engine.queue_named(name).await.map_err(error)?.id);
+                true
+            }
+            None => false,
+        };
+        // Without a queue it starts now, as `boltget get` always did; with
+        // one it waits for its turn there.
         let id = if spec.paused {
             self.engine.add_paused(req).map_err(error)?
+        } else if queued {
+            self.engine.enqueue(req).await.map_err(error)?
         } else {
             self.engine.add(req).id()
         };
