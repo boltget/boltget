@@ -209,6 +209,20 @@ pub enum EngineEvent {
         /// Final path.
         path: PathBuf,
     },
+    /// Queues changed: their settings or state, or which downloads they hold
+    /// and in what order, or a download's start time (read them again with
+    /// [`Engine::queues`](crate::Engine::queues) and
+    /// [`Engine::list`](crate::Engine::list)).
+    QueuesChanged,
+    /// A started queue finished: its last running download ended on its own
+    /// and nothing waits in it. Sent once per run of the queue; a front end
+    /// carries out `action` (`docs/ENGINE.md`, "Queues").
+    QueueFinished {
+        /// The queue.
+        queue: crate::queue::QueueId,
+        /// What the queue asks for.
+        action: crate::queue::FinishAction,
+    },
 }
 
 /// A point-in-time view of a download, cheap to take.

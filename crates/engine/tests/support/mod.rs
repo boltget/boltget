@@ -50,9 +50,13 @@ pub async fn get_with(engine: &Engine, req: AddRequest) -> Result<Completed, Err
 
 pub fn assert_content(done: &Completed, seed: u64, size: u64) {
     assert_eq!(done.bytes, size);
-    let got = std::fs::read(&done.path).expect("read downloaded file");
+    assert_content_at(&done.path, seed, size);
+}
+
+pub fn assert_content_at(path: &Path, seed: u64, size: u64) {
+    let got = std::fs::read(path).expect("read downloaded file");
     assert_eq!(got.len() as u64, size);
     assert_eq!(sha(&got), sha(&content(seed, size)), "content mismatch");
-    let partial = format!("{}{}", done.path.display(), boltget_engine::PARTIAL_SUFFIX);
+    let partial = format!("{}{}", path.display(), boltget_engine::PARTIAL_SUFFIX);
     assert!(!Path::new(&partial).exists(), "partial file left behind");
 }

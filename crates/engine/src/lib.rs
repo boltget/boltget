@@ -44,6 +44,7 @@ mod integrity;
 mod platform;
 mod probe;
 mod proxy;
+mod queue;
 mod ratelimit;
 mod refresh;
 mod request;
@@ -64,6 +65,10 @@ pub use integrity::{Checksum, ChecksumSource, HashAlgo};
 pub use platform::{Preallocation, available_space, is_sparse};
 pub use probe::{ProbeResult, RangeSupport, ServerDigest};
 pub use proxy::{NoProxy, Proxy, ProxyChoice, ProxyKind, ProxyRules};
+pub use queue::{
+    Clock, DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE, DEFAULT_QUEUE_NAME, DailyWindow, FinishAction,
+    MAX_CONCURRENT, MAX_NAME_CHARS, Queue, QueueChange, QueueId, QueueProblem, Shift, SystemClock,
+};
 pub use ratelimit::parse_rate;
 pub use refresh::{RefreshEvidence, RefreshOutcome};
 pub use request::{RequestContext, basic_auth, redact_url};

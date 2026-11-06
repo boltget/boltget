@@ -65,6 +65,16 @@ pub(crate) fn emit<T: Serialize>(v: &T) {
     }
 }
 
+/// Whether an engine event gets a line of its own.
+fn shown(e: &EngineEvent) -> bool {
+    !matches!(
+        e,
+        EngineEvent::Completed { .. }
+            | EngineEvent::QueuesChanged
+            | EngineEvent::QueueFinished { .. }
+    )
+}
+
 /// Runs the download, printing engine events and periodic progress.
 pub(crate) async fn run(
     handle: DownloadHandle,
@@ -76,9 +86,11 @@ pub(crate) async fn run(
     loop {
         tokio::select! {
             ev = events.recv() => match ev {
-                // The CLI prints its own richer `completed` line below, and a
-                // lagging receiver only misses events, not state.
-                Ok(EngineEvent::Completed { .. }) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                // The CLI prints its own richer `completed` line below, queue
+                // events are about no download, and a lagging receiver only
+                // misses events, not state.
+                Ok(e) if !shown(&e) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
                 Ok(e) => emit(&e),
                 Err(broadcast::error::RecvError::Closed) => break,
             },
@@ -92,7 +104,7 @@ pub(crate) async fn run(
     progress(&handle, &mut speed);
     // Flush events that arrived together with the terminal state.
     while let Ok(e) = events.try_recv() {
-        if !matches!(e, EngineEvent::Completed { .. }) {
+        if shown(&e) {
             emit(&e);
         }
     }

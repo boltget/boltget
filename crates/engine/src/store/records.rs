@@ -13,6 +13,10 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::events::{DownloadId, ErrorInfo, State};
 use crate::headers::Validators;
 use crate::integrity::{Checksum, ChecksumSource, HashAlgo};
+use crate::queue::{
+    DEFAULT_QUEUE, DEFAULT_QUEUE_NAME, DailyWindow, FinishAction, PlanQueue, PlanRow, Queue,
+    QueueId,
+};
 use crate::request::redact_url;
 use crate::segment::SegmentCheckpoint;
 
@@ -52,6 +56,10 @@ pub(crate) struct NewRecord {
     pub(crate) conflict: &'static str,
     pub(crate) max_connections: Option<u32>,
     pub(crate) speed_limit: Option<u64>,
+    /// The queue it belongs to; it goes to the end of it.
+    pub(crate) queue: QueueId,
+    /// When to start it (Unix ms), whatever its queue does.
+    pub(crate) start_at: Option<i64>,
 }
 
 /// What the probe resolved: destination, size, validators and the initial split.
@@ -105,6 +113,8 @@ pub(crate) struct Saved {
     pub(crate) speed_limit: Option<u64>,
     pub(crate) checksum: Option<(Checksum, ChecksumSource)>,
     pub(crate) segments: Vec<SegmentCheckpoint>,
+    /// When it was to start on its own.
+    pub(crate) start_at: Option<i64>,
 }
 
 impl Saved {
@@ -174,14 +184,30 @@ pub struct DownloadSummary {
     pub updated_at: u64,
     /// Completion time, Unix milliseconds.
     pub completed_at: Option<u64>,
+    /// The queue it belongs to.
+    pub queue: QueueId,
+    /// That queue's name ([`DEFAULT_QUEUE_NAME`] for the default queue
+    /// unless it was renamed).
+    pub queue_name: String,
+    /// Its place in the queue's order: smaller goes first. Not dense;
+    /// compare, do not count.
+    pub queue_position: i64,
+    /// When it starts on its own, Unix milliseconds (`docs/ENGINE.md`,
+    /// "Queues").
+    pub start_at: Option<u64>,
 }
 
 pub(crate) fn insert(conn: &Connection, r: &NewRecord) -> Result<()> {
     let now = now_ms();
     conn.execute(
         "INSERT INTO download (id, state, url, request_ctx, requested_kind, requested_dest,
-                               conflict, max_connections, speed_limit_bps, created_at, updated_at)
-         VALUES (?1, 'queued', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                               conflict, max_connections, speed_limit_bps, created_at, updated_at,
+                               queue_id, queue_position, start_at)
+         VALUES (?1, 'queued', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9,
+                 coalesce((SELECT id FROM queue WHERE id = ?10), 1),
+                 (SELECT coalesce(max(queue_position), 0) + 1 FROM download
+                  WHERE queue_id = coalesce((SELECT id FROM queue WHERE id = ?10), 1)),
+                 ?11)",
         params![
             int(r.id.0)?,
             r.url,
@@ -191,7 +217,9 @@ pub(crate) fn insert(conn: &Connection, r: &NewRecord) -> Result<()> {
             r.conflict,
             r.max_connections,
             r.speed_limit.map(int).transpose()?,
-            now
+            now,
+            int(r.queue.0)?,
+            r.start_at
         ],
     )?;
     Ok(())
@@ -412,6 +440,7 @@ pub(crate) fn load(conn: &Connection, id: DownloadId) -> Result<Option<Saved>> {
                 speed_limit: r.get::<_, Option<i64>>("speed_limit_bps")?.map(uint),
                 checksum: checksum_of(r)?,
                 segments: Vec::new(),
+                start_at: r.get("start_at")?,
             })
         })
         .optional()?;
@@ -470,11 +499,23 @@ fn summary(r: &Row<'_>) -> rusqlite::Result<DownloadSummary> {
         created_at: uint(r.get("created_at")?),
         updated_at: uint(r.get("updated_at")?),
         completed_at: r.get::<_, Option<i64>>("completed_at")?.map(uint),
+        queue: r
+            .get::<_, Option<i64>>("queue_id")?
+            .map_or(DEFAULT_QUEUE, |q| QueueId(uint(q))),
+        queue_name: r
+            .get::<_, Option<String>>("queue_name")?
+            .unwrap_or_else(|| DEFAULT_QUEUE_NAME.to_owned()),
+        queue_position: r.get("queue_position")?,
+        start_at: r.get::<_, Option<i64>>("start_at")?.map(uint),
     })
 }
 
+/// Rows with their queue's name.
+const SUMMARY_SELECT: &str = "SELECT download.*, queue.name AS queue_name
+     FROM download LEFT JOIN queue ON queue.id = download.queue_id";
+
 pub(crate) fn list(conn: &Connection) -> Result<Vec<DownloadSummary>> {
-    let mut stmt = conn.prepare_cached("SELECT * FROM download ORDER BY id")?;
+    let mut stmt = conn.prepare_cached(&format!("{SUMMARY_SELECT} ORDER BY download.id"))?;
     let rows = stmt.query_map([], summary)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
@@ -482,11 +523,196 @@ pub(crate) fn list(conn: &Connection) -> Result<Vec<DownloadSummary>> {
 pub(crate) fn get_summary(conn: &Connection, id: DownloadId) -> Result<Option<DownloadSummary>> {
     Ok(conn
         .query_row(
-            "SELECT * FROM download WHERE id = ?1",
+            &format!("{SUMMARY_SELECT} WHERE download.id = ?1"),
             [int(id.0)?],
             summary,
         )
         .optional()?)
+}
+
+// Queues ----------------------------------------------------------------------
+
+fn queue_row(r: &Row<'_>) -> rusqlite::Result<PlanQueue> {
+    let minute = |name: &str| -> rusqlite::Result<Option<u16>> {
+        Ok(r.get::<_, Option<i64>>(name)?
+            .and_then(|m| u16::try_from(m).ok()))
+    };
+    let on_finish: String = r.get("on_finish")?;
+    Ok(PlanQueue {
+        queue: Queue {
+            id: QueueId(uint(r.get("id")?)),
+            name: r.get("name")?,
+            is_default: r.get("is_default")?,
+            max_concurrent: u32::try_from(r.get::<_, i64>("max_concurrent")?.max(1)).unwrap_or(1),
+            started: r.get("started")?,
+            window: DailyWindow {
+                start: minute("start_minute")?,
+                stop: minute("stop_minute")?,
+            },
+            on_finish: FinishAction::parse(&on_finish).unwrap_or_default(),
+        },
+        window_applied: r.get("window_applied")?,
+    })
+}
+
+/// Every queue, in the order front ends show them (the default first).
+pub(crate) fn queues(conn: &Connection) -> Result<Vec<PlanQueue>> {
+    let mut stmt =
+        conn.prepare_cached("SELECT * FROM queue ORDER BY is_default DESC, sort_order, id")?;
+    let rows = stmt.query_map([], queue_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+pub(crate) fn queue(conn: &Connection, id: QueueId) -> Result<Option<PlanQueue>> {
+    Ok(conn
+        .query_row("SELECT * FROM queue WHERE id = ?1", [int(id.0)?], queue_row)
+        .optional()?)
+}
+
+/// Whether another queue than `except` is called `name` (ignoring case; the
+/// default queue is called [`DEFAULT_QUEUE_NAME`] while it has no name).
+pub(crate) fn queue_name_taken(
+    conn: &Connection,
+    name: &str,
+    except: Option<QueueId>,
+) -> Result<bool> {
+    let lower = name.to_lowercase();
+    Ok(queues(conn)?
+        .iter()
+        .any(|q| Some(q.queue.id) != except && q.queue.display_name().to_lowercase() == lower))
+}
+
+/// A new queue, last in order, started, with the default limit.
+pub(crate) fn insert_queue(conn: &Connection, name: &str) -> Result<QueueId> {
+    conn.execute(
+        "INSERT INTO queue (name, sort_order, max_concurrent)
+         VALUES (?1, (SELECT coalesce(max(sort_order), 0) + 1 FROM queue), ?2)",
+        params![name, crate::queue::DEFAULT_MAX_CONCURRENT],
+    )?;
+    Ok(QueueId(uint(conn.last_insert_rowid())))
+}
+
+/// Writes a queue's settings (everything but its id and default flag).
+/// A changed window records `now` as applied, so no time already passed
+/// acts on it.
+pub(crate) fn save_queue(
+    conn: &Connection,
+    q: &Queue,
+    window_changed: bool,
+    now: i64,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE queue SET name = ?2, max_concurrent = ?3, started = ?4, start_minute = ?5,
+                stop_minute = ?6, on_finish = ?7,
+                window_applied = CASE WHEN ?8 THEN ?9 ELSE window_applied END
+         WHERE id = ?1",
+        params![
+            int(q.id.0)?,
+            q.name,
+            q.max_concurrent,
+            q.started,
+            q.window.start,
+            q.window.stop,
+            q.on_finish.as_str(),
+            window_changed,
+            now
+        ],
+    )?;
+    Ok(())
+}
+
+/// Starts or stops a queue; `applied` records a daily time acted on.
+pub(crate) fn set_queue_started(
+    conn: &Connection,
+    id: QueueId,
+    started: Option<bool>,
+    applied: Option<i64>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE queue SET started = coalesce(?2, started),
+                window_applied = coalesce(?3, window_applied)
+         WHERE id = ?1",
+        params![int(id.0)?, started, applied],
+    )?;
+    Ok(())
+}
+
+/// Deletes a queue; its downloads go to the end of the default queue, in
+/// their order.
+pub(crate) fn delete_queue(conn: &mut Connection, id: QueueId) -> Result<()> {
+    let tx = conn.transaction()?;
+    let last: i64 = tx.query_row(
+        "SELECT coalesce(max(queue_position), 0) FROM download WHERE queue_id = ?1",
+        [int(DEFAULT_QUEUE.0)?],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "UPDATE download SET queue_position = queue_position + ?3, queue_id = ?2
+         WHERE queue_id = ?1",
+        params![int(id.0)?, int(DEFAULT_QUEUE.0)?, last],
+    )?;
+    tx.execute("DELETE FROM queue WHERE id = ?1", [int(id.0)?])?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Downloads that are not completed, by queue and in order.
+pub(crate) fn plan_rows(conn: &Connection) -> Result<Vec<PlanRow>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, state, queue_id, queue_position, start_at FROM download
+         WHERE state <> 'completed'
+         ORDER BY coalesce(queue_id, 1), queue_position, id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(PlanRow {
+            id: DownloadId(uint(r.get(0)?)),
+            state: State::parse(&r.get::<_, String>(1)?).unwrap_or(State::Failed),
+            queue: r
+                .get::<_, Option<i64>>(2)?
+                .map_or(DEFAULT_QUEUE, |q| QueueId(uint(q))),
+            position: r.get(3)?,
+            start_at: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// The queue a download belongs to.
+pub(crate) fn queue_of(conn: &Connection, id: DownloadId) -> Result<Option<QueueId>> {
+    Ok(conn
+        .query_row(
+            "SELECT queue_id FROM download WHERE id = ?1",
+            [int(id.0)?],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .optional()?
+        .map(|q| q.map_or(DEFAULT_QUEUE, |q| QueueId(uint(q)))))
+}
+
+/// Puts `order` into queue `queue` in this order (positions 1, 2, ...);
+/// downloads not named keep theirs, so completed ones stay where they were.
+pub(crate) fn set_order(conn: &mut Connection, queue: QueueId, order: &[DownloadId]) -> Result<()> {
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare_cached(
+            "UPDATE download SET queue_id = ?2, queue_position = ?3, updated_at = ?4 WHERE id = ?1",
+        )?;
+        let now = now_ms();
+        for (i, id) in order.iter().enumerate() {
+            stmt.execute(params![int(id.0)?, int(queue.0)?, int(i as u64 + 1)?, now])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Sets (or with `None` clears) when a download starts on its own.
+pub(crate) fn set_start_at(conn: &Connection, id: DownloadId, at: Option<i64>) -> Result<()> {
+    conn.execute(
+        "UPDATE download SET start_at = ?2, updated_at = ?3 WHERE id = ?1",
+        params![int(id.0)?, at, now_ms()],
+    )?;
+    Ok(())
 }
 
 /// Changes a download's own speed limit (`None`: no per-download limit).

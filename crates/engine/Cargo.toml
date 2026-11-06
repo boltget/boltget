@@ -16,6 +16,8 @@ fuzzing = []
 
 [dependencies]
 bytes.workspace = true
+# The local time zone, for queues' daily start and stop times.
+chrono.workspace = true
 directories.workspace = true
 fastrand.workspace = true
 http.workspace = true

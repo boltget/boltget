@@ -21,6 +21,9 @@ use crate::http::{self, Connector, Origin};
 use crate::integrity::{self, Checksum, ChecksumSource};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport, ServerDigest};
 use crate::proxy::ProxyChoice;
+use crate::queue::{
+    self, Clock, DEFAULT_QUEUE, Queue, QueueChange, QueueId, QueueProblem, Shift, to_ms,
+};
 use crate::ratelimit::RateLimiter;
 use crate::request::{RequestContext, redact_url};
 use crate::store::{DownloadSummary, Store, records};
@@ -71,6 +74,12 @@ pub struct AddRequest {
     /// Without [`AddRequest::checksum`], verify against a digest the server
     /// advertises (`Repr-Digest`, `Digest`, `Content-MD5`, ...). On by default.
     pub server_digest: bool,
+    /// The queue it belongs to (`None`: the default queue; an unknown queue
+    /// is the default queue too). It goes to the end of it.
+    pub queue: Option<QueueId>,
+    /// For [`Engine::enqueue`]: start it at this time, whatever its queue
+    /// does, instead of when its turn comes.
+    pub start_at: Option<SystemTime>,
 }
 
 impl AddRequest {
@@ -84,7 +93,23 @@ impl AddRequest {
             speed_limit: None,
             checksum: None,
             server_digest: true,
+            queue: None,
+            start_at: None,
         }
+    }
+
+    /// Puts it in a queue.
+    #[must_use]
+    pub fn queue(mut self, queue: QueueId) -> Self {
+        self.queue = Some(queue);
+        self
+    }
+
+    /// Starts it at `at` (with [`Engine::enqueue`]).
+    #[must_use]
+    pub fn start_at(mut self, at: SystemTime) -> Self {
+        self.start_at = Some(at);
+        self
     }
 
     /// Sets the connection count.
@@ -345,7 +370,25 @@ struct Inner {
     root: CancellationToken,
     store: Option<Store>,
     recovered: Vec<DownloadId>,
+    sched: Scheduler,
 }
+
+/// The queue scheduler's state (`docs/ENGINE.md`, "Queues").
+#[derive(Debug, Default)]
+struct Scheduler {
+    /// Set by [`Engine::start_queues`]: the scheduler runs.
+    clock: std::sync::OnceLock<Arc<dyn Clock>>,
+    /// Asks the scheduler to look again.
+    wake: tokio::sync::Notify,
+    /// Downloads whose task ended since the last pass, with their state.
+    ended: Mutex<Vec<(DownloadId, State)>>,
+    /// One scheduler pass, or one change to what waits, at a time.
+    lock: tokio::sync::Mutex<()>,
+}
+
+/// How long the scheduler sleeps at most, so a changed clock or time zone
+/// is noticed.
+const SCHEDULER_IDLE: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The download engine. Cheap to clone; all clones share state.
 ///
@@ -448,6 +491,7 @@ impl Engine {
                 root: CancellationToken::new(),
                 store,
                 recovered,
+                sched: Scheduler::default(),
             }),
         })
     }
@@ -602,11 +646,14 @@ impl Engine {
         })
     }
 
-    /// Starts a download. Requires a Tokio runtime. With a database, the download
-    /// is recorded before this returns (the write is queued in order ahead of
-    /// everything the download does later).
+    /// Starts a download now, whatever its queue does: it does not wait for a
+    /// free slot, though it takes one while it runs (`docs/ENGINE.md`,
+    /// "Queues"). Requires a Tokio runtime. With a database, the download is
+    /// recorded before this returns (the write is queued in order ahead of
+    /// everything the download does later), at the end of its queue.
     pub fn add(&self, mut req: AddRequest) -> DownloadHandle {
         req.destination = absolute(req.destination);
+        req.start_at = None;
         let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
         if let Some(store) = &self.inner.store {
             Self::record(store, id, &req);
@@ -617,15 +664,20 @@ impl Engine {
             id,
             url: redact_url(req.ctx.url()),
         });
+        if self.inner.store.is_some() {
+            let _ = self.inner.events.send(EngineEvent::QueuesChanged);
+        }
         self.spawn(shared, Job::new(req))
     }
 
     /// Records a download without starting it: it is [`State::Paused`] from
     /// the start, and [`Engine::resume`] starts it (probing first, like a
-    /// fresh download). Needs a database, since nothing else would keep it.
+    /// fresh download) or [`Engine::requeue`] lets it wait its turn. Needs a
+    /// database, since nothing else would keep it.
     pub fn add_paused(&self, mut req: AddRequest) -> Result<DownloadId> {
         let store = self.store()?;
         req.destination = absolute(req.destination);
+        req.start_at = None;
         let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
         Self::record(store, id, &req);
         store.send("paused on add", move |c| {
@@ -640,6 +692,34 @@ impl Engine {
             state: State::Paused,
             error: None,
         });
+        let _ = self.inner.events.send(EngineEvent::QueuesChanged);
+        Ok(id)
+    }
+
+    /// Records a download that waits in its queue
+    /// ([`AddRequest::queue`]): it starts when the queue is started and its
+    /// turn comes, or at [`AddRequest::start_at`] if that is set, whatever
+    /// the queue does. Only an engine whose scheduler runs
+    /// ([`Engine::start_queues`]) starts it; until then it stays
+    /// [`State::Queued`]. Needs a database. An unknown queue is an
+    /// [`Error::UnknownQueue`].
+    pub async fn enqueue(&self, mut req: AddRequest) -> Result<DownloadId> {
+        let store = self.store()?.clone();
+        if let Some(q) = req.queue {
+            store
+                .call(move |c| records::queue(c, q))
+                .await?
+                .ok_or_else(|| Error::UnknownQueue(q.to_string()))?;
+        }
+        req.destination = absolute(req.destination);
+        let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
+        Self::record(&store, id, &req);
+        let _ = self.inner.events.send(EngineEvent::Added {
+            id,
+            url: redact_url(req.ctx.url()),
+        });
+        let _ = self.inner.events.send(EngineEvent::QueuesChanged);
+        self.wake_queues();
         Ok(id)
     }
 
@@ -658,6 +738,8 @@ impl Engine {
             conflict: conflict_name(req.conflict),
             max_connections: req.connections,
             speed_limit: req.speed_limit,
+            queue: req.queue.unwrap_or(DEFAULT_QUEUE),
+            start_at: req.start_at.map(to_ms),
         };
         store.send("new download", move |c| records::insert(c, &rec));
         if let Some(c) = &req.checksum {
@@ -687,8 +769,7 @@ impl Engine {
             // Unregisters the download and signals `done` even if the task panics.
             let _finish = Finish {
                 inner,
-                id: task_shared.id,
-                done: task_shared.done.clone(),
+                shared: task_shared.clone(),
             };
             download::run(task_shared, env, job).await
         });
@@ -718,6 +799,13 @@ impl Engine {
                 id,
                 reason: "is already completed".into(),
             });
+        }
+        if saved.start_at.is_some() {
+            // It starts now; the time it was to start at is spent.
+            store
+                .call(move |c| records::set_start_at(c, id, None))
+                .await?;
+            let _ = self.inner.events.send(EngineEvent::QueuesChanged);
         }
         let mut ctx = RequestContext::from_saved(&saved.url, &saved.request_ctx)?;
         for (name, value) in opts.headers {
@@ -924,6 +1012,14 @@ impl Engine {
         let Some(store) = &self.inner.store else {
             return Err(Error::UnknownDownload(id));
         };
+        // Not while the scheduler decides what to start.
+        let _one_at_a_time = self.inner.sched.lock.lock().await;
+        if let Some(shared) = self.running(id) {
+            // The scheduler started it meanwhile.
+            shared.request_pause();
+            shared.done.cancelled().await;
+            return Ok(shared.state());
+        }
         store
             .call(move |c| {
                 let s = records::get_summary(c, id)?.ok_or(Error::UnknownDownload(id))?;
@@ -1116,8 +1212,14 @@ impl Engine {
     /// Pauses every running download (each flushes and checkpoints), then closes
     /// the database and releases the owner lock. Downloads added afterwards stop
     /// immediately.
+    ///
+    /// While the scheduler runs ([`Engine::start_queues`]), downloads running
+    /// in a started queue go back to waiting in their place instead, so the
+    /// queue continues them when an engine with a scheduler next opens the
+    /// database; the others are paused.
     pub async fn shutdown(&self) {
         let running: Vec<Arc<Shared>> = self.downloads().values().cloned().collect();
+        let requeue = self.to_requeue_on_shutdown(&running).await;
         for s in &running {
             s.request_pause();
         }
@@ -1126,26 +1228,538 @@ impl Engine {
             s.done.cancelled().await;
         }
         if let Some(store) = &self.inner.store {
+            if !requeue.is_empty() {
+                let result = store
+                    .call(move |c| {
+                        for id in requeue {
+                            if records::get_summary(c, id)?
+                                .is_some_and(|s| s.state == State::Paused)
+                            {
+                                records::set_state(c, id, State::Queued, None)?;
+                            }
+                        }
+                        Ok(())
+                    })
+                    .await;
+                if let Err(e) = result {
+                    tracing::warn!(error = %e, "could not put running downloads back in their queues");
+                }
+            }
             store.close().await;
+        }
+    }
+
+    /// The running downloads that belong to a started queue, while the
+    /// scheduler runs.
+    async fn to_requeue_on_shutdown(&self, running: &[Arc<Shared>]) -> Vec<DownloadId> {
+        let (Some(store), Some(_)) = (&self.inner.store, self.inner.sched.clock.get()) else {
+            return Vec::new();
+        };
+        let ids: Vec<DownloadId> = running.iter().map(|s| s.id).collect();
+        store
+            .call(move |c| {
+                let started: HashSet<QueueId> = records::queues(c)?
+                    .into_iter()
+                    .filter(|q| q.queue.started)
+                    .map(|q| q.queue.id)
+                    .collect();
+                let mut out = Vec::new();
+                for id in ids {
+                    if records::queue_of(c, id)?.is_some_and(|q| started.contains(&q)) {
+                        out.push(id);
+                    }
+                }
+                Ok(out)
+            })
+            .await
+            .unwrap_or_default()
+    }
+
+    // Queues ------------------------------------------------------------------
+
+    /// Every queue, the default first, then in the order they were created.
+    pub async fn queues(&self) -> Result<Vec<Queue>> {
+        let store = self.store()?;
+        let all = store.call(|c| records::queues(c)).await?;
+        Ok(all.into_iter().map(|q| q.queue).collect())
+    }
+
+    /// The queue called `name` (ignoring case; the default queue answers to
+    /// [`DEFAULT_QUEUE_NAME`](crate::DEFAULT_QUEUE_NAME) while it has no name
+    /// of its own) or with that id.
+    pub async fn queue_named(&self, name: &str) -> Result<Queue> {
+        let wanted = name.trim().to_lowercase();
+        self.queues()
+            .await?
+            .into_iter()
+            .find(|q| q.display_name().to_lowercase() == wanted || q.id.to_string() == wanted)
+            .ok_or_else(|| Error::UnknownQueue(name.trim().to_owned()))
+    }
+
+    async fn queue_by_id(&self, id: QueueId) -> Result<Queue> {
+        let store = self.store()?;
+        store
+            .call(move |c| records::queue(c, id))
+            .await?
+            .map(|q| q.queue)
+            .ok_or_else(|| Error::UnknownQueue(id.to_string()))
+    }
+
+    fn queues_changed(&self) {
+        let _ = self.inner.events.send(EngineEvent::QueuesChanged);
+        self.wake_queues();
+    }
+
+    /// Creates a queue, last in order, started, with the default limit.
+    pub async fn create_queue(&self, name: &str) -> Result<Queue> {
+        let store = self.store()?;
+        let name = queue::clean_name(name)?;
+        let id = store
+            .call(move |c| {
+                if records::queue_name_taken(c, &name, None)? {
+                    return Err(Error::QueueRefused(QueueProblem::NameTaken));
+                }
+                records::insert_queue(c, &name)
+            })
+            .await?;
+        self.queues_changed();
+        self.queue_by_id(id).await
+    }
+
+    /// Changes a queue's settings. A higher limit starts waiting downloads
+    /// at once; a lower one lets running downloads finish.
+    pub async fn update_queue(&self, id: QueueId, change: QueueChange) -> Result<Queue> {
+        let store = self.store()?;
+        let mut q = self.queue_by_id(id).await?;
+        if let Some(name) = &change.name {
+            q.name = Some(queue::clean_name(name)?);
+        }
+        if let Some(n) = change.max_concurrent {
+            q.max_concurrent = queue::check_limit(n)?;
+        }
+        let window_changed = change.window.is_some_and(|w| w != q.window);
+        if let Some(w) = change.window {
+            q.window = queue::check_window(w)?;
+        }
+        if let Some(a) = change.on_finish {
+            q.on_finish = a;
+        }
+        let now = to_ms(self.clock_now());
+        let saved = q.clone();
+        store
+            .call(move |c| {
+                if let Some(name) = &saved.name
+                    && records::queue_name_taken(c, name, Some(saved.id))?
+                {
+                    return Err(Error::QueueRefused(QueueProblem::NameTaken));
+                }
+                records::save_queue(c, &saved, window_changed, now)
+            })
+            .await?;
+        self.queues_changed();
+        Ok(q)
+    }
+
+    /// Deletes a queue. Its downloads move to the end of the default queue
+    /// in their order; running ones keep running. The default queue cannot
+    /// be deleted.
+    pub async fn delete_queue(&self, id: QueueId) -> Result<()> {
+        let store = self.store()?;
+        let q = self.queue_by_id(id).await?;
+        if q.is_default {
+            return Err(Error::QueueRefused(QueueProblem::DefaultQueue));
+        }
+        store.call(move |c| records::delete_queue(c, id)).await?;
+        self.queues_changed();
+        Ok(())
+    }
+
+    /// Starts a queue: it starts its waiting downloads in order as slots
+    /// free (while the scheduler runs).
+    pub async fn start_queue(&self, id: QueueId) -> Result<()> {
+        let store = self.store()?;
+        self.queue_by_id(id).await?;
+        store
+            .call(move |c| records::set_queue_started(c, id, Some(true), None))
+            .await?;
+        self.queues_changed();
+        Ok(())
+    }
+
+    /// Stops a queue: its running downloads stop and wait again in their
+    /// place (each writes its checkpoint first), and nothing more starts
+    /// until it is started again. Downloads with a start time still start
+    /// at it.
+    pub async fn stop_queue(&self, id: QueueId) -> Result<()> {
+        let store = self.store()?.clone();
+        self.queue_by_id(id).await?;
+        let turn = self.inner.sched.lock.lock().await;
+        let rows = store
+            .call(move |c| {
+                records::set_queue_started(c, id, Some(false), None)?;
+                records::plan_rows(c)
+            })
+            .await?;
+        let running: Vec<Arc<Shared>> = rows
+            .iter()
+            .filter(|r| r.queue == id)
+            .filter_map(|r| self.running(r.id))
+            .collect();
+        for s in &running {
+            s.request_pause();
+        }
+        let mut stopped = Vec::new();
+        for s in &running {
+            s.done.cancelled().await;
+            if s.state() == State::Paused {
+                stopped.push(s.id);
+            }
+        }
+        let back = stopped.clone();
+        store
+            .call(move |c| {
+                for id in back {
+                    records::set_state(c, id, State::Queued, None)?;
+                }
+                Ok(())
+            })
+            .await?;
+        for id in stopped {
+            let _ = self.inner.events.send(EngineEvent::StateChanged {
+                id,
+                state: State::Queued,
+                error: None,
+            });
+        }
+        drop(turn);
+        self.queues_changed();
+        Ok(())
+    }
+
+    /// The downloads of `queue` that take part in its order (all but the
+    /// completed ones), in order.
+    async fn order_of(&self, queue: QueueId) -> Result<Vec<DownloadId>> {
+        let store = self.store()?;
+        let rows = store.call(|c| records::plan_rows(c)).await?;
+        Ok(rows
+            .into_iter()
+            .filter(|r| r.queue == queue)
+            .map(|r| r.id)
+            .collect())
+    }
+
+    /// Moves downloads into `queue` (they may be in it already), before
+    /// `before` or, with `None`, to the end, keeping the order they are
+    /// given in. A running download keeps running.
+    pub async fn move_downloads(
+        &self,
+        ids: &[DownloadId],
+        queue: QueueId,
+        before: Option<DownloadId>,
+    ) -> Result<()> {
+        let store = self.store()?.clone();
+        self.queue_by_id(queue).await?;
+        let wanted = ids.to_vec();
+        let known = store
+            .call(move |c| {
+                let mut known = Vec::new();
+                for id in wanted {
+                    if records::get_summary(c, id)?.is_none() {
+                        return Err(Error::UnknownDownload(id));
+                    }
+                    known.push(id);
+                }
+                Ok(known)
+            })
+            .await?;
+        let turn = self.inner.sched.lock.lock().await;
+        let order = queue::place(&self.order_of(queue).await?, &known, before);
+        store
+            .call(move |c| records::set_order(c, queue, &order))
+            .await?;
+        drop(turn);
+        self.queues_changed();
+        Ok(())
+    }
+
+    /// Moves a download within its queue's order.
+    pub async fn shift(&self, id: DownloadId, by: Shift) -> Result<()> {
+        let store = self.store()?.clone();
+        let queue = store
+            .call(move |c| records::queue_of(c, id))
+            .await?
+            .ok_or(Error::UnknownDownload(id))?;
+        let turn = self.inner.sched.lock.lock().await;
+        let order = queue::shift(&self.order_of(queue).await?, id, by);
+        store
+            .call(move |c| records::set_order(c, queue, &order))
+            .await?;
+        drop(turn);
+        self.queues_changed();
+        Ok(())
+    }
+
+    /// Lets a stopped download (paused, failed, cancelled) wait in its
+    /// queue again, in its place, instead of starting it now as
+    /// [`Engine::resume`] does. Returns the state it is in.
+    pub async fn requeue(&self, id: DownloadId) -> Result<State> {
+        let store = self.store()?.clone();
+        if self.running(id).is_some() {
+            return Ok(State::Downloading);
+        }
+        let turn = self.inner.sched.lock.lock().await;
+        let state = store
+            .call(move |c| {
+                let s = records::get_summary(c, id)?.ok_or(Error::UnknownDownload(id))?;
+                match s.state {
+                    State::Paused | State::Failed | State::Cancelled => {
+                        records::set_state(c, id, State::Queued, None)?;
+                        Ok(State::Queued)
+                    }
+                    other => Ok(other),
+                }
+            })
+            .await?;
+        if state == State::Queued {
+            let _ = self.inner.events.send(EngineEvent::StateChanged {
+                id,
+                state,
+                error: None,
+            });
+        }
+        drop(turn);
+        self.wake_queues();
+        Ok(state)
+    }
+
+    /// Sets when a download starts on its own, whatever its queue does
+    /// (`None`: when its turn comes). A stopped download (paused, failed,
+    /// cancelled) given a time waits for it. A time already passed starts
+    /// it at once. Not for a running or completed download.
+    pub async fn set_start_at(&self, id: DownloadId, at: Option<SystemTime>) -> Result<State> {
+        let store = self.store()?.clone();
+        if self.running(id).is_some() {
+            return Err(Error::InvalidState {
+                id,
+                reason: "is running".into(),
+            });
+        }
+        let at = at.map(to_ms);
+        let turn = self.inner.sched.lock.lock().await;
+        let (state, changed) = store
+            .call(move |c| {
+                let s = records::get_summary(c, id)?.ok_or(Error::UnknownDownload(id))?;
+                if s.state == State::Completed {
+                    return Err(Error::InvalidState {
+                        id,
+                        reason: "is already completed".into(),
+                    });
+                }
+                records::set_start_at(c, id, at)?;
+                let wakes = at.is_some()
+                    && matches!(s.state, State::Paused | State::Failed | State::Cancelled);
+                if wakes {
+                    records::set_state(c, id, State::Queued, None)?;
+                    return Ok((State::Queued, true));
+                }
+                Ok((s.state, false))
+            })
+            .await?;
+        if changed {
+            let _ = self.inner.events.send(EngineEvent::StateChanged {
+                id,
+                state,
+                error: None,
+            });
+        }
+        drop(turn);
+        self.queues_changed();
+        Ok(state)
+    }
+
+    /// Turns the scheduler on: from now on started queues start their
+    /// waiting downloads as slots free, start times and daily times are
+    /// kept (a time that passed while no scheduler ran acts at once), and
+    /// [`EngineEvent::QueueFinished`] is sent. For an owner that runs for
+    /// long, such as the desktop app; a command-line download leaves it off,
+    /// so queued downloads wait for the app. Requires a Tokio runtime and a
+    /// database; later calls do nothing.
+    pub fn start_queues(&self, clock: Arc<dyn Clock>) {
+        if self.inner.store.is_none() || self.inner.sched.clock.set(clock).is_err() {
+            return;
+        }
+        let engine = self.clone();
+        tokio::spawn(async move { engine.run_scheduler().await });
+    }
+
+    /// Asks the scheduler to look again now (it does on every change it
+    /// makes itself; a test that moves its clock calls this).
+    pub fn wake_queues(&self) {
+        self.inner.sched.wake.notify_one();
+    }
+
+    fn clock_now(&self) -> SystemTime {
+        self.inner
+            .sched
+            .clock
+            .get()
+            .map_or_else(SystemTime::now, |c| c.now())
+    }
+
+    async fn run_scheduler(&self) {
+        let Some(clock) = self.inner.sched.clock.get().cloned() else {
+            return;
+        };
+        loop {
+            if self.inner.root.is_cancelled() {
+                return;
+            }
+            let wait = match self.schedule_pass(&*clock).await {
+                Ok(Some(at)) => {
+                    let ms = (at - to_ms(clock.now())).max(0);
+                    std::time::Duration::from_millis(ms.unsigned_abs()).min(SCHEDULER_IDLE)
+                }
+                Ok(None) => SCHEDULER_IDLE,
+                Err(e) => {
+                    tracing::warn!(error = %e, "the queue scheduler could not look at the queues");
+                    std::time::Duration::from_secs(5)
+                }
+            };
+            tokio::select! {
+                () = self.inner.sched.wake.notified() => {}
+                () = tokio::time::sleep(wait) => {}
+                () = self.inner.root.cancelled() => return,
+            }
+        }
+    }
+
+    /// One look at the queues: acts on daily times that came due, starts
+    /// what may start, and announces queues that finished. Returns when to
+    /// look again.
+    async fn schedule_pass(&self, clock: &dyn Clock) -> Result<Option<i64>> {
+        let store = self.store()?.clone();
+        let _one_at_a_time = self.inner.sched.lock.lock().await;
+        let ended = std::mem::take(
+            &mut *self
+                .inner
+                .sched
+                .ended
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        let now_at = clock.now();
+        let now = to_ms(now_at);
+        let offset = clock.utc_offset(now_at);
+        let (queues, rows, finished_in) = store
+            .call(move |c| {
+                let mut finished_in = Vec::new();
+                for (id, state) in ended {
+                    if queue::ended_on_its_own(state)
+                        && let Some(q) = records::queue_of(c, id)?
+                        && !finished_in.contains(&q)
+                    {
+                        finished_in.push(q);
+                    }
+                }
+                Ok((records::queues(c)?, records::plan_rows(c)?, finished_in))
+            })
+            .await?;
+        let running: HashSet<DownloadId> = self.downloads().keys().copied().collect();
+        let plan = queue::plan(&queues, &rows, &running, now, offset);
+        let mut changed = false;
+        if !plan.windows.is_empty() {
+            let steps = plan.windows.clone();
+            store
+                .call(move |c| {
+                    for s in steps {
+                        records::set_queue_started(c, s.queue, s.started, Some(s.applied))?;
+                    }
+                    Ok(())
+                })
+                .await?;
+            changed = plan.windows.iter().any(|s| s.started.is_some());
+        }
+        for &id in &plan.start {
+            self.start_waiting(id).await;
+        }
+        for q in finished_in {
+            let started = plan
+                .windows
+                .iter()
+                .rev()
+                .find(|s| s.queue == q)
+                .and_then(|s| s.started);
+            let Some(pq) = queues.iter().find(|p| p.queue.id == q) else {
+                continue;
+            };
+            if started.unwrap_or(pq.queue.started)
+                && queue::is_finished(q, &rows, &running, &plan.start)
+            {
+                tracing::info!(queue = %q, action = pq.queue.on_finish.as_str(), "a queue finished");
+                let _ = self.inner.events.send(EngineEvent::QueueFinished {
+                    queue: q,
+                    action: pq.queue.on_finish,
+                });
+            }
+        }
+        if changed {
+            let _ = self.inner.events.send(EngineEvent::QueuesChanged);
+        }
+        Ok(plan.wake_at)
+    }
+
+    /// Starts a waiting download for the scheduler. One that cannot start
+    /// (its partial file is gone, say) fails with that error, so it does not
+    /// block its queue.
+    async fn start_waiting(&self, id: DownloadId) {
+        match self.resume(id, ResumeOptions::default()).await {
+            Ok(_) => tracing::debug!(id = %id, "a queue started a download"),
+            Err(Error::InvalidState { .. }) => {}
+            Err(e) => {
+                tracing::warn!(id = %id, error = %e, "a queued download could not start");
+                let info = crate::events::ErrorInfo::from(&e);
+                let saved = info.clone();
+                if let Ok(store) = self.store() {
+                    store.send("failed start", move |c| {
+                        records::set_state(c, id, State::Failed, Some(&saved))
+                    });
+                }
+                let _ = self.inner.events.send(EngineEvent::StateChanged {
+                    id,
+                    state: State::Failed,
+                    error: Some(info),
+                });
+            }
         }
     }
 }
 
-/// Runs when a download task ends, however it ends.
+/// Runs when a download task ends, however it ends: unregisters it, tells
+/// the scheduler (a slot is free, and its queue may have finished), and
+/// signals `done`.
 struct Finish {
     inner: Arc<Inner>,
-    id: DownloadId,
-    done: CancellationToken,
+    shared: Arc<Shared>,
 }
 
 impl Drop for Finish {
     fn drop(&mut self) {
+        let id = self.shared.id;
         self.inner
             .downloads
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&self.id);
-        self.done.cancel();
+            .remove(&id);
+        if self.inner.sched.clock.get().is_some() {
+            self.inner
+                .sched
+                .ended
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push((id, self.shared.state()));
+            self.inner.sched.wake.notify_one();
+        }
+        self.shared.done.cancel();
     }
 }
 

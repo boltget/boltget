@@ -289,6 +289,8 @@ mod tests {
             conflict: "rename",
             max_connections: None,
             speed_limit: None,
+            queue: crate::queue::DEFAULT_QUEUE,
+            start_at: None,
         }
     }
 

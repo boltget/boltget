@@ -36,6 +36,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 4,
         sql: include_str!("migrations/0004_download_source.sql"),
     },
+    Migration {
+        version: 5,
+        sql: include_str!("migrations/0005_queues.sql"),
+    },
 ];
 
 /// The schema version this build writes.
@@ -191,6 +195,37 @@ mod tests {
             )
             .unwrap();
         assert_eq!(n, 0, "partial migration must not persist");
+    }
+
+    #[test]
+    fn downloads_of_an_older_database_join_the_main_queue_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut c, p) = open(dir.path());
+        migrate(&mut c, &p, &MIGRATIONS[..4]).unwrap();
+        for id in [3, 7] {
+            c.execute(
+                "INSERT INTO download (id, state, url, request_ctx, requested_kind,
+                                       requested_dest, conflict, created_at, updated_at)
+                 VALUES (?1, 'queued', 'https://x.test/a', '{}', 'dir', '/d', 'rename', 0, 0)",
+                [id],
+            )
+            .unwrap();
+        }
+        migrate(&mut c, &p, MIGRATIONS).unwrap();
+        let rows: Vec<(i64, i64)> = c
+            .prepare("SELECT queue_id, queue_position FROM download ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(rows, [(1, 3), (1, 7)]);
+        let (name, default): (Option<String>, bool) = c
+            .query_row("SELECT name, is_default FROM queue", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((name, default), (None, true));
     }
 
     #[test]
