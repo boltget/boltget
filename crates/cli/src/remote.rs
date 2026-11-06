@@ -231,6 +231,7 @@ fn add_spec(args: &GetArgs) -> Result<AddSpec, anyhow::Error> {
     spec.limit = args.run.limit.and_then(|Rate(r)| r);
     spec.checksum = args.run.checksum.as_ref().map(ToString::to_string);
     spec.server_digest = !args.no_server_digest;
+    spec.queue.clone_from(&args.queue);
     spec.request = request_spec(&args.run, Some(&args.url))?;
     Ok(spec)
 }
@@ -256,6 +257,11 @@ pub(crate) async fn get(mut conn: Connection, args: GetArgs, verbose: u8) -> u8 
         RequestContext::new(&args.url).map_or_else(|_| args.url.clone(), |c| redact_url(c.url()));
     if json {
         emit(&json!({"event": "added", "id": id.0, "url": url}));
+        if let Some(queue) = &args.queue {
+            emit(&json!({"event": "queued", "id": id.0, "queue": queue}));
+        }
+    } else if let Some(queue) = args.queue.as_ref().filter(|_| !args.run.quiet) {
+        eprintln!("Download {id} waits in queue {queue}; it starts when its turn comes");
     }
     if args.detach {
         if !json && !args.run.quiet {

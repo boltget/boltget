@@ -13,12 +13,19 @@ With --json, stdout is one JSON array with an object per download:
   {id, state, url, file_name, path, partial_path, total, downloaded,
    resumable, error: {kind, key, message} | null,
    checksum: {expected: {algo, hex}, source, actual} | null,
-   created_at, updated_at, completed_at}
+   created_at, updated_at, completed_at,
+   queue, queue_name, queue_position, start_at}
 state is one of queued, probing, downloading, retrying, verifying, paused,
 completed, failed, cancelled, corrupt. checksum.source is \"user\" or
 {\"server\": \"<header>\"}; actual is set once the file was hashed.
-downloaded counts bytes saved at the last checkpoint.
+downloaded counts bytes saved at the last checkpoint. queue is the id of the
+queue the download belongs to (1 is Main); within a queue, a smaller
+queue_position goes first (compare them, they are not counted from 1).
+start_at is when it starts on its own, or null.
 Times are Unix milliseconds; URLs have their query redacted.
+
+The table's QUEUE column shows the queue and, for a download that waits its
+turn, its place in line (Main #2).
 
 While the Boltget app runs, the list comes from it, and downloaded counts the
 bytes received so far for running downloads. Otherwise the list is read from
@@ -73,6 +80,9 @@ pub(crate) struct Row {
     total: Option<u64>,
     downloaded: u64,
     error: Option<String>,
+    queue: u64,
+    queue_name: String,
+    queue_position: i64,
 }
 
 impl Row {
@@ -85,6 +95,9 @@ impl Row {
             total: s.total,
             downloaded: s.downloaded,
             error: s.error.as_ref().map(|e| e.message.clone()),
+            queue: s.queue.0,
+            queue_name: s.queue_name.clone(),
+            queue_position: s.queue_position,
         }
     }
 
@@ -99,6 +112,10 @@ impl Row {
             total: v["total"].as_u64(),
             downloaded: v["downloaded"].as_u64().unwrap_or(0),
             error: v["error"]["message"].as_str().map(str::to_owned),
+            queue: v["queue"].as_u64().unwrap_or(1),
+            queue_name: text("queue_name")
+                .unwrap_or_else(|| boltget_engine::DEFAULT_QUEUE_NAME.into()),
+            queue_position: v["queue_position"].as_i64().unwrap_or(0),
         }
     }
 }
@@ -121,6 +138,27 @@ fn progress_cell(s: &Row) -> String {
     }
 }
 
+/// The QUEUE cell of each row: the queue's name, and for a download that
+/// waits its turn its place in line among those waiting there (`Main #2`).
+pub(crate) fn queue_cells(list: &[Row]) -> Vec<String> {
+    list.iter()
+        .map(|s| {
+            if s.state != "queued" {
+                return s.queue_name.clone();
+            }
+            let place = 1 + list
+                .iter()
+                .filter(|o| {
+                    o.state == "queued"
+                        && o.queue == s.queue
+                        && (o.queue_position, o.id) < (s.queue_position, s.id)
+                })
+                .count();
+            format!("{} #{place}", s.queue_name)
+        })
+        .collect()
+}
+
 pub(crate) fn print_table(list: &[Row]) {
     if list.is_empty() {
         println!("No downloads.");
@@ -132,17 +170,24 @@ pub(crate) fn print_table(list: &[Row]) {
         .max()
         .unwrap_or(1)
         .max(2);
+    let queues = queue_cells(list);
+    let queue_w = queues
+        .iter()
+        .map(|q| q.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(5);
     println!(
-        "{:>id_w$}  {:<14}  {:>9}  {:>10}  NAME",
-        "ID", "STATE", "PROGRESS", "SIZE"
+        "{:>id_w$}  {:<14}  {:>9}  {:>10}  {:<queue_w$}  NAME",
+        "ID", "STATE", "PROGRESS", "SIZE", "QUEUE"
     );
-    for s in list {
+    for (s, queue) in list.iter().zip(&queues) {
         let size = s
             .total
             .map_or_else(|| "?".to_owned(), |t| HumanBytes(t).to_string());
         let name = s.file_name.clone().unwrap_or_else(|| s.url.clone());
         println!(
-            "{:>id_w$}  {:<14}  {:>9}  {:>10}  {name}",
+            "{:>id_w$}  {:<14}  {:>9}  {:>10}  {queue:<queue_w$}  {name}",
             s.id.to_string(),
             s.state,
             progress_cell(s),
@@ -151,5 +196,40 @@ pub(crate) fn print_table(list: &[Row]) {
         if let Some(e) = &s.error {
             println!("{:>id_w$}  error: {e}", "");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: u64, state: &str, queue: u64, name: &str, position: i64) -> Row {
+        Row {
+            id,
+            state: state.into(),
+            url: String::new(),
+            file_name: None,
+            total: None,
+            downloaded: 0,
+            error: None,
+            queue,
+            queue_name: name.into(),
+            queue_position: position,
+        }
+    }
+
+    #[test]
+    fn waiting_downloads_show_their_place_in_line() {
+        let list = [
+            row(1, "completed", 1, "Main", 1),
+            row(2, "queued", 1, "Main", 9),
+            row(3, "downloading", 1, "Main", 3),
+            row(4, "queued", 1, "Main", 4),
+            row(5, "queued", 2, "Night", 1),
+        ];
+        assert_eq!(
+            queue_cells(&list),
+            ["Main", "Main #2", "Main", "Main #1", "Night #1"]
+        );
     }
 }

@@ -272,6 +272,17 @@ async fn without_the_app_detach_is_a_usage_error_and_commands_run_standalone() {
         "{}",
         stderr(&out)
     );
+    let out = boltget(
+        state.path(),
+        &["get", "https://example.invalid/a", "--queue", "Main"],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("--queue needs the Boltget app"),
+        "{}",
+        stderr(&out)
+    );
     let out = boltget(state.path(), &["list"]).await;
     assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
     assert_eq!(stdout(&out).trim(), "No downloads.");
@@ -288,5 +299,92 @@ async fn standalone_skips_the_app() {
     )
     .await;
     assert_eq!(out.status.code(), Some(7), "stderr: {}", stderr(&out));
+    app.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_with_a_queue_waits_for_its_turn_in_the_app() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::start(state.path()).await;
+    app.engine
+        .start_queues(Arc::new(boltget_engine::SystemClock));
+    let night = app.engine.create_queue("Night").await.unwrap();
+    app.engine.stop_queue(night.id).await.unwrap();
+    let d = dir.path().display().to_string();
+    for seed in [1, 2] {
+        let url = srv.url(&format!("/data?size=100000&seed={seed}"));
+        let out = boltget(
+            state.path(),
+            &["get", &url, "-o", &d, "--queue", "night", "--detach"],
+        )
+        .await;
+        assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+        assert!(
+            stderr(&out).contains("waits in queue night"),
+            "{}",
+            stderr(&out)
+        );
+    }
+    // The list shows each one's queue and place in line.
+    let out = boltget(state.path(), &["list"]).await;
+    let table = stdout(&out);
+    assert!(table.contains("QUEUE"), "{table}");
+    assert!(
+        table.contains("Night #1") && table.contains("Night #2"),
+        "{table}"
+    );
+    let out = boltget(state.path(), &["list", "--json"]).await;
+    let list: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(list[0]["queue_name"], "Night");
+    assert_eq!(list[0]["state"], "queued");
+
+    // A third terminal follows its download through the wait.
+    let url = srv.url("/data?size=150000&seed=3");
+    let out_path = dir.path().join("third.bin");
+    let follower = tokio::spawn({
+        let state = state.path().to_path_buf();
+        let out_path = out_path.display().to_string();
+        async move {
+            boltget(
+                &state,
+                &["get", &url, "-o", &out_path, "--queue", "Night", "--json"],
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert!(
+        !follower.is_finished(),
+        "it waits while the queue is stopped"
+    );
+    app.engine.start_queue(night.id).await.unwrap();
+    let out = tokio::time::timeout(Duration::from_secs(60), follower)
+        .await
+        .expect("in time")
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let events = lines(&out);
+    assert_eq!(events[1]["event"], "queued");
+    assert_eq!(events[1]["queue"], "Night");
+    assert_eq!(events.last().unwrap()["event"], "completed");
+    assert_eq!(std::fs::read(&out_path).unwrap(), content(3, 150_000));
+
+    // An unknown queue adds nothing.
+    let out = boltget(
+        state.path(),
+        &[
+            "get",
+            &srv.url("/data?size=10&seed=4"),
+            "-o",
+            &d,
+            "--queue",
+            "nope",
+        ],
+    )
+    .await;
+    assert_eq!(out.status.code(), Some(8), "stderr: {}", stderr(&out));
+    assert_eq!(app.engine.list().await.unwrap().len(), 3);
     app.stop().await;
 }

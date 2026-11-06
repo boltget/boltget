@@ -66,7 +66,8 @@ const JSON_HELP: &str = "\
 With --json, stdout carries one JSON object per line. Every object has an
 \"event\" field:
   added             {id, url}
-  probed            {id, info: {probe: {final_url, size, ranges, filename, ...},
+  queued            {id, queue}  with --queue: it waits there for its turn
+  probed           {id, info: {probe: {final_url, size, ranges, filename, ...},
                      path, partial_path, preallocation, initial_connections,
                      write_window}}  write_window: bytes, or null when the
                      partial file is sparse
@@ -283,6 +284,12 @@ struct GetArgs {
     /// instead of showing its progress (needs the app).
     #[arg(long, conflicts_with = "no_state")]
     detach: bool,
+
+    /// Let the download wait in this queue of the running Boltget app (its
+    /// name, or `main`) and start when its turn comes, instead of starting
+    /// now (needs the app).
+    #[arg(long, value_name = "NAME", conflicts_with = "no_state")]
+    queue: Option<String>,
 
     #[command(flatten)]
     run: RunArgs,
@@ -1004,6 +1011,13 @@ async fn main() -> ExitCode {
         eprintln!(
             "boltget: --detach needs the Boltget app running, to keep the download going after \
              boltget exits"
+        );
+        return ExitCode::from(2);
+    }
+    if matches!(&cli.command, Command::Get(a) if a.queue.is_some()) {
+        eprintln!(
+            "boltget: --queue needs the Boltget app running: queues run in the app. Start it, \
+             or leave --queue out to download now"
         );
         return ExitCode::from(2);
     }
