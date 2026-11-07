@@ -7,19 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-preview.1] - 2026-11-07
+
+The first preview of the Boltget desktop app for Windows: the download list, the add sheet, the tray, notifications, settings, the command palette and queues, with the `boltget` command line working alongside it. It installs for your account with the Windows installer below. Previews are not code-signed and do not update themselves yet.
+
 ### Added
 
-- The desktop app runs the download engine: it opens your downloads when it starts, streams their progress to the window several times a second in one batch for all of them, and continues downloads that were interrupted when the app was killed or the computer went down. Downloads you paused stay paused. While a `boltget` command-line download is using your downloads, the app waits and takes over when it finishes. The download list itself arrives in the next preview.
+- The desktop app runs the download engine: it opens your downloads when it starts, streams their progress to the window several times a second in one batch for all of them, and continues downloads that were interrupted when the app was killed or the computer went down. Downloads you paused stay paused. While a `boltget` command-line download is using your downloads, the app waits and takes over when it finishes.
 - The desktop app's download list: one calm row per download with its progress, speed and time left, grouped into Active, Queued and paused, and history by day, filtered by the sidebar's views and file-type categories and by search. Rows stay put while you work in the list. Select with the mouse or the keyboard (Shift and Ctrl work as in Explorer); Space pauses or resumes, Enter opens, Ctrl+Enter shows the file in its folder, Delete removes from the list with Undo, and Shift+Delete deletes the file after asking. Right-click for the same actions in a native menu, or switch to compact rows with Ctrl+Shift+D. It stays smooth with 500 downloads.
 - The details pane (Ctrl+I) shows the selected download in depth: large live numbers, a file map that fills square by square as each connection writes, the speed over the last minute, the connections at work, where the file is saved, its link and checksum, and a speed limit for that download alone. A download whose link expired takes a fresh link right there; a failed one says what happened in plain words, with the technical details folded away.
 - The add sheet: click Add download, press Ctrl+N or Ctrl+V, or drop a link on the window, and Boltget looks at the link before anything starts. It shows the file's name (edit it if you like), size, type, server and whether the download can resume, and says so calmly when the link is a web page, needs a sign-in, cannot be reached, is already in your list, would not fit on the drive, or would be saved under a new name because the file exists. Enter downloads. Choose the folder from the last three you used or the system's folder picker; "More options" sets connections, a speed limit, a checksum (a checksum the server sends is shown and checked anyway) and "Add paused". Paste several links, one per line, and they become a checklist with one folder for all.
-- The details pane wraps long paths and links between folders instead of in the middle of a name, and the speed chart of a fresh download fills the chart from the start, with its peak speed.
 - The desktop app lives in the tray: closing the window keeps your downloads going (it says so the first time), and the tray icon's pixel arrow lights up row by row while bytes are flowing, stays still when nothing moves or when Windows' animation effects are off, and tells you `3 active · 48.2 MiB/s · about 2 min left`. Its menu opens the app, adds links from the clipboard, pauses or resumes everything, sets a speed limit, opens your downloads folder and quits. The taskbar button shows the progress of what is downloading, yellow when it is paused and red when something needs you.
 - Notifications: a completed download says how big it was and how long it took, with Open and Show in folder; a download that failed or whose link expired says why, with Fix…. Three or more finishing within a minute become one summary, and nothing pops up while you are looking at the window. Clicking one takes you to the download.
 - One Boltget at a time: starting it again brings the window forward, and `Boltget.exe <link>` opens the add sheet with that link.
 - Downloads that are running when you log off, restart or shut down are saved and continue when Boltget starts again.
 - The `boltget` command line works together with the desktop app: while the app runs, `get`, `list`, `pause`, `resume`, `refresh`, `remove` and `config` go to it instead of stopping with "in use". `get` adds the download to the app and shows its progress in the terminal (Ctrl-C pauses it; `--detach` returns at once), `pause` reaches a download running anywhere, and several terminals can download at the same time. `--standalone` runs the download in the terminal's own process as before; a new exit code 10 means the app could not be reached or is from another release.
-
 - Settings (Ctrl+,): theme (follow Windows, light or dark), start with Windows, keep running in the tray when the window closes, notifications, the download folder, categories with their own file types and folder, connections per download, the speed limit, and the proxy: none, the one Windows uses (Boltget follows changes to it) or one you type. Everything applies as you change it, and a value that cannot work says why right under it. Search Settings with Ctrl+F.
 - The add sheet saves each file in its category's folder when you gave the category one, else in your download folder.
 - Offer copied links (off until you turn it on): copy a link to a file in another app and Boltget offers to download it, quietly, without adding anything until you say so. The clipboard is read only while this is on, and never for what password managers mark private.
@@ -34,15 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Easier to read and to use without a mouse: secondary text and the edges of text fields, drop-downs and checkboxes have more contrast in both themes; Tab moves around the window and inside dialogs without stopping on nothing; Settings starts with focus on its sections and Esc leaves it from anywhere but a text field; a screen reader hears each download's name and state, not its buttons; progress bars stay visible in Windows' contrast themes.
 - While Boltget is hidden in the tray, its window gives back most of its memory (the working set drops from about 400 MiB to about 55 MiB).
-- Downloads added in the app wait in their queue instead of all starting at once; Resume on a single download still starts it at once, while Resume all lets paused downloads wait their turn again.
 - Quitting Boltget puts downloads that were running back in their place in their queue, so they continue when Boltget starts again (a queue you stopped keeps them waiting).
-- Search downloads moved to Ctrl+F (or /); Ctrl+K opens the command palette.
 - `boltget list` now only reads your downloads, never opening them as their owner, so running it after Boltget was closed unexpectedly no longer stops the app from continuing those downloads when it starts again.
 - The name is now written Boltget, with one capital, everywhere: the CLI's messages, the website, the logo and the documentation. Commands, paths and settings (`boltget`, `BOLTGET_DATA_DIR`) do not change.
 
 ### Fixed
 
-- Ctrl+N and Add download no longer show a browser prompt asking whether Boltget may see the clipboard.
 - A very long file name that shortens to a name Windows reserves, such as `PRN` or `CON`, now gets a leading underscore like any other reserved name instead of slipping through. Found by the nightly fuzzer.
 
 ## [0.1.0] - 2026-10-31
@@ -81,5 +80,6 @@ The first release: the download engine and the `boltget` command-line downloader
 - Project policies: GPL-3.0-or-later license, contributing guide, governance, support, security policy and code of conduct.
 - GitHub configuration: issue forms, pull request template, code owners, Dependabot, label taxonomy, and workflows for PR title and documentation link checks.
 
-[Unreleased]: https://github.com/boltget/boltget/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/boltget/boltget/compare/v0.2.0-preview.1...HEAD
+[0.2.0-preview.1]: https://github.com/boltget/boltget/compare/v0.1.0...v0.2.0-preview.1
 [0.1.0]: https://github.com/boltget/boltget/releases/tag/v0.1.0
