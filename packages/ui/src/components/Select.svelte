@@ -37,6 +37,7 @@
     height: var(--control-height);
     padding: 0 calc(var(--space-2) + 22px) 0 var(--space-3);
     border: 1px solid var(--color-hairline-strong);
+    border-bottom-color: var(--color-control-stroke);
     border-radius: var(--radius-control);
     background: var(--color-raised);
     color: var(--color-text);

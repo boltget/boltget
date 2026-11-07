@@ -9,9 +9,10 @@
   --color-hairline: light-dark(color-mix(in srgb, var(--neutral-950) 8%, transparent), color-mix(in srgb, var(--neutral-0) 8%, transparent));
   --color-hairline-strong: light-dark(color-mix(in srgb, var(--neutral-950) 14%, transparent), color-mix(in srgb, var(--neutral-0) 14%, transparent));
   --color-window-border: light-dark(var(--neutral-300), var(--neutral-800));
+  --color-control-stroke: light-dark(color-mix(in srgb, var(--neutral-400) 40%, var(--neutral-500)), var(--neutral-500));
   --color-text: light-dark(var(--neutral-950), var(--neutral-50));
   --color-text-muted: light-dark(var(--neutral-600), var(--neutral-400));
-  --color-text-subtle: light-dark(var(--neutral-500), var(--neutral-500));
+  --color-text-subtle: light-dark(color-mix(in srgb, var(--neutral-500) 75%, var(--neutral-600)), color-mix(in srgb, var(--neutral-500) 40%, var(--neutral-400)));
   --color-accent: light-dark(var(--emerald-700), var(--emerald-400));
   --color-accent-hover: light-dark(var(--emerald-800), var(--emerald-300));
   --color-accent-press: light-dark(var(--emerald-900), var(--emerald-200));
@@ -31,7 +32,7 @@
   --color-mark-1: light-dark(var(--mark-light-1), var(--mark-dark-1));
   --color-mark-2: light-dark(var(--mark-light-2), var(--mark-dark-2));
   --color-progress-track: light-dark(color-mix(in srgb, var(--neutral-950) 7%, transparent), color-mix(in srgb, var(--neutral-0) 8%, transparent));
-  --color-progress-idle: light-dark(var(--neutral-400), var(--neutral-600));
+  --color-progress-idle: light-dark(color-mix(in srgb, var(--neutral-400) 40%, var(--neutral-500)), color-mix(in srgb, var(--neutral-600) 30%, var(--neutral-500)));
   --color-map-empty: light-dark(color-mix(in srgb, var(--emerald-900) 7%, transparent), color-mix(in srgb, var(--neutral-0) 7%, transparent));
   --color-map-0: light-dark(var(--emerald-400), var(--emerald-200));
   --color-map-1: light-dark(var(--emerald-500), var(--emerald-300));

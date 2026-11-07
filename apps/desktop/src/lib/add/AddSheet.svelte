@@ -886,6 +886,7 @@
     max-height: 120px;
     padding: 9px var(--space-3);
     border: 1px solid var(--color-hairline-strong);
+    border-bottom-color: var(--color-control-stroke);
     border-radius: var(--radius-control);
     background: var(--color-field);
     font-family: var(--font-mono);
@@ -1217,6 +1218,7 @@
     height: var(--control-height);
     padding: 0 var(--space-2);
     border: 1px solid var(--color-hairline-strong);
+    border-bottom-color: var(--color-control-stroke);
     border-radius: var(--radius-control);
     background: var(--color-field);
     outline: none;

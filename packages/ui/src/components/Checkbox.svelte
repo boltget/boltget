@@ -64,7 +64,7 @@
     flex: none;
     width: 16px;
     height: 16px;
-    border: 1px solid var(--color-hairline-strong);
+    border: 1px solid var(--color-control-stroke);
     border-radius: var(--radius-control);
     background: var(--color-field);
     color: var(--color-on-accent);
@@ -86,7 +86,7 @@
     opacity: 1;
   }
   .checkbox:hover input:not(:disabled) + .box {
-    border-color: var(--color-text-subtle);
+    border-color: var(--color-text-muted);
   }
   .checkbox:hover input:checked:not(:disabled) + .box {
     border-color: var(--color-accent-hover);

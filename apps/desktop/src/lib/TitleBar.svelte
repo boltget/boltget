@@ -148,6 +148,7 @@
     padding: 0 var(--space-1) 0 var(--space-2);
     gap: var(--space-2);
     border: 1px solid var(--color-hairline-strong);
+    border-bottom-color: var(--color-control-stroke);
     border-radius: var(--radius-control);
     background: var(--color-field);
     color: var(--color-text-subtle);

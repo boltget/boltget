@@ -68,10 +68,16 @@ const semantic = {
   hairline: [alpha("neutral.950", 0.08), alpha("neutral.0", 0.08)],
   "hairline-strong": [alpha("neutral.950", 0.14), alpha("neutral.0", 0.14)],
   "window-border": ["neutral.300", "neutral.800"],
+  // The boundary that identifies a control (a field's bottom edge, an empty
+  // checkbox): 3:1 against its surface (WCAG 1.4.11), like Fluent's strong
+  // control stroke.
+  "control-stroke": [mix("neutral.400", "neutral.500", 0.4), "neutral.500"],
   // Text.
   text: ["neutral.950", "neutral.50"],
   "text-muted": ["neutral.600", "neutral.400"],
-  "text-subtle": ["neutral.500", "neutral.500"],
+  // Subtle text still meets 4.5:1 on every surface and its hover, in both
+  // themes (docs/ACCESSIBILITY.md, "Contrast"); plain neutral.500 did not.
+  "text-subtle": [mix("neutral.500", "neutral.600", 0.75), mix("neutral.500", "neutral.400", 0.4)],
   // Emerald means "alive": primary button, focus, selection, progress (#23).
   accent: ["emerald.700", "emerald.400"],
   "accent-hover": ["emerald.800", "emerald.300"],
@@ -101,7 +107,8 @@ const semantic = {
   // Progress (#23, #26): a quiet track; the fill is the mark's gradient while
   // a download runs, neutral grey once it stops.
   "progress-track": [alpha("neutral.950", 0.07), alpha("neutral.0", 0.08)],
-  "progress-idle": ["neutral.400", "neutral.600"],
+  // At least 3:1 against the content and the track (WCAG 1.4.11).
+  "progress-idle": [mix("neutral.400", "neutral.500", 0.4), mix("neutral.600", "neutral.500", 0.3)],
   // The details pane's file map (BRAND.md, "Pixels on the web"): a pale,
   // faintly green ground, squares along the emerald ramp, and the square a
   // connection is writing in deep ink (mint on dark).
