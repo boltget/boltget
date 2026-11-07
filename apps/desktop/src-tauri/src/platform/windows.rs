@@ -36,9 +36,12 @@ use tauri::WebviewWindow;
 use tauri_specta::Event as _;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
-    ICoreWebView2_19, ICoreWebView2Controller, ICoreWebView2Settings3, ICoreWebView2Settings5,
+    COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ,
+    COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY, ICoreWebView2_19,
+    ICoreWebView2Controller, ICoreWebView2Settings3, ICoreWebView2Settings5,
     ICoreWebView2Settings6,
 };
+use webview2_com::PermissionRequestedEventHandler;
 use windows::Win32::Foundation::{
     COLORREF, HGLOBAL, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM,
 };
@@ -248,8 +251,29 @@ unsafe fn apply_settings(
     controller: &ICoreWebView2Controller,
     release: bool,
 ) -> windows::core::Result<()> {
+    // No browser permission prompt ever appears in the app. Reading the
+    // clipboard is allowed: Ctrl+N and "Add download" read it when the
+    // user asks (APP-DESIGN #6); without this, WebView2 asks the user
+    // whether "tauri.localhost" may see the clipboard. Everything else
+    // (camera, location, notifications, ...) is refused: the page needs
+    // none of it, and native notifications come from Rust.
+    let handler = PermissionRequestedEventHandler::create(Box::new(|_, args| {
+        let Some(args) = args else { return Ok(()) };
+        let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+        // SAFETY: `args` is the live event argument WebView2 passed in.
+        unsafe {
+            args.PermissionKind(&raw mut kind)?;
+            args.SetState(if kind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ {
+                COREWEBVIEW2_PERMISSION_STATE_ALLOW
+            } else {
+                COREWEBVIEW2_PERMISSION_STATE_DENY
+            })
+        }
+    }));
+
     // SAFETY: per this function's contract; each call sets one boolean on a
-    // settings object the wrappers keep referenced.
+    // settings object the wrappers keep referenced, and the handler is
+    // registered on the live CoreWebView2, which keeps it referenced.
     unsafe {
         let settings = controller.CoreWebView2()?.Settings()?;
         settings.SetAreDefaultContextMenusEnabled(false)?;
@@ -265,6 +289,11 @@ unsafe fn apply_settings(
         settings
             .cast::<ICoreWebView2Settings6>()?
             .SetIsSwipeNavigationEnabled(false)?;
+
+        let mut token = 0;
+        controller
+            .CoreWebView2()?
+            .add_PermissionRequested(&handler, &raw mut token)?;
     }
     Ok(())
 }
