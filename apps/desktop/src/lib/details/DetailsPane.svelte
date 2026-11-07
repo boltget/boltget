@@ -314,7 +314,7 @@
 
     <section class="block">
       <div class="label">
-        <span>{t("details.map")}</span>
+        <h3>{t("details.map")}</h3>
         <span class="note" class:ok={verified}>
           {#if verified}<Icon name="check" size={14} />{/if}{mapNote}
         </span>
@@ -336,11 +336,9 @@
     {#if running}
       <section class="block">
         <div class="label">
-          <span
-            >{samples.length >= SAMPLES
-              ? t("details.throughput")
-              : t("details.throughput.start")}</span
-          >
+          <h3>
+            {samples.length >= SAMPLES ? t("details.throughput") : t("details.throughput.start")}
+          </h3>
           {#if peak > 0}<span class="note">{t("details.peak", { speed: formatSpeed(peak) })}</span
             >{/if}
         </div>
@@ -348,7 +346,7 @@
       </section>
       {#if workers.length}
         <section class="block">
-          <div class="label"><span>{t("details.connections")}</span></div>
+          <div class="label"><h3>{t("details.connections")}</h3></div>
           <ul class="workers">
             {#each workers as w (w.id)}
               <li>
@@ -367,7 +365,7 @@
     {/if}
 
     <section class="block">
-      <div class="label"><span>{t("details.file")}</span></div>
+      <div class="label"><h3>{t("details.file")}</h3></div>
       <dl class="facts">
         {#if d.path}
           <div class="fact">
@@ -624,6 +622,11 @@
     font-size: var(--text-12);
     line-height: var(--leading-12);
     font-weight: var(--weight-medium);
+  }
+  /* Section titles are headings, so a screen reader can jump between them. */
+  .label h3 {
+    margin: 0;
+    font: inherit;
   }
   .note {
     display: inline-flex;

@@ -521,7 +521,7 @@
     <form bind:this={form} class="body" onsubmit={submit} novalidate>
       <header class="head">
         <h2 id="add-title" class="title">{t("add.title")}</h2>
-        <IconButton label={t("action.cancel")} onclick={() => cancel()}>
+        <IconButton label={t("caption.close")} onclick={() => cancel()}>
           <Icon name="close" />
         </IconButton>
       </header>
