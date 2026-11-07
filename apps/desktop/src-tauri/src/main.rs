@@ -143,13 +143,14 @@ fn init_logging() {
     }
 }
 
-/// Where the database lives: the engine's default; debug builds accept
-/// `BOLTGET_DATA_DIR`, like the CLI, so development never touches real
-/// downloads.
+/// Where the database lives: `BOLTGET_DATA_DIR`, like the CLI, else the
+/// engine's default. Development uses it so it never touches real downloads;
+/// in a release build it keeps the app and a CLI started with the same
+/// variable on one database and one pipe (and lets measurements run on
+/// scratch data, docs/APP-PERFORMANCE.md).
 fn data_dir() -> Option<PathBuf> {
-    cfg!(debug_assertions)
-        .then(|| std::env::var_os("BOLTGET_DATA_DIR"))
-        .flatten()
+    std::env::var_os("BOLTGET_DATA_DIR")
+        .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
         .or_else(boltget_engine::default_data_dir)
 }
