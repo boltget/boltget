@@ -120,4 +120,13 @@
     justify-content: flex-end;
     margin-top: var(--space-6);
   }
+  @media (forced-colors: active) {
+    .bar {
+      outline: 1px solid CanvasText;
+    }
+    .fill {
+      forced-color-adjust: none;
+      background: Highlight;
+    }
+  }
 </style>

@@ -1,4 +1,4 @@
-// Keeps Tab inside a modal dialog. A native modal <dialog> makes the page
+// Keeps Tab inside a modal dialog (and inside the window). A native modal <dialog> makes the page
 // behind it inert, but in WebView2 Tab after the last control leaves the page
 // for the host window, so one Tab stop lands nowhere and a screen reader
 // announces the document. This wraps Tab from the last control to the first
@@ -18,7 +18,7 @@ export function tabbable(root: HTMLElement): HTMLElement[] {
   );
 }
 
-/** Svelte action for a modal `<dialog>`: Tab wraps around inside it. */
+/** Svelte action for a modal `<dialog>` or the window: Tab wraps around inside it. */
 export function trapTab(dialog: HTMLElement) {
   function onkeydown(event: KeyboardEvent) {
     if (event.key !== "Tab" || event.ctrlKey || event.altKey || event.metaKey) return;

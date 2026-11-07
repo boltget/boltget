@@ -41,6 +41,7 @@
   import { setThemeSetting } from "./lib/theme";
   import TitleBar from "./lib/TitleBar.svelte";
   import Toasts from "./lib/Toasts.svelte";
+  import { trapTab } from "./lib/focus";
 
   let count = $state(0);
   /** Links from outside (a launch, the tray) waiting for the engine. */
@@ -203,7 +204,8 @@
 
 <svelte:window {onkeydown} {onpaste} {ondragover} {ondrop} />
 
-<div class="window">
+<!-- Tab wraps around the window too, rather than leaving the page for the host. -->
+<div class="window" use:trapTab>
   <TitleBar />
   <div class="body">
     {#if app.screen === "settings"}

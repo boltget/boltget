@@ -400,7 +400,13 @@
     .row.selected {
       outline: 1px solid Highlight;
     }
+    /* The system draws no backgrounds here: outline the bar and keep the
+       fill in the highlight colour, so progress stays visible. */
+    .bar {
+      outline: 1px solid CanvasText;
+    }
     .fill {
+      forced-color-adjust: none;
       background: Highlight;
     }
   }
