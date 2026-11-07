@@ -108,16 +108,13 @@
       label={app.sort === "default"
         ? t("sort.label")
         : t("sort.current", { sort: t(`sort.${app.sort}`) })}
-      pressed={app.sort !== "default"}
+      active={app.sort !== "default"}
+      aria-haspopup="menu"
       onclick={sortMenu}
     >
       <Icon name="sort" />
     </IconButton>
-    <IconButton
-      label={app.paneOpen ? t("pane.hide") : t("pane.show")}
-      pressed={app.paneOpen}
-      onclick={() => app.togglePane()}
-    >
+    <IconButton label={t("details.label")} pressed={app.paneOpen} onclick={() => app.togglePane()}>
       <Icon name="pane" />
     </IconButton>
   </span>

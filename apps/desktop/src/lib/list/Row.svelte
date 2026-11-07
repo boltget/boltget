@@ -200,7 +200,7 @@
             class="bar"
             class:live={running}
             role="progressbar"
-            aria-label={t("list.label")}
+            aria-labelledby="download-{d.id}-name"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={pct ?? undefined}

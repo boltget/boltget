@@ -112,8 +112,6 @@ export interface MessageParams {
   "sort.size": never;
   "sort.added": never;
   "density.compact": never;
-  "pane.show": never;
-  "pane.hide": never;
   "action.pause": never;
   "action.resume": never;
   "action.retry": never;

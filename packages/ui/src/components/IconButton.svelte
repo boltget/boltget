@@ -1,6 +1,8 @@
 <!--
   A square button with an icon only. `label` is required: it is the accessible
-  name and the tooltip, so an icon is never the only explanation.
+  name and the tooltip, so an icon is never the only explanation. `pressed`
+  makes it a toggle (its label must not change with the state); `active`
+  only shows that a choice behind it is not the default, as for a menu button.
 -->
 <script lang="ts">
   import type { Snippet } from "svelte";
@@ -10,10 +12,11 @@
     label: string;
     size?: "md" | "lg";
     pressed?: boolean;
+    active?: boolean;
     children: Snippet;
   }
 
-  let { label, size = "md", pressed, children, type = "button", ...rest }: Props = $props();
+  let { label, size = "md", pressed, active, children, type = "button", ...rest }: Props = $props();
 </script>
 
 <button
@@ -22,6 +25,7 @@
   aria-label={label}
   title={label}
   aria-pressed={pressed}
+  data-active={active || undefined}
   {...rest}
 >
   <span aria-hidden="true">{@render children()}</span>
@@ -62,7 +66,8 @@
     transition: none;
   }
   .icon-button:active:not(:disabled)::after,
-  .icon-button[aria-pressed="true"]::after {
+  .icon-button[aria-pressed="true"]::after,
+  .icon-button[data-active]::after {
     background: var(--color-overlay-press);
     opacity: 1;
     transition: none;
