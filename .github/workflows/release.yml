@@ -107,12 +107,12 @@ jobs:
     needs: guard
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       # Version from "packageManager" in the root package.json.
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -139,7 +139,7 @@ jobs:
           mkdir -p dist
           cp "target/x86_64-pc-windows-msvc/release/bundle/nsis/Boltget_${VERSION}_x64-setup.exe" \
             "dist/boltget-${VERSION}-windows-x64-setup.exe"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: app-windows-x64
           path: dist/*
