@@ -34,6 +34,7 @@ import type {
   UiError,
   commands,
 } from "../bindings";
+import { markListKnown } from "../lifecycle";
 import { setCategories } from "../list/categoryTable.svelte";
 import { placeOrder } from "../list/queue";
 import { DEFAULT_SETTINGS } from "../settings/model";
@@ -194,6 +195,7 @@ export class DownloadStore {
         this.queues = message.queues;
         this.countdown = message.countdown;
         this.#replaceAll(message.downloads);
+        if (message.status.state === "ready") markListKnown();
         break;
       case "queues":
         this.queues = message.queues;
