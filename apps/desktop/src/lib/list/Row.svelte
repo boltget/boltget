@@ -164,6 +164,12 @@
   }
 </script>
 
+<!--
+  A screen reader hears the name and the state or percentage when the row
+  becomes active, then the status line as its description; the pointer's
+  buttons are not part of the name, and progress ticks change nothing it
+  reads aloud (the list is not a live region).
+-->
 <div
   id="download-{d.id}"
   class="row"
@@ -178,13 +184,15 @@
   {draggable}
   role="option"
   aria-selected={selected}
+  aria-labelledby="download-{d.id}-name download-{d.id}-rest"
+  aria-describedby="download-{d.id}-status"
   aria-posinset={position}
   aria-setsize={count}
 >
   <span class="type"><Icon name={icon} /></span>
 
   <div class="text">
-    <span class="name" title={name}>{name}</span>
+    <span class="name" id="download-{d.id}-name" title={name}>{name}</span>
     {#if !compact}
       <span class="line2">
         {#if d.state !== "completed"}
@@ -200,15 +208,15 @@
             <span class="fill" style:transform="scaleX({fraction})"></span>
           </span>
         {/if}
-        <span class="status">{status}</span>
+        <span class="status" id="download-{d.id}-status">{status}</span>
       </span>
     {/if}
   </div>
 
-  {#if compact}<span class="status compact-status">{status}</span>{/if}
+  {#if compact}<span class="status compact-status" id="download-{d.id}-status">{status}</span>{/if}
 
   <span class="end">
-    <span class="rest" class:glyph={attention || d.state === "paused"}>
+    <span class="rest" id="download-{d.id}-rest" class:glyph={attention || d.state === "paused"}>
       {#if attention}<span class="sign"><Icon name="alert" size={14} /></span>{/if}
       {#if d.state === "paused"}<span class="sign muted"><Icon name="pause" size={14} /></span>{/if}
       {rest}
