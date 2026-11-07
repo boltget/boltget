@@ -11,7 +11,8 @@
     "./tokens/theme.json": "./src/tokens/theme.json",
     "./theme": "./src/theme.ts",
     "./messages": "./src/messages/index.ts",
-    "./components/*": "./src/components/*"
+    "./components/*": "./src/components/*",
+    "./eslint": "./eslint/no-literal-strings.js"
   },
   "sideEffects": [
     "**/*.css"

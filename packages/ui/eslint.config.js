@@ -4,6 +4,7 @@ import { defineConfig } from "eslint/config";
 import svelte from "eslint-plugin-svelte";
 import globals from "globals";
 import ts from "typescript-eslint";
+import { catalogRule } from "./eslint/no-literal-strings.js";
 
 export default defineConfig(
   { ignores: ["node_modules/", "dist/", "src/messages/keys.ts"] },
@@ -16,4 +17,6 @@ export default defineConfig(
     files: ["**/*.svelte", "**/*.svelte.ts"],
     languageOptions: { parserOptions: { parser: ts.parser } },
   },
+  // User-visible text comes from the string catalog (packages/ui/eslint).
+  catalogRule(["src/**/*.svelte", "src/**/*.ts"]),
 );

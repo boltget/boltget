@@ -4,6 +4,7 @@ import { defineConfig } from "eslint/config";
 import svelte from "eslint-plugin-svelte";
 import globals from "globals";
 import ts from "typescript-eslint";
+import { catalogRule } from "@boltget/ui/eslint";
 
 export default defineConfig(
   // src/lib/bindings.ts is generated from Rust (src-tauri/src/ipc.rs).
@@ -20,4 +21,6 @@ export default defineConfig(
     files: ["**/*.svelte", "**/*.svelte.ts"],
     languageOptions: { parserOptions: { parser: ts.parser } },
   },
+  // User-visible text comes from the string catalog (packages/ui/eslint).
+  catalogRule(["src/**/*.svelte", "src/**/*.ts"], ["src/lib/engine/mock.ts"]),
 );
