@@ -7,6 +7,7 @@
   again (a name taken) and answers with the same words.
 -->
 <script lang="ts">
+  import { trapTab } from "../focus";
   import Button from "@boltget/ui/components/Button.svelte";
   import Select from "@boltget/ui/components/Select.svelte";
   import TextField from "@boltget/ui/components/TextField.svelte";
@@ -140,6 +141,7 @@
 
 <dialog
   bind:this={dialog}
+  use:trapTab
   class="dialog"
   aria-labelledby="queue-title"
   onclose={() => {

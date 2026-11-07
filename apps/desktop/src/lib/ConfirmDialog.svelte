@@ -5,6 +5,7 @@
   so Enter never deletes by accident.
 -->
 <script lang="ts">
+  import { trapTab } from "./focus";
   import Button from "@boltget/ui/components/Button.svelte";
   import { t } from "@boltget/ui/messages";
   import { app } from "./app.svelte";
@@ -29,6 +30,7 @@
 
 <dialog
   bind:this={dialog}
+  use:trapTab
   class="dialog"
   aria-labelledby="confirm-title"
   aria-describedby="confirm-body"

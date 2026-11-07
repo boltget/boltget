@@ -106,6 +106,14 @@
   onMount(() => {
     void appInfo().then((i) => (info = i));
     void refreshSystemProxy();
+    // The list that had focus is gone: focus the current section, so the
+    // keyboard and a screen reader carry on in Settings (unless the palette
+    // or a link put focus on a setting).
+    void tick().then(() => {
+      if (document.activeElement === document.body || !document.activeElement) {
+        document.getElementById(`settings-nav-${app.settingsSection}`)?.focus();
+      }
+    });
   });
 
   async function refreshSystemProxy() {
@@ -261,8 +269,11 @@
 
   function onkeydown(event: KeyboardEvent) {
     if (event.key !== "Escape" || app.palette || app.adding) return;
+    // Esc in a text field puts its stored value back; elsewhere (a switch,
+    // a section, a button) it returns to the downloads.
     const el = event.target as HTMLElement | null;
-    if (el?.closest("input, textarea, select")) return;
+    if (el?.closest("textarea, input:not([type='checkbox'], [type='radio'], [type='button'])"))
+      return;
     event.preventDefault();
     app.closeSettings();
   }

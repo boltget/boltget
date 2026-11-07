@@ -6,6 +6,7 @@
   surprise.
 -->
 <script lang="ts">
+  import { trapTab } from "../focus";
   import Button from "@boltget/ui/components/Button.svelte";
   import TextField from "@boltget/ui/components/TextField.svelte";
   import { t } from "@boltget/ui/messages";
@@ -59,6 +60,7 @@
 
 <dialog
   bind:this={dialog}
+  use:trapTab
   class="dialog"
   aria-labelledby="later-title"
   aria-describedby="later-body"

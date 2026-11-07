@@ -17,7 +17,7 @@
 -->
 <script lang="ts">
   import { t } from "@boltget/ui/messages";
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { app } from "../app.svelte";
   import type { DownloadId } from "../bindings";
   import { clock } from "../clock.svelte";
@@ -122,6 +122,12 @@
 
   // Rows that left the view (removed, filtered) leave the selection too.
   let previousOrder: DownloadId[] = [];
+  // Coming back from Settings (or starting), focus would be nowhere: the list
+  // takes it, so the arrow keys work at once.
+  onMount(() => {
+    if (!document.activeElement || document.activeElement === document.body) scroller?.focus();
+  });
+
   $effect(() => {
     const current = order;
     const active = untrack(() => app.selection.active);

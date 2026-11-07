@@ -6,6 +6,7 @@
   action that turns the computer off must never happen unseen.
 -->
 <script lang="ts">
+  import { trapTab } from "../focus";
   import Button from "@boltget/ui/components/Button.svelte";
   import { t } from "@boltget/ui/messages";
   import { app } from "../app.svelte";
@@ -43,6 +44,7 @@
 
 <dialog
   bind:this={dialog}
+  use:trapTab
   class="dialog"
   role="alertdialog"
   aria-labelledby="countdown-title"

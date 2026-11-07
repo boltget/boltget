@@ -20,6 +20,7 @@
   A native modal <dialog>: it traps focus and Esc closes it.
 -->
 <script lang="ts">
+  import { trapTab } from "../focus";
   import Button from "@boltget/ui/components/Button.svelte";
   import Checkbox from "@boltget/ui/components/Checkbox.svelte";
   import IconButton from "@boltget/ui/components/IconButton.svelte";
@@ -505,6 +506,7 @@
 
 <dialog
   bind:this={dialog}
+  use:trapTab
   class="sheet"
   class:closing
   class:reduced
