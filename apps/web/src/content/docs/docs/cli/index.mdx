@@ -1,6 +1,6 @@
 ---
 title: Using the CLI
-description: Download, pause, resume, refresh links, limit speed, verify checksums and measure your network with boltget.
+description: Download, queue, pause, resume, refresh links, limit speed, verify checksums and measure your network with boltget, on its own or together with the Boltget app.
 ---
 
 Every command has a `--help` with the full list of options, and that help is the reference for your build. This page shows the common tasks.
@@ -17,6 +17,33 @@ The connection count adapts by default: a download starts with 4 connections and
 
 `--quiet` prints only the final line. `--json` prints line-delimited JSON events instead of the progress display; see [Exit codes and JSON](/docs/cli/scripting/).
 
+## Together with the Boltget app
+
+While the Boltget app is running, `boltget` works through it. `get`, `list`, `pause`, `resume`, `refresh`, `remove` and `config` go to the app over a named pipe that only your own Windows account can open, so the terminal and the window always show the same downloads. You do not need to do anything for this: when the app is not running, `boltget` downloads on its own as before.
+
+```sh
+boltget get https://example.com/file.iso            # the app downloads it, the terminal follows along
+boltget get https://example.com/file.iso --detach   # hand it to the app and return at once
+boltget pause 7                                     # pauses it wherever it runs
+```
+
+The download appears in the app's list straight away and the terminal shows its progress. Ctrl-C pauses it, and closing the terminal leaves it running in the app. Any number of terminals can work at the same time. In this mode the app's proxy setting applies rather than your shell's proxy variables; pass `--proxy` to choose one for a download.
+
+`--standalone` keeps the download in the terminal's own process and never talks to the app. While the app owns your downloads, that only works with `--state <dir>` pointing at another directory (otherwise it stops with exit code 7). If the app is running but cannot be reached, or is from another release, `boltget` stops with exit code 10 and says why; see [Exit codes and JSON](/docs/cli/scripting/).
+
+## Queues
+
+The app runs downloads in queues, each with its own number of downloads at a time. `--queue` lets a download wait for its turn there instead of starting now:
+
+```sh
+boltget get https://example.com/file.iso --queue main
+boltget get https://example.com/season-2.zip --queue Night --detach
+```
+
+The queue is named as in the app's sidebar (`main` is the default queue). The terminal shows the download waiting, then follows it once it starts; with `--detach` it returns at once. Queues live in the app, so `--queue` and `--detach` need it running.
+
+`boltget list` shows each download's queue in the QUEUE column and, for a download that waits its turn, its place in line (`Main #2`).
+
 ## Pause and resume
 
 Every download started with `boltget get` is recorded under a numeric id. Progress is saved only once the bytes are on disk, so it survives Ctrl-C, a killed process and a power cut.
@@ -30,7 +57,7 @@ boltget remove 7 --delete-file
 
 Ctrl-C pauses the running download (exit code 130). If the file changed on the server in the meantime, `resume` stops with an error instead of mixing two versions; `--restart` downloads it again.
 
-The download list lives in `%LOCALAPPDATA%\Boltget` on Windows and `$XDG_DATA_HOME/boltget` on Linux. `--state <dir>` or the `BOLTGET_DATA_DIR` variable choose another directory, and `boltget get --no-state` downloads without recording anything. One `boltget` at a time can use the list; `boltget list` works alongside.
+The download list lives in `%LOCALAPPDATA%\Boltget` on Windows and `$XDG_DATA_HOME/boltget` on Linux. `--state <dir>` or the `BOLTGET_DATA_DIR` variable choose another directory, and `boltget get --no-state` downloads without recording anything. While the app runs, it owns the list and every command goes to it. Without the app, one `boltget` at a time can download from the list; `boltget list` works alongside.
 
 ## Give an expired link a new one
 
