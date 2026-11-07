@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `boltget list` now only reads your downloads, never opening them as their owner, so running it after Boltget was closed unexpectedly no longer stops the app from continuing those downloads when it starts again.
 - The name is now written Boltget, with one capital, everywhere: the CLI's messages, the website, the logo and the documentation. Commands, paths and settings (`boltget`, `BOLTGET_DATA_DIR`) do not change.
 
+### Fixed
+
+- A very long file name that shortens to a name Windows reserves, such as `PRN` or `CON`, now gets a leading underscore like any other reserved name instead of slipping through. Found by the nightly fuzzer.
+
 ## [0.1.0] - 2026-10-31
 
 The first release: the download engine and the `boltget` command-line downloader for Windows (a Linux build is included as a preview). There is no desktop app yet. The binaries are not code-signed until v1.0; how to verify them is in `docs/BUILDING.md`.

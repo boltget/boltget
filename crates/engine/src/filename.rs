@@ -248,8 +248,17 @@ pub(crate) fn sanitize(name: &str) -> String {
     if s.is_empty() || s.chars().all(|c| c == '.') {
         return String::new();
     }
-    let s = if is_reserved(&s) { format!("_{s}") } else { s };
-    truncate_utf16(&s, MAX_COMPONENT_UTF16)
+    // Truncate before the reserved-name check: cutting a long name can leave
+    // a reserved one ("PRN" followed by 300 spaces and a letter becomes "PRN").
+    let s = truncate_utf16(&s, MAX_COMPONENT_UTF16);
+    if s.is_empty() || s.chars().all(|c| c == '.') {
+        return String::new();
+    }
+    if is_reserved(&s) {
+        format!("_{}", truncate_utf16(&s, MAX_COMPONENT_UTF16 - 1))
+    } else {
+        s
+    }
 }
 
 fn is_reserved(name: &str) -> bool {
@@ -327,6 +336,21 @@ mod tests {
 
     fn cd(s: &str) -> Option<String> {
         parse_content_disposition(s.as_bytes())
+    }
+
+    /// Found by the nightly fuzzer: truncation left a reserved name behind.
+    #[test]
+    fn truncation_cannot_leave_a_reserved_name() {
+        let long = format!("{}PRN{}x", " ".repeat(37), " ".repeat(300));
+        let name = sanitize(&long);
+        assert_eq!(name, "_PRN");
+        assert_eq!(sanitize(&name), name);
+
+        let ext = format!("PRN.{}", "a".repeat(260));
+        let name = sanitize(&ext);
+        assert!(name.starts_with("_PRN."), "{name:?}");
+        assert!(name.encode_utf16().count() <= MAX_COMPONENT_UTF16);
+        assert_eq!(sanitize(&name), name);
     }
 
     #[test]
