@@ -1,6 +1,8 @@
-# Release: builds the standalone CLI for a pushed `v*` tag and attaches it to a
-# draft GitHub Release with SHA256SUMS and build provenance. A maintainer
-# reviews the draft and publishes it. Signing comes with v1.0 (docs/RELEASE.md).
+# Release: builds the standalone CLI and the desktop app's per-user NSIS
+# installer for a pushed `v*` tag and attaches them to a draft GitHub Release
+# with SHA256SUMS and build provenance. A maintainer reviews the draft and
+# publishes it. Nothing is signed until v1.0 (docs/RELEASE.md), so the notes
+# of a 0.x or pre-release build say so.
 name: Release
 
 on:
@@ -42,6 +44,12 @@ jobs:
           fi
           if ! grep -q "^## \[$version\]" CHANGELOG.md; then
             echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
+          # The app's version comes from Cargo.toml; a "version" in the Tauri
+          # config would override it.
+          if grep -q '"version"' apps/desktop/src-tauri/tauri.conf.json; then
+            echo "apps/desktop/src-tauri/tauri.conf.json must not set a version" >&2
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -94,9 +102,52 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  app:
+    name: build (app installer, windows-x64)
+    needs: guard
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Version from "packageManager" in the root package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile --filter "@boltget/desktop..."
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+      # tauri.installer.conf.json names the binary Boltget.exe. The installer
+      # installs for the current user (%LOCALAPPDATA%\Programs\Boltget, no
+      # administrator rights) and gives its Start menu shortcut the app id
+      # app.boltget.desktop, which notifications need to say "Boltget".
+      - name: Build the installer
+        shell: bash
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          pnpm --filter @boltget/desktop installer -- --locked
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          mkdir -p dist
+          cp "target/x86_64-pc-windows-msvc/release/bundle/nsis/Boltget_${VERSION}_x64-setup.exe" \
+            "dist/boltget-${VERSION}-windows-x64-setup.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-windows-x64
+          path: dist/*
+          if-no-files-found: error
+
   publish:
     name: draft release
-    needs: [guard, build]
+    needs: [guard, build, app]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -127,8 +178,15 @@ jobs:
             on && /^## \[/ { exit }
             on && /^\[.*\]: / { exit }
             on { print }
-          ' CHANGELOG.md > notes.md
-          test -s notes.md
+          ' CHANGELOG.md > changes.md
+          test -s changes.md
+          # 0.x and pre-release builds are unsigned previews: say so first.
+          case "$VERSION" in
+            0.*|*-*) cp .github/release-preview-note.md notes.md
+                     sed -i "s/{version}/$VERSION/g" notes.md ;;
+            *) : > notes.md ;;
+          esac
+          cat changes.md >> notes.md
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -136,6 +194,9 @@ jobs:
           VERSION: ${{ needs.guard.outputs.version }}
         run: |
           prerelease=""
-          case "$VERSION" in 0.*|*-*) prerelease="--prerelease" ;; esac
+          title="Boltget $VERSION"
+          case "$VERSION" in
+            0.*|*-*) prerelease="--prerelease"; title="$title (unsigned preview)" ;;
+          esac
           gh release create "$TAG" dist/* --draft $prerelease \
-            --title "Boltget $VERSION" --notes-file notes.md --verify-tag
+            --title "$title" --notes-file notes.md --verify-tag

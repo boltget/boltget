@@ -41,12 +41,30 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "Boltget contributors",
+    "copyright": "Copyright (C) Boltget contributors. GPL-3.0-or-later.",
+    "homepage": "https://boltget.app",
+    "category": "Utility",
+    "shortDescription": "Boltget download manager",
     "icon": [
       "../../../brand/png/icon-32.png",
       "../../../brand/png/icon-128.png",
       "../../../brand/png/icon-256.png",
       "../../../brand/ico/app.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "../../../brand/ico/app.ico",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installerHooks": "installer/hooks.nsh"
+      }
+    }
   }
 }
