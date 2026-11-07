@@ -7,6 +7,7 @@ Benchmark harness. Method and published results: [docs/BENCHMARK.md](../docs/BEN
 | `targets.toml` | Versioned target list: public speed-test files and local lab scenarios |
 | `idm-compare.ps1` | Boltget vs Internet Download Manager, interleaved, on the same targets (Windows) |
 | `results/<date>-<what>/` | Raw data of published runs: every run, the summary, the machine and tool settings |
+| `app/` | The desktop app's start-up, memory and smoothness measurements ([docs/APP-PERFORMANCE.md](../docs/APP-PERFORMANCE.md)) |
 
 ## Boltget only
 
