@@ -271,7 +271,7 @@ The fifth step of v0.2 (2026-11-04) built #13 to #16 and the app's life around i
 - Native toasts, built with `tauri-winrt-notification` (Tauri's own notification plugin cannot report clicks on Windows). *Completed*: the file name, then `420 MiB in 7.9 s` when this session saw the whole download (only the size when it continued from a checkpoint, where the time of this run alone would mislead), with Open and Show in folder. *Needs attention* (failed, link expired, damaged): the name and the catalog's sentence for the reason, with Fix…. Clicking a toast brings the window forward with the download selected and the details pane open; Fix… on an expired link opens its "Refresh link" field.
 - **No spam.** Notices that arrive within 1.5 s of each other are one moment. Three or more completions within a minute become one summary (`5 downloads finished`, two names and "and 3 more"), and further completions in that minute add no toast; three or more problems at once become one summary too. Nothing is shown while the window is visible and focused, since the list says it already, and nothing for what the user did (a pause is not a notice). Windows holds toasts back during Focus sessions and Do not disturb by itself.
 - There was no setting to turn them off in this step; Settings added one (see [Settings, the palette and shortcuts as built](#settings-the-palette-and-shortcuts-as-built)). Windows' per-app notification switch works too.
-- **Development builds** show toasts as "Windows PowerShell": Windows shows toasts only for an app id it knows, and only the installer's Start menu shortcut registers Boltget's (`app.boltget.desktop`). Clicking an old toast in the notification centre after it left the screen does not reach the app (that needs a COM activator, later).
+- **Development builds** show toasts as "Windows PowerShell": Windows shows toasts only for an app id it knows, and only the installer's Start menu shortcut registers Boltget's (`app.boltget.desktop`). *Checked with the 0.2.0-preview.1 installer (2026-11-07): the installed app's toasts show as "Boltget" with its icon.* Clicking an old toast in the notification centre after it left the screen does not reach the app (that needs a COM activator, later).
 
 **The app around its window (#15)**
 - **Close goes to the tray** (unless Settings says otherwise, from step 6); the first time a toast says so ("Boltget is still running. Downloads go on in the background. Quit from the tray icon."), recorded in the database so it is said once. Quit is in the tray's menu. Destroying the WebView after some minutes hidden is not done yet; the hidden page gets no batches, as before.
@@ -346,6 +346,18 @@ The seventh step of v0.2 (2026-11-06) built basic queues: the sidebar's queues (
 - **Development builds never sleep or shut down**: the action is behind a `Power` trait, and debug builds use one that only logs it (tests use one that records it). Release builds call Windows (`SetSuspendState` for sleep, `InitiateShutdownW` with a planned reason for shut down, after enabling the shutdown privilege); elsewhere these are refused, as the app is Windows-only for now.
 
 **The palette** offers, for each queue, Start or Stop queue, its settings and Go to it, plus New queue; for the selection, Start now, Start later… and Move to each other queue.
+
+## Accessibility, performance and the preview installer (step 8)
+
+The eighth and last step of v0.2 (2026-11-07) checked the whole app rather than adding screens. Results and method are in [ACCESSIBILITY.md](ACCESSIBILITY.md) and [APP-PERFORMANCE.md](APP-PERFORMANCE.md); the installer is in [RELEASE.md](RELEASE.md#installer). What it changed in the app:
+
+- **Strings.** A lint rule fails on user-visible literals ([TECH-STACK.md, ADR-015](TECH-STACK.md#adr-015-english-only-product-with-a-central-string-catalog)).
+- **Contrast.** `text-subtle` is darker in light and lighter in dark, so it is 4.5:1 on every surface and its hover; a new `control-stroke` token gives text fields and drop-downs a Fluent-style strong bottom edge and empty checkboxes a 3:1 outline; a stopped progress bar's grey is 3:1 against its track.
+- **Focus.** Tab wraps inside the window and inside every modal dialog instead of leaving the page for one empty stop; Settings puts focus on its current section, and the list takes focus again when it comes back; Esc leaves Settings from a switch or a drop-down too.
+- **Names.** A row is named by its file and state ("ubuntu.iso 42%") with the status line as its description, so its hover buttons and changing numbers stay out of what a screen reader says when the row becomes active; each progress bar is named by its file. The header's details toggle keeps one label ("Details") and shows its state as pressed; the sort button announces its menu. The add sheet's × is "Close". The details pane's section titles are headings.
+- **High contrast.** Progress bars and the countdown's bar are drawn with the system's highlight colour and an outline.
+- **No browser prompts.** WebView2 asked whether the page may read the clipboard the first time `Ctrl+N` read it; the app now answers every WebView2 permission request itself: the clipboard yes, anything else no.
+- **Memory in the tray.** While the window is hidden, the WebView runs at its low memory target.
 
 ## Resolved conflicts in the design documents
 

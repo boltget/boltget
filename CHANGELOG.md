@@ -27,9 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Queues: every download waits its turn in a queue, Main unless you choose another, and a queue runs a set number of downloads at once (three to start with), starting the next one in line as soon as one finishes, fails or is paused. Make more queues with the + next to Queues in the sidebar; each shows how many downloads it holds. A queue's view is its order: drag downloads to a new place, or move the selection with Alt+↑, Alt+↓, Alt+Home and Alt+End, and drag downloads onto another queue in the sidebar to move them there. Stop a queue and its running downloads go back to waiting in their place; start it and they continue. A queue can start and stop on its own at a time of day, and put the computer to sleep or shut it down when it finishes, after 60 seconds you can cancel.
 - Start later: choose a date and time in the add sheet ("More options") or with "Start later…" on any waiting or paused download, and it starts then, even if its queue is stopped. The Scheduled view lists them; a time that passed while Boltget was closed starts the download when Boltget opens.
 - `boltget get --queue <name>` adds a download to a queue of the running app, where it waits for its turn while the terminal follows it. `boltget list` shows each download's queue and its place in line, and `--json` adds `queue`, `queue_name`, `queue_position` and `start_at`.
+- A Windows installer for the desktop app: it installs Boltget for your account without administrator rights, with a Start menu entry, so notifications say "Boltget". Uninstalling removes everything it added, and your downloads list too if you tick "Delete the application data"; downloaded files always stay. Previews are not code-signed yet, so Windows SmartScreen may warn before it runs.
+- `BOLTGET_DATA_DIR` now chooses where the desktop app keeps your downloads list in every build, as it does for the command line, so the app and a `boltget` started with the same variable work on the same list.
 
 ### Changed
 
+- Easier to read and to use without a mouse: secondary text and the edges of text fields, drop-downs and checkboxes have more contrast in both themes; Tab moves around the window and inside dialogs without stopping on nothing; Settings starts with focus on its sections and Esc leaves it from anywhere but a text field; a screen reader hears each download's name and state, not its buttons; progress bars stay visible in Windows' contrast themes.
+- While Boltget is hidden in the tray, its window gives back most of its memory (the working set drops from about 400 MiB to about 55 MiB).
 - Downloads added in the app wait in their queue instead of all starting at once; Resume on a single download still starts it at once, while Resume all lets paused downloads wait their turn again.
 - Quitting Boltget puts downloads that were running back in their place in their queue, so they continue when Boltget starts again (a queue you stopped keeps them waiting).
 - Search downloads moved to Ctrl+F (or /); Ctrl+K opens the command palette.
@@ -38,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ctrl+N and Add download no longer show a browser prompt asking whether Boltget may see the clipboard.
 - A very long file name that shortens to a name Windows reserves, such as `PRN` or `CON`, now gets a leading underscore like any other reserved name instead of slipping through. Found by the nightly fuzzer.
 
 ## [0.1.0] - 2026-10-31

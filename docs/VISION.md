@@ -71,6 +71,8 @@ These are things we have consciously decided not to do, at least for v1. Some ma
 | Installer size | Size of the signed installer, excluding on-demand sidecars | Design target: under 15 MB |
 | Price and honesty | Cost, ads, nags | Free, none, none |
 
+The desktop app's first measurements (v0.2: start-up, idle memory, installer size, smoothness) are in [APP-PERFORMANCE.md](APP-PERFORMANCE.md).
+
 Two rules apply to every number above:
 
 - **Design targets are labelled as such.** Where we do not yet have data, the target is a direction, not a promise. Once v0.1 benchmarks exist, targets get replaced with measured baselines.

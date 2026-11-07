@@ -2,6 +2,8 @@
 
 This page records how Boltget's download times are measured and the results of each published run, including the comparison with Internet Download Manager (IDM). The plan behind it is in [ENGINE.md, Benchmarks plan](ENGINE.md#benchmarks-plan-vs-idm); the harness is in [`bench/`](../bench/README.md).
 
+The desktop app's own footprint (start-up, memory, installer size, smoothness) is measured separately, in [APP-PERFORMANCE.md](APP-PERFORMANCE.md).
+
 Every number here is a measurement from the run it belongs to, with the raw data in the repository. Nothing is estimated or rounded in Boltget's favour. A difference is called a difference only when the run-to-run spread of the two tools does not overlap.
 
 ## Method

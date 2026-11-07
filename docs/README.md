@@ -27,6 +27,8 @@ Design documents for Boltget. They define what we are building and how; code tha
 |---|---|
 | [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) | Restraint, density, motion, themes, accessibility, keyboard, copy and strings |
 | [APP-DESIGN.md](APP-DESIGN.md) | The desktop app screen by screen: window, add flow, details, tray, notifications, settings, visual system, native Windows behaviour |
+| [ACCESSIBILITY.md](ACCESSIBILITY.md) | How the desktop app meets WCAG 2.2 AA, screen by screen, how it was checked, contrast ratios, what is open |
+| [APP-PERFORMANCE.md](APP-PERFORMANCE.md) | The desktop app's start-up time, memory, smoothness and installer size against the VISION targets, with the method |
 | [WEBSITE.md](WEBSITE.md) | boltget.app structure, hero concept, performance budget, OG images, hosting |
 | [../brand/BRAND.md](../brand/BRAND.md) | Visual identity: icon, colors, typography, tokens |
 
