@@ -35,7 +35,9 @@ use std::sync::{Mutex, Once, PoisonError};
 use tauri::WebviewWindow;
 use tauri_specta::Event as _;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
-    ICoreWebView2Controller, ICoreWebView2Settings3, ICoreWebView2Settings5, ICoreWebView2Settings6,
+    COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+    ICoreWebView2_19, ICoreWebView2Controller, ICoreWebView2Settings3, ICoreWebView2Settings5,
+    ICoreWebView2Settings6,
 };
 use windows::Win32::Foundation::{
     COLORREF, HGLOBAL, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM,
@@ -198,6 +200,44 @@ fn configure_webview(window: &WebviewWindow) {
     });
     if let Err(error) = queued {
         warn("could not reach the webview", error);
+    }
+}
+
+/// Asks WebView2 to use as little memory as it can while the window is
+/// hidden in the tray, and to return to normal when it is shown
+/// (docs/APP-PERFORMANCE.md). The page keeps running either way.
+pub(crate) fn set_low_memory(window: &WebviewWindow, low: bool) {
+    let queued = window.with_webview(move |webview| {
+        // SAFETY: Tauri runs this on the main thread with the webview's live
+        // controller; see `apply_memory_target`.
+        if let Err(error) = unsafe { apply_memory_target(&webview.controller(), low) } {
+            warn("could not set the WebView2 memory target", error);
+        }
+    });
+    if let Err(error) = queued {
+        warn("could not reach the webview", error);
+    }
+}
+
+/// # Safety
+///
+/// Must be called on the thread that created `controller`, while it is alive.
+unsafe fn apply_memory_target(
+    controller: &ICoreWebView2Controller,
+    low: bool,
+) -> windows::core::Result<()> {
+    let level = if low {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+    } else {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+    };
+    // SAFETY: per this function's contract; one property on the live
+    // CoreWebView2, through an interface every supported runtime has.
+    unsafe {
+        controller
+            .CoreWebView2()?
+            .cast::<ICoreWebView2_19>()?
+            .SetMemoryUsageTargetLevel(level)
     }
 }
 

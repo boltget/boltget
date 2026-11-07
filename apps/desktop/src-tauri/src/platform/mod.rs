@@ -11,8 +11,8 @@ mod windows;
 #[cfg(windows)]
 pub(crate) use self::windows::{
     ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
-    set_caption_layout, set_chrome, shut_down, sleep, small_icon_size, system_proxy,
-    update_caption_layout, watch_clipboard, watch_system_proxy,
+    set_caption_layout, set_chrome, set_low_memory, shut_down, sleep, small_icon_size,
+    system_proxy, update_caption_layout, watch_clipboard, watch_system_proxy,
 };
 
 #[cfg(not(windows))]
@@ -26,6 +26,7 @@ mod other {
     pub(crate) fn set_chrome(_window: &WebviewWindow, _dark: bool, _border: [u8; 3]) {}
     pub(crate) fn set_caption_layout(_window: &WebviewWindow, _maximize: CaptionRect) {}
     pub(crate) fn update_caption_layout(_window: &WebviewWindow) {}
+    pub(crate) fn set_low_memory(_window: &WebviewWindow, _low: bool) {}
     pub(crate) fn small_icon_size() -> u32 {
         32
     }
@@ -78,6 +79,6 @@ mod other {
 #[cfg(not(windows))]
 pub(crate) use self::other::{
     ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
-    set_caption_layout, set_chrome, shut_down, sleep, small_icon_size, system_proxy,
-    update_caption_layout, watch_clipboard, watch_system_proxy,
+    set_caption_layout, set_chrome, set_low_memory, shut_down, sleep, small_icon_size,
+    system_proxy, update_caption_layout, watch_clipboard, watch_system_proxy,
 };

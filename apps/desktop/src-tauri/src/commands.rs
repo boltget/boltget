@@ -67,6 +67,7 @@ pub(crate) fn stays_hidden(window: &WebviewWindow) -> bool {
 
 /// Brings the main window to the front: a second launch, or the fallback.
 pub(crate) fn reveal(window: &WebviewWindow) {
+    crate::platform::set_low_memory(window, false);
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();

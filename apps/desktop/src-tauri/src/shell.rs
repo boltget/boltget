@@ -109,6 +109,7 @@ pub(crate) fn show(app: &AppHandle) {
 /// notification says where Boltget went.
 pub(crate) fn hide_to_tray(window: &WebviewWindow) {
     let _ = window.hide();
+    crate::platform::set_low_memory(window, true);
     let app = window.app_handle();
     app.state::<Bridge>().visible(false);
     crate::notify::explain_background(app);
