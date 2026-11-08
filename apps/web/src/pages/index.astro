@@ -288,9 +288,9 @@ const builtinItems = [
   /* Scroll reveals (only when the head script set .reveal). */
   :global(.reveal [data-reveal]) {
     transition:
-      opacity 0.9s var(--ease-out),
-      transform 0.9s var(--ease-out),
-      filter 0.9s var(--ease-out);
+      opacity 0.6s var(--ease-out),
+      transform 0.6s var(--ease-out),
+      filter 0.6s var(--ease-out);
   }
   :global(.reveal [data-reveal]:not(.in)) {
     opacity: 0;
@@ -337,7 +337,7 @@ const builtinItems = [
           io.unobserve(e.target);
         }
       },
-      { rootMargin: "0px 0px -8% 0px" },
+      { rootMargin: "0px 0px -4% 0px" },
     );
     for (const b of blocks) io.observe(b);
   }
