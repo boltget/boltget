@@ -10,7 +10,7 @@ Boltget collects nothing about you by default. This page says exactly what each 
 - No cookies, no analytics, no tracking scripts, no advertising.
 - No third-party requests: fonts, images and scripts are served from boltget.app itself.
 - Docs search runs in your browser on a prebuilt index. What you type is not sent anywhere.
-- The site is static files on a hosting provider, which may keep standard request logs (IP address, time, page requested) for security and operations. Boltget does not use them to identify or track visitors. The provider will be named here when the site launches.
+- The site is static files on a hosting provider, which may keep standard request logs (IP address, time, page requested) for security and operations. Boltget does not use them to identify or track visitors. The site is hosted on Cloudflare Workers with static assets.
 - Links to GitHub take you to GitHub, which has its own privacy policy.
 
 ## The command-line tool (v0.1)
@@ -21,13 +21,17 @@ Boltget collects nothing about you by default. This page says exactly what each 
 - Addresses in logs, JSON events and `boltget list` are shown with credentials removed, because signed links carry secrets.
 - Finished files get the Windows Mark of the Web, like browser downloads; the address recorded there has its query string and credentials removed.
 
-## The desktop app and extension (planned)
+## The desktop app
 
-- **No telemetry.** Crash reports, if they are added, will be opt-in and show you the report before anything is sent.
-- **Update checks** will send only the app's version, operating system and architecture.
-- **The browser extension** will collect no data for Boltget. Cookies and headers it forwards go only to the Boltget app on your own computer, over the browser's native messaging, never to a server.
+- The Windows preview runs the download engine on your computer and keeps your download list and settings locally. It sends no telemetry and does not check for updates automatically.
+- Clipboard monitoring is off by default. If you turn on **Offer copied links**, the app reads the clipboard to offer downloads, skips content marked private by password managers, and waits for you to accept before adding anything.
+- Notifications are delivered through Windows. You can turn them off in Settings.
+- The command-line tool talks to the running app through a local named pipe; this does not send your download list to a Boltget server.
+- Uninstalling can remove the app's saved data if you select that option. Files you downloaded stay on your disk.
 
-Both will be documented here in full before they are released.
+## The browser extension (planned)
+
+The extension is not available yet. Its data handling will be documented here before release.
 
 ## Questions
 

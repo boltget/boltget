@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Rebuilt the website around a light framed layout, self-hosted typography and an interactive demonstration of the Windows app. Download now starts with the installer and first-run instructions; benchmarks show one measured comparison with the method folded away.
+- Updated the install guide and privacy page for the desktop preview. Changelog and privacy have section navigation and a reading layout that adapts to smaller screens.
+- Retired the website design lab and the separate IDM comparison page; existing comparison links lead to benchmarks.
+
 ## [0.2.0-preview.1] - 2026-11-07
 
 The first preview of the Boltget desktop app for Windows: the download list, the add sheet, the tray, notifications, settings, the command palette and queues, with the `boltget` command line working alongside it. It installs for your account with the Windows installer below. Previews are not code-signed and do not update themselves yet.

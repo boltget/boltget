@@ -1,0 +1,31 @@
+---
+interface Props {
+  headings: { depth: number; slug: string; text: string }[];
+  navigationLabel: string;
+}
+const { headings, navigationLabel } = Astro.props;
+---
+<div class="wrap reading">
+  <nav aria-label={navigationLabel}>
+    <p>{navigationLabel}</p>
+    <ul>{headings.filter((heading) => heading.depth === 2).map((heading) => (
+      <li><a href={`#${heading.slug}`}>{heading.text}</a></li>
+    ))}</ul>
+  </nav>
+  <article class="prose"><slot /></article>
+</div>
+<style>
+  .reading { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(0, 44rem); gap: clamp(2rem, 5vw, 5rem); padding-block: clamp(3rem, 7vw, 6rem); }
+  nav { align-self: start; position: sticky; top: calc(var(--header-h) + 2 * var(--header-top) + 1.5rem); font-size: 0.875rem; }
+  nav p { font-weight: 600; margin-bottom: 1rem; }
+  ul { list-style: none; padding: 0; display: grid; gap: 0.75rem; }
+  a { color: var(--text-muted); text-decoration: none; display: inline-block; padding-block: 0.25rem; }
+  a:hover { color: var(--text); text-decoration: underline; }
+  article { min-width: 0; overflow-wrap: anywhere; }
+  article :global(h1) { font-size: clamp(2.5rem, 5vw, 4rem); }
+  article :global(h2) { scroll-margin-top: calc(var(--header-h) + 2 * var(--header-top) + 2rem); }
+  @media (max-width: 50rem) {
+    .reading { grid-template-columns: minmax(0, 1fr); }
+    nav { position: static; order: 2; border-top: 1px solid var(--border); padding-top: 1.5rem; }
+  }
+</style>

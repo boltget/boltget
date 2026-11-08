@@ -1,23 +1,18 @@
 ---
 import { getEntry, render } from "astro:content";
+import ReadingPage from "../components/ReadingPage.astro";
 import Base from "../layouts/Base.astro";
+
+import { t } from "../i18n";
 
 const entry = await getEntry("pages", "privacy");
 if (!entry) throw new Error("Missing src/content/pages/privacy.mdx");
-const { Content } = await render(entry);
+const { Content, headings } = await render(entry);
 ---
 
 <Base title={entry.data.title} description={entry.data.description}>
-  <article class="wrap">
-    <div class="prose page">
-      <h1>{entry.data.title}</h1>
-      <Content />
-    </div>
-  </article>
+  <ReadingPage headings={headings} navigationLabel={t("privacy.navigation")}>
+    <h1>{entry.data.title}</h1>
+    <Content />
+  </ReadingPage>
 </Base>
-
-<style>
-  .page {
-    padding-top: clamp(3rem, 8vh, 5rem);
-  }
-</style>

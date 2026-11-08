@@ -364,7 +364,8 @@
   },
   "changelog": {
     "title": "Changelog",
-    "description": "Every notable change to Boltget, rendered from CHANGELOG.md in the repository."
+    "description": "Every notable change to Boltget, rendered from CHANGELOG.md in the repository.",
+    "navigation": "Releases"
   },
   "notFound": {
     "title": "Page not found",
@@ -372,5 +373,8 @@
     "heading": "Nothing at this address.",
     "body": "The page may have moved, or the link may be mistyped.",
     "home": "Go to the home page"
+  },
+  "privacy": {
+    "navigation": "On this page"
   }
 }

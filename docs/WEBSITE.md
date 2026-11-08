@@ -3,7 +3,7 @@
 boltget.app is the product's front door: it explains Boltget in seconds, proves the speed claim, gets the installer onto the user's machine, and hosts the user documentation.
 
 - Code: `apps/web` (package `@boltget/web`): `pnpm install`, then `pnpm --filter @boltget/web dev` (or `build`, `preview`, `check`). CI: `.github/workflows/web.yml`. What is built so far, and the decisions made while building it, are under [Implementation status](#implementation-status).
-- Stack: Astro (static output) + Svelte 5 islands, user docs with Astro Starlight in the same project, shared components and tokens from `packages/ui` (until `packages/ui` exists, the site imports `brand/tokens/tokens.css` and `brand/fonts` directly). Rationale: [TECH-STACK.md, ADR-010](TECH-STACK.md#adr-010-astro-and-starlight-for-the-website-and-docs).
+- Stack: Astro (static output) with plain TypeScript demos, user docs with Astro Starlight in the same project, shared components and tokens from `packages/ui` (until `packages/ui` exists, the site imports `brand/tokens/tokens.css` and `brand/fonts` directly). Rationale: [TECH-STACK.md, ADR-010](TECH-STACK.md#adr-010-astro-and-starlight-for-the-website-and-docs).
 - Language: English only, with all copy in the site's string catalog or content collections (no copy scattered through components), so a community translation stays possible later. See [DESIGN-PRINCIPLES.md, Copy and strings](DESIGN-PRINCIPLES.md#copy-and-strings).
 - Live by: v1.0 (a minimal landing page can go up earlier; see [ROADMAP.md](ROADMAP.md)).
 
@@ -14,7 +14,7 @@ boltget.app is the product's front door: it explains Boltget in seconds, proves 
 | `/` | Home | The pitch in one screen; the hero; three proof points; download button |
 | `/download` | Download | OS-detected primary button, all assets, checksums, winget command, system requirements, extension store links |
 | `/features` | Features | The capabilities, each with a small explanatory visual, linking into docs |
-| `/compare/idm` | Boltget vs IDM | Honest comparison, the benchmark summary, migration guide link |
+| `/compare/idm` | Redirect | Retired; redirects to `/benchmarks/` |
 | `/benchmarks` | Benchmarks | Methodology, dated results per version, raw data links ([ENGINE.md](ENGINE.md#benchmarks-plan-vs-idm)) |
 | `/docs/...` | Documentation (Starlight) | Getting started, browser extension setup, video downloads, CLI reference, troubleshooting, FAQ |
 | `/changelog` | Changelog | Rendered from `CHANGELOG.md` at build time |
@@ -100,7 +100,7 @@ Home's JavaScript, measured on the build: about 12 KB gzipped in all (the hero a
 
 ### How the other pages inherit the system
 
-Built so far (basic consistency): every marketing page uses the light theme (`data-theme="light"`, the `--type-*` scale, `.tlink`, `.statement`, pill buttons, serif ledes) inside the frame, with the header above it and the light footer, so `/download`, `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy` and the 404 page match Home; their content was not redesigned yet. Starlight already uses Geist and the emerald accents and is otherwise unchanged. The plan below remains the target.
+Built so far (basic consistency): every marketing page uses the light theme (`data-theme="light"`, the `--type-*` scale, `.tlink`, `.statement`, pill buttons, serif ledes) inside the frame, with the header above it and the light footer, so `/download`, `/benchmarks`, `/compare/idm` (redirect), `/changelog`, `/privacy` and the 404 page match Home; their content was not redesigned yet. Starlight already uses Geist and the emerald accents and is otherwise unchanged. The plan below remains the target.
 
 - **/benchmarks**: paper theme, a short atmospheric band at the top (the same shader, 40% height, already dissolved), then the figures in the big figure style and the result tables in Geist Mono with hairlines. Each target gets a small static file map showing its median connection count.
 - **/compare/idm**: paper theme, no atmosphere (a factual page), the comparison table with the "Available now"/milestone status as pills, the measured table in mono.
@@ -140,20 +140,20 @@ Kept for the record. The first concept put the giant pixel arrow on near-black, 
 
 ## Implementation status
 
-First version, built during v0.1 (there is no installer yet, only the engine and CLI).
+Updated November 2026 for the Windows desktop preview and the framed website redesign.
 
-**Built:** `/` (direction A, see [Home as built](#home-as-built)), `/download` (see [Download page](#download-page)), `/benchmarks`, `/compare/idm`, `/changelog`, `/privacy`, a 404 page, `/.well-known/security.txt`, `robots.txt` and a sitemap, and Starlight docs under `/docs` (overview, install, using the CLI, exit codes and JSON).
+**Built:** `/` (direction A, see [Home as built](#home-as-built)), `/download` (see [Download page](#download-page)), `/benchmarks`, `/compare/idm` (redirect), `/changelog`, `/privacy`, a 404 page, `/.well-known/security.txt`, `robots.txt` and a sitemap, and Starlight docs under `/docs` (overview, install, using the CLI, exit codes and JSON).
 
-**Design lab:** `/lab/a` and `/lab/b`, prototypes of the redesign (see [Design lab](#design-lab)); noindex and not in the sitemap.
+**Design lab:** removed after the direction was selected; the unused Svelte integration was removed too.
 
-**Not built yet:** `/features`; generated per-page OG images (every page uses `brand/social/og-image.png`); Lighthouse CI; security headers (HSTS, CSP), which wait for the host decision; ESLint and Prettier for `apps/web`; the CLI reference generated from clap (the CLI docs pages are written by hand and point to `--help` as the reference).
+**Not built yet:** `/features`; generated per-page OG images (every page uses `brand/social/og-image.png`); Lighthouse CI; security headers (HSTS, CSP); ESLint and Prettier for `apps/web`; the CLI reference generated from clap (the CLI docs pages are written by hand and point to `--help` as the reference).
 
 Decisions:
 
 - **Workspace.** A pnpm workspace at the repository root (`apps/*`, `packages/*` and `brand`, one `pnpm-lock.yaml`), Node pinned by `.node-version`. `brand/` is a member so `cd brand && pnpm install` keeps working; it no longer has its own lockfile. Dependency versions are pinned exactly.
 - **Tokens and assets.** No `packages/ui` yet: the site imports `brand/tokens/tokens.css` and Geist Mono from `brand/fonts` directly (Geist and Source Serif 4 are subset copies in `apps/web/src/fonts`), and `apps/web/scripts/copy-brand.mjs` copies the favicons, web manifest and OG image from `brand/` into `public/` before every build (the copies are git-ignored). `packages/ui` now exists for the desktop app (generated from the same `brand/tokens/tokens.json`); moving the site onto it is a later step.
 - **Primary link before an installer exists.** "Try the CLI preview", as an underlined text link; the v0.2 app is announced by the hero card's "Preview · v0.2 app" chip and caption. Since the v0.1.0 CLI release (October 31, 2026) it links to `/download` (before that, to `/docs/getting-started/`, build from source); the closing section's link and the footer's new "Download" link (Product column) do the same, and the footer's docs link is now "Install". The label became "Download for Windows" with the app's first preview (v0.2), as black pill buttons in the hero, the header ("Download") and the closing section. `/download` is not in the header: a fourth link overflowed the bar at 390 px, and three links keep it calm.
-- **Simulation.** `src/lib/sim.ts` (`DEMO_SIM`: 420 MiB, start 4, add one every 0.6 s while the last addition raised throughput by more than 6%, a wobbling 58 MiB/s line cap, steals on finish), seeded (mulberry32) with fixed 1/120 s steps. The lab's `src/lab/sim.ts` re-exports it. Live numbers are `aria-hidden`; each figure's accessible name says it is a simulation.
+- **Simulation.** `src/lib/sim.ts` (`DEMO_SIM`: 420 MiB, start 4, add one every 0.6 s while the last addition raised throughput by more than 6%, a wobbling 58 MiB/s line cap, steals on finish), seeded (mulberry32) with fixed 1/120 s steps. Live numbers are `aria-hidden`; each figure's accessible name says it is a simulation.
 - **Pixels.** `chunkmap.ts` eases squares in on the wall clock, not on simulation time, so a scene held still still finishes its easing; a draw that is not part of a running animation (a still, `?at=`, a resize) settles at once.
 - **Fonts.** Self-hosted Latin subsets (Latin-1, punctuation, figures; about 13 KB per Geist weight and 20 KB per Source Serif 4 style) in `apps/web/src/fonts/`, taken pre-subset from Fontsource (`@fontsource/geist` 5.3.0, `@fontsource/source-serif-4` 5.3.1) with their OFL licences beside them; Geist Mono still comes from `brand/fonts`. Only Geist 400 is preloaded. Characters outside the subset (an arrow such as U+2192) would fall back to a system font, so arrows on the site are icons.
 - **JavaScript on Home (November 2026).** About 5.6 KB gzipped: the Speed card with `sim.ts` and `chunkmap.ts` 3.6 KB, Astro's prefetch script 1.1 KB, and about 1 KB of small inline scripts (scroll reveals, the resume card, the closing mark, the `?at=` review aid). Same method as below.
@@ -161,8 +161,8 @@ Decisions:
 - **JavaScript on the other marketing pages.** Only Astro's hover prefetch (1.1 KB gzipped) and the 0.2 KB `?at=` review aid; the footer's aurora shader is gone.
 - **Marketing pages use the paper theme.** The docs follow the reader's theme (Starlight's toggle) with the brand's light tokens.
 - **Tokens.** The atmosphere ramp is generated by `brand/scripts/build.mjs` as `--atmosphere-*` (and `atmosphere` in `tokens.json`); the type scale, spacing and paper hairlines are custom properties in `src/styles/global.css`.
-- **Benchmark data.** `/benchmarks`, the Fast proof point and the comparison read the newest `bench/results/<date>-*/` folder (`summary.csv`, `environment.json`, `targets.toml`) at build time, so a new run folder updates the site without code changes. Medians and spreads are shown with 2 decimals and MiB/s with 1, as in [BENCHMARK.md](BENCHMARK.md). A difference is stated only when the min-to-max spreads of IDM's default and Boltget's adaptive default do not overlap, computed from the data.
-- **Comparison.** The rows are in `apps/web/src/data/compare-idm.json`, derived from [FEATURES.md](FEATURES.md), each marked "Available now" or with its milestone; "Unknown" stands for FEATURES.md's `?`. "Last reviewed" shows the date and IDM version of the benchmark run, so both are reviewed together.
+- **Benchmark data.** `/benchmarks`, the Fast proof point read the newest `bench/results/<date>-*/` folder (`summary.csv`, `environment.json`, `targets.toml`) at build time, so a new run folder updates the site without code changes. Medians and spreads are shown with 2 decimals and MiB/s with 1, as in [BENCHMARK.md](BENCHMARK.md). A difference is stated only when the min-to-max spreads of IDM's default and Boltget's adaptive default do not overlap, computed from the data.
+- **Comparison.** The separate comparison and its data were retired; existing links redirect to benchmarks.
 - **Copy.** Short strings are in `apps/web/src/i18n/en.json` (keyed, whole sentences with named placeholders, plural forms for counts). Long-form copy and data are content collections (`src/content/pages`, `src/content/docs`, `src/data`). `/changelog` renders the root `CHANGELOG.md` through a content collection.
 - **security.txt** expires on 2027-10-28 and must be renewed before then.
 
@@ -170,7 +170,7 @@ Decisions:
 
 | Metric | Budget |
 |---|---|
-| Lighthouse (mobile, simulated throttling) | 100 in Performance, Accessibility, Best Practices, SEO on every page (target; CI fails below 95 for Performance, below 100 for the others) |
+| Lighthouse (mobile, simulated throttling) | 100 in Performance, Accessibility, Best Practices, SEO on every page (target; planned CI thresholds: 95 for Performance, 100 for the others) |
 | JavaScript on Home | Hero island only; design target ≤ 15 KB gzipped |
 | JavaScript on other marketing pages | 0 KB by default, apart from the hover prefetch (about 1 KB) |
 | Docs pages | Starlight's own budget (search is loaded on demand) |
@@ -183,11 +183,15 @@ Decisions:
 
 Analytics, if ever needed, must be privacy-respecting, cookieless and server-side or a first-party script well under 2 KB, and documented on `/privacy`.
 
-CI runs Lighthouse CI on every PR touching `apps/web` against the preview build, and fails on budget regressions.
+Planned: Lighthouse CI on every PR touching `apps/web` against the preview build, failing on budget regressions. Current Web CI runs Astro check and a static build.
 
 ## Download page
 
-### As built (v0.1)
+### As built (November 2026)
+
+The Windows installer is the primary download. Platform availability, system requirements, an illustrated SmartScreen explanation and first-run instructions lead into the secondary CLI assets and SHA-256 verification. Release metadata is fetched at build time, with a GitHub Releases fallback when unavailable. Redeploy after publishing a release.
+
+### Previous implementation (v0.1, superseded)
 
 `apps/web/src/pages/download.astro`, copy under `download.*` in `en.json`, no JavaScript of its own (paper theme, the footer's aurora is the only script).
 
@@ -204,7 +208,9 @@ CI runs Lighthouse CI on every PR touching `apps/web` against the preview build,
 - Extension store badges for Chrome, Edge and Firefox.
 - Before macOS/Linux builds exist: a clear "coming after 1.0" note with a link to the roadmap.
 
-## Compare page
+## Compare page (retired)
+
+The separate comparison page and its data were removed in November 2026. `/compare/idm` redirects to `/benchmarks/`. The following is the historical plan.
 
 - A fair table derived from [FEATURES.md](FEATURES.md) (including rows where IDM is better).
 - Benchmark summary with a link to the full methodology and raw data.
@@ -220,6 +226,10 @@ CI runs Lighthouse CI on every PR touching `apps/web` against the preview build,
 - Favicons and app icons are generated from [brand/icon.svg](../brand/icon.svg); the SVG favicon is used where supported, with PNG fallbacks.
 
 ## Docs (Starlight)
+
+Changelog and privacy share `ReadingPage.astro`: the existing framed shell, a readable content column and a sticky section index on wide screens. On narrow screens the index follows the article. Changelog content and heading anchors come directly from the root `CHANGELOG.md`; privacy describes the current desktop preview separately from the planned extension. The 404 page uses the same shell and a direct return-home action.
+
+Starlight keeps its native navigation, search and light/dark theme toggle, with the shared Geist fonts. The overview and install guide now start with the Windows app. The remaining documentation expansion below is planned.
 
 - Mounted at `/docs`. Sidebar sections: Getting started, Browser extension, Downloads and queues, Video, CLI, Settings reference, Troubleshooting, FAQ.
 - The CLI reference is generated from the CLI's `--help` output / clap definitions at build time so it cannot drift.
