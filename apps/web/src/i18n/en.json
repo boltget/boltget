@@ -36,7 +36,6 @@
   "home": {
     "title": "Boltget: every byte, at full speed",
     "description": "A download manager built for speed. Splits every file across many connections and picks up where it stopped, even after a crash.",
-    "pill": "Now in preview for Windows",
     "headline": {
       "one": "Every byte,",
       "two": "at full speed."
@@ -45,11 +44,17 @@
     "primary": "Download for Windows",
     "secondary": "See how it works",
     "platforms": "Windows 10 and 11",
+    "also": {
+      "lead": "Available on",
+      "windows": "Windows: download",
+      "macosSoon": "macOS, coming soon",
+      "linuxSoon": "Linux, coming soon",
+      "soon": "Coming soon"
+    },
     "shot": {
       "alt": "The Boltget app with three downloads running. One is selected, and the details pane beside the list shows its speed, the file map filling in from six connections, a speed graph and each connection's progress."
     },
     "speed": {
-      "label": "Speed",
       "heading": "Many connections. One file.",
       "lede": "Boltget [reads the server first], splits the file into parts and adds connections [only while they make it faster]. When one finishes early, it [takes over] the biggest part left.",
       "card": {
@@ -78,7 +83,6 @@
       "link": "How we measure"
     },
     "resume": {
-      "label": "Never loses progress",
       "heading": "Pull the plug. It picks up where it stopped.",
       "lede": "Progress counts only once the bytes are [safely on disk]. After a crash, a restart or a dropped line, the download [carries on from there], not from zero.",
       "card": {
@@ -99,7 +103,6 @@
       }
     },
     "builtin": {
-      "label": "Built in",
       "heading": "The details, handled.",
       "lede": "The things a download manager should simply do, [with nothing to set up] and [nothing to babysit].",
       "items": {

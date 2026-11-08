@@ -1,22 +1,18 @@
 ---
-// The centred opening of a Home section: a tinted pill label with its icon,
-// the headline, and a serif lede whose key phrases take the section's tint.
+// The centred opening of a Home section: the headline and a serif lede whose
+// key phrases take the section's tint.
 // The tint comes from the enclosing section (.tint-emerald and friends).
-import Icon, { type IconName } from "../Icon.astro";
 import { highlight } from "../../lib/rich";
 
 interface Props {
-  icon: IconName;
-  label: string;
   heading: string;
   lede: string;
   id: string;
 }
-const { icon, label, heading, lede, id } = Astro.props;
+const { heading, lede, id } = Astro.props;
 ---
 
 <div class="intro" data-reveal>
-  <p class="pill"><Icon name={icon} size={14} />{label}</p>
   <h2 id={id}>{heading}</h2>
   <p class="lede" set:html={highlight(lede)} />
 </div>
@@ -29,18 +25,6 @@ const { icon, label, heading, lede, id } = Astro.props;
     max-width: 44rem;
     margin-inline: auto;
     text-align: center;
-  }
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.35rem 0.8rem 0.35rem 0.65rem;
-    border-radius: 999px;
-    background: var(--tint-bg);
-    color: var(--tint-text);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    line-height: 1.2;
   }
   h2 {
     font-size: var(--type-section);

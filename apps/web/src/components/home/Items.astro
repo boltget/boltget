@@ -1,10 +1,9 @@
 ---
-// A borderless grid of short points under a Home section: a tinted icon chip,
-// then "**Bold lead.** plain sentence." Three columns on wide screens.
-import Icon, { type IconName } from "../Icon.astro";
+// A borderless grid of short points under a Home section, each a thin
+// hairline over "**Bold lead.** plain sentence." Three columns on wide screens.
 
 interface Props {
-  items: { icon: IconName; lead: string; body: string }[];
+  items: { lead: string; body: string }[];
 }
 const { items } = Astro.props;
 ---
@@ -13,9 +12,6 @@ const { items } = Astro.props;
   {
     items.map((item) => (
       <li>
-        <span class="chip">
-          <Icon name={item.icon} size={16} />
-        </span>
         <p>
           <strong>{item.lead}</strong> {item.body}
         </p>
@@ -34,19 +30,8 @@ const { items } = Astro.props;
     list-style: none;
   }
   li {
-    display: grid;
-    gap: 0.9rem;
-    align-content: start;
-  }
-  .chip {
-    display: grid;
-    place-items: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 9px;
-    background: var(--tint-bg);
-    color: var(--tint-icon);
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.6);
+    padding-top: 1.1rem;
+    border-top: 1px solid rgb(17 17 17 / 0.08);
   }
   p {
     font-size: 0.9875rem;

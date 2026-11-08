@@ -280,8 +280,9 @@ pre {
   text-wrap: pretty;
 }
 
+/* Quiet emphasis: the section's tint, pulled towards ink. */
 .lede .hl {
-  color: var(--tint-text, var(--accent));
+  color: color-mix(in srgb, var(--tint-text, var(--accent)) 72%, var(--ink));
 }
 
 /* Long-form content: privacy, changelog, notes. */

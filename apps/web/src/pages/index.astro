@@ -18,22 +18,22 @@ import { t } from "../i18n";
 const skyStyle = `--sky-avif: url(${skyAvif.src}); --sky-webp: url(${skyWebp.src})`;
 
 const speedItems = [
-  { icon: "search", lead: t("home.speed.items.probe.lead"), body: t("home.speed.items.probe.body") },
-  { icon: "split", lead: t("home.speed.items.split.lead"), body: t("home.speed.items.split.body") },
-  { icon: "swap", lead: t("home.speed.items.steal.lead"), body: t("home.speed.items.steal.body") },
+  { lead: t("home.speed.items.probe.lead"), body: t("home.speed.items.probe.body") },
+  { lead: t("home.speed.items.split.lead"), body: t("home.speed.items.split.body") },
+  { lead: t("home.speed.items.steal.lead"), body: t("home.speed.items.steal.body") },
 ] as const;
 
 const builtinItems = [
-  { icon: "queue", lead: t("home.builtin.items.queues.lead"), body: t("home.builtin.items.queues.body") },
-  { icon: "gauge", lead: t("home.builtin.items.limits.lead"), body: t("home.builtin.items.limits.body") },
-  { icon: "link", lead: t("home.builtin.items.refresh.lead"), body: t("home.builtin.items.refresh.body") },
-  { icon: "globe", lead: t("home.builtin.items.proxy.lead"), body: t("home.builtin.items.proxy.body") },
-  { icon: "terminal", lead: t("home.builtin.items.cli.lead"), body: t("home.builtin.items.cli.body") },
-  { icon: "check", lead: t("home.builtin.items.verified.lead"), body: t("home.builtin.items.verified.body") },
+  { lead: t("home.builtin.items.queues.lead"), body: t("home.builtin.items.queues.body") },
+  { lead: t("home.builtin.items.limits.lead"), body: t("home.builtin.items.limits.body") },
+  { lead: t("home.builtin.items.refresh.lead"), body: t("home.builtin.items.refresh.body") },
+  { lead: t("home.builtin.items.proxy.lead"), body: t("home.builtin.items.proxy.body") },
+  { lead: t("home.builtin.items.cli.lead"), body: t("home.builtin.items.cli.body") },
+  { lead: t("home.builtin.items.verified.lead"), body: t("home.builtin.items.verified.body") },
 ] as const;
 ---
 
-<Base title={t("home.title")} description={t("home.description")} bareTitle header="overlay">
+<Base title={t("home.title")} description={t("home.description")} bareTitle>
   <script is:inline slot="head">
     // Scroll reveals only with JavaScript and full motion; otherwise everything is simply there.
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("reveal");
@@ -43,7 +43,6 @@ const builtinItems = [
     <div class="panel">
       <div class="sky" style={skyStyle} aria-hidden="true"></div>
       <div class="copy">
-        <p class="pill"><span class="dot" aria-hidden="true"></span>{t("home.pill")}</p>
         <h1 id="hero-title">
           <span class="l1">{t("home.headline.one")}</span>
           <span class="l2">{t("home.headline.two")}</span>
@@ -54,6 +53,12 @@ const builtinItems = [
           <a class="button button-secondary" href="#speed">{t("home.secondary")}<Icon name="arrowDown" size={15} /></a>
         </p>
         <p class="platforms">{t("home.platforms")}</p>
+        <p class="also">
+          <span class="also-lead">{t("home.also.lead")}</span>
+          <a class="os" href="/download/" aria-label={t("home.also.windows")}><Icon name="windows" size={12} /></a>
+          <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("home.also.macosSoon")} data-tip={t("home.also.soon")}><Icon name="apple" size={15} /></span>
+          <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("home.also.linuxSoon")} data-tip={t("home.also.soon")}><Icon name="linux" size={15} /></span>
+        </p>
       </div>
       <div class="overlap" aria-hidden="true"></div>
     </div>
@@ -65,8 +70,6 @@ const builtinItems = [
   <section id="speed" class="section tint-emerald" aria-labelledby="speed-title">
     <div class="wrap">
       <SectionIntro
-        icon="zap"
-        label={t("home.speed.label")}
         heading={t("home.speed.heading")}
         lede={t("home.speed.lede")}
         id="speed-title"
@@ -82,8 +85,6 @@ const builtinItems = [
   <section class="section tint-sky" aria-labelledby="resume-title">
     <div class="wrap">
       <SectionIntro
-        icon="plug"
-        label={t("home.resume.label")}
         heading={t("home.resume.heading")}
         lede={t("home.resume.lede")}
         id="resume-title"
@@ -95,14 +96,12 @@ const builtinItems = [
   <section class="section tint-violet" aria-labelledby="builtin-title">
     <div class="wrap">
       <SectionIntro
-        icon="layers"
-        label={t("home.builtin.label")}
         heading={t("home.builtin.heading")}
         lede={t("home.builtin.lede")}
         id="builtin-title"
       />
       <div class="grid"><Items items={[...builtinItems]} /></div>
-      <p class="next" data-reveal><Icon name="sparkle" size={14} />{t("home.builtin.next")}</p>
+      <p class="next" data-reveal>{t("home.builtin.next")}</p>
     </div>
   </section>
 
@@ -110,23 +109,20 @@ const builtinItems = [
 </Base>
 
 <style>
-  /* Section tints: label pill, card wash, icon chips and highlighted phrases.
+  /* Section tints: the card wash and the highlighted phrases.
      Text tints hold at least 4.5:1 on the frame, the pill and the card. */
   .tint-emerald {
     --tint-text: #047857;
-    --tint-icon: #059669;
     --tint-bg: #d1fae5;
     --tint-wash: #c9f3e0;
   }
   .tint-sky {
     --tint-text: #0369a1;
-    --tint-icon: #0284c7;
     --tint-bg: #e0f2fe;
     --tint-wash: #cfe8fb;
   }
   .tint-violet {
     --tint-text: #6d28d9;
-    --tint-icon: #7c3aed;
     --tint-bg: #ede9fe;
     --tint-wash: #e6e0fd;
   }
@@ -164,32 +160,9 @@ const builtinItems = [
     display: grid;
     justify-items: center;
     text-align: center;
-    padding: calc(var(--header-h) + var(--header-top) + clamp(3.5rem, 9vh, 6.5rem)) var(--gutter) clamp(2.75rem, 6vw, 4rem);
-  }
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.85rem 0.4rem 0.7rem;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.75);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    box-shadow: 0 0 0 1px rgb(17 17 17 / 0.06);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--ink);
-    animation: rise 1s var(--ease-out) both;
-  }
-  .dot {
-    width: 0.4rem;
-    height: 0.4rem;
-    border-radius: 50%;
-    background: #10b981;
-    box-shadow: 0 0 0 3px rgb(16 185 129 / 0.2);
+    padding: clamp(4rem, 11vh, 7.5rem) var(--gutter) clamp(2.75rem, 6vw, 4rem);
   }
   h1 {
-    margin-top: 1.5rem;
     font-size: var(--type-display);
     font-weight: 400;
     line-height: 1.04;
@@ -226,6 +199,67 @@ const builtinItems = [
     font-size: 0.8125rem;
     color: #4b5563;
     animation: rise 1.1s 0.42s var(--ease-out) both;
+  }
+  .also {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.6rem;
+    font-size: 0.75rem;
+    color: #6b7280;
+    animation: rise 1.1s 0.46s var(--ease-out) both;
+  }
+  .also-lead {
+    margin-right: 0.2rem;
+  }
+  .os {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 1.625rem;
+    height: 1.625rem;
+    border-radius: 7px;
+    color: var(--ink);
+    transition:
+      color 0.16s linear,
+      background-color 0.16s linear;
+  }
+  a.os:hover {
+    background: rgb(255 255 255 / 0.7);
+  }
+  .off {
+    color: #b4bac1;
+    cursor: default;
+  }
+  .off:hover,
+  .off:focus-visible {
+    color: #8a929b;
+  }
+  /* "Coming soon": a small CSS-only tooltip on hover and keyboard focus. */
+  .off::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: 50%;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 3px);
+    transition:
+      opacity 0.14s linear,
+      transform 0.14s var(--ease-out);
+  }
+  .off:hover::after,
+  .off:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
   }
   .overlap {
     height: var(--overlap);
@@ -278,12 +312,6 @@ const builtinItems = [
   .next {
     color: var(--text-muted);
   }
-  .next :global(svg) {
-    display: inline-block;
-    margin-right: 0.45rem;
-    vertical-align: -0.125em;
-    color: var(--tint-icon);
-  }
 
   /* Scroll reveals (only when the head script set .reveal). */
   :global(.reveal [data-reveal]) {
@@ -313,14 +341,18 @@ const builtinItems = [
   }
   @media (prefers-reduced-motion: reduce) {
     .sky,
-    .pill,
     .l1,
     .l2,
     .copy .lede,
     .actions,
     .platforms,
+    .also,
     .stage {
       animation: none;
+    }
+    .off::after {
+      transition: none;
+      transform: translate(-50%, 0);
     }
   }
 </style>
