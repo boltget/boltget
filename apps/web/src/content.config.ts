@@ -1,7 +1,7 @@
 // Content collections. Long-form copy lives here (Markdown/MDX and data
 // files); short UI copy lives in the string catalog, src/i18n/en.json.
 import { defineCollection } from "astro:content";
-import { file, glob } from "astro/loaders";
+import { glob } from "astro/loaders";
 import { z } from "astro/zod";
 import { docsLoader, i18nLoader } from "@astrojs/starlight/loaders";
 import { docsSchema, i18nSchema } from "@astrojs/starlight/schema";
@@ -25,17 +25,5 @@ export const collections = {
   // The repository's CHANGELOG.md, rendered at build time for /changelog.
   changelog: defineCollection({
     loader: glob({ pattern: "CHANGELOG.md", base: "../.." }),
-  }),
-
-  // Rows of the Boltget and IDM comparison, derived from docs/FEATURES.md.
-  compare: defineCollection({
-    loader: file("src/data/compare-idm.json"),
-    schema: z.object({
-      group: z.string(),
-      feature: z.string(),
-      boltget: z.string(),
-      milestone: z.string(),
-      idm: z.string(),
-    }),
   }),
 };

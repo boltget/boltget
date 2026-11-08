@@ -8,6 +8,10 @@ export default defineConfig({
   site: "https://boltget.app",
   output: "static",
   trailingSlash: "ignore",
+  // Retired pages: a static redirect page (meta refresh and canonical) each.
+  redirects: {
+    "/compare/idm": "/benchmarks/",
+  },
   // Links are prefetched on hover, so the cross-document view transition has
   // the next page ready (docs/WEBSITE.md, Character).
   prefetch: { prefetchAll: true, defaultStrategy: "hover" },
