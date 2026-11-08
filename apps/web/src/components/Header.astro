@@ -1,16 +1,13 @@
 ---
-// Site header: a floating white bar, sticky at the top of the frame (docs/
-// WEBSITE.md, Character). Logo left; plain text links, GitHub and the black
-// Download pill right. It keeps its place across page loads through a named
-// view transition. On Home it floats over the hero panel ("overlay").
+// Site header (docs/WEBSITE.md, Character): a quiet row on the white page
+// above the frame, as wide as the frame. Once the page scrolls it becomes a
+// compact floating white bar, sticky at the top. Logo left; plain text links,
+// GitHub and the black Download pill right. It keeps its place across page
+// loads through a named view transition.
 import lockup from "../../../../brand/svg/lockup-horizontal-on-light.svg";
 import Icon from "./Icon.astro";
 import { t } from "../i18n";
 
-interface Props {
-  overlay?: boolean;
-}
-const { overlay = false } = Astro.props;
 const path = Astro.url.pathname.replace(/\/$/, "") || "/";
 const links = [
   { href: "/benchmarks/", label: t("nav.benchmarks"), match: "/benchmarks", wide: true },
@@ -21,7 +18,7 @@ const height = 24;
 const width = Math.round((lockup.width / lockup.height) * height);
 ---
 
-<header class:list={["header", { overlay }]}>
+<header class="header" data-header>
   <div class="bar">
     <a class="brand" href="/" aria-label={t("nav.home")}>
       <img src={lockup.src} width={width} height={height} alt="" />
@@ -56,32 +53,42 @@ const width = Math.round((lockup.width / lockup.height) * height);
 <style>
   .header {
     position: sticky;
-    top: var(--header-top);
+    top: 0;
     z-index: 10;
-    padding-inline: var(--header-top);
-    margin-top: var(--header-top);
+    padding: var(--header-top) var(--frame-gap);
     view-transition-name: site-header;
-  }
-  .overlay {
-    margin-bottom: calc(-1 * (var(--header-h) + var(--header-top)));
+    pointer-events: none;
   }
   .bar {
-    max-width: 72rem;
+    max-width: 100%;
     height: var(--header-h);
     margin-inline: auto;
-    padding-inline: 1.125rem 0.5rem;
+    padding-inline: 0.5rem 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     border-radius: 18px;
-    background: rgb(255 255 255 / 0.9);
-    backdrop-filter: blur(24px) saturate(1.4);
+    background: rgb(255 255 255 / 0);
+    box-shadow: 0 0 0 1px rgb(17 17 17 / 0);
+    pointer-events: auto;
+    transition:
+      max-width 0.45s var(--ease-out),
+      padding 0.45s var(--ease-out),
+      background-color 0.3s linear,
+      box-shadow 0.3s linear;
+  }
+  /* Scrolled (set by the script below): the compact floating bar. */
+  .scrolled .bar {
+    max-width: 60rem;
+    padding-inline: 1.125rem 0.5rem;
+    background: rgb(255 255 255 / 0.97);
     -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(24px) saturate(1.4);
     box-shadow:
-      0 0 0 1px rgb(17 17 17 / 0.05),
+      0 0 0 1px rgb(17 17 17 / 0.06),
       0 1px 2px rgb(17 17 17 / 0.04),
-      0 8px 24px -12px rgb(17 17 17 / 0.12);
+      0 12px 32px -14px rgb(17 17 17 / 0.18);
   }
   .brand {
     flex: none;
@@ -144,7 +151,7 @@ const width = Math.round((lockup.width / lockup.height) * height);
     }
   }
   @media (max-width: 26rem) {
-    .bar {
+    .scrolled .bar {
       padding-left: 0.875rem;
     }
     .brand img {
@@ -158,4 +165,20 @@ const width = Math.round((lockup.width / lockup.height) * height);
       padding-inline: 0.6rem;
     }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .bar {
+      transition: none;
+    }
+  }
 </style>
+
+<script is:inline>
+  // The floating bar appears once the page has scrolled a little.
+  (() => {
+    const header = document.querySelector("[data-header]");
+    if (!header) return;
+    const update = () => header.classList.toggle("scrolled", window.scrollY > 12);
+    window.addEventListener("scroll", update, { passive: true });
+    update();
+  })();
+</script>

@@ -1,7 +1,7 @@
 ---
 // Shell for every marketing page: metadata, then the frame (docs/WEBSITE.md,
-// Character): a white body with the whole page in one rounded panel, the
-// floating header at its top and the footer at its foot.
+// Character): a white body with the header row on it, then the whole page in
+// one rounded panel with the footer at its foot.
 import "../styles/global.css";
 import geistRegular from "../fonts/Geist-400-latin.woff2?url";
 import Header from "../components/Header.astro";
@@ -13,11 +13,9 @@ interface Props {
   description: string;
   /** Use the title as is, without the " | Boltget" suffix. */
   bareTitle?: boolean;
-  /** "overlay": the header floats over the page's first panel (Home's hero). */
-  header?: "flow" | "overlay";
 }
 
-const { title, description, bareTitle = false, header = "flow" } = Astro.props;
+const { title, description, bareTitle = false } = Astro.props;
 const site = t("site.name");
 const fullTitle = bareTitle ? title : `${title} | ${site}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -58,8 +56,8 @@ const ogImage = new URL("/og-image.png", Astro.site);
   </head>
   <body>
     <a class="skip" href="#main">{t("site.skip")}</a>
+    <Header />
     <div class="frame">
-      <Header overlay={header === "overlay"} />
       <main id="main" tabindex="-1">
         <slot />
       </main>
@@ -71,8 +69,8 @@ const ogImage = new URL("/og-image.png", Astro.site);
 <style>
   .frame {
     position: relative;
-    margin: var(--frame-gap);
-    min-height: calc(100svh - 2 * var(--frame-gap));
+    margin: 0 var(--frame-gap) var(--frame-gap);
+    min-height: calc(100svh - var(--header-h) - 2 * var(--header-top) - var(--frame-gap));
     display: flex;
     flex-direction: column;
     border-radius: var(--frame-radius);
