@@ -1,23 +1,29 @@
 ---
 title: Install
-description: Download the boltget command-line tool, or build it from source, and make your first download.
+description: Install the Boltget app for Windows, or get the command-line tool, and make your first download.
 ---
 
-The v0.1 preview is the `boltget` command-line tool. There is no installer yet: download the zip and run it from a folder, or build it from source.
+## Install the app
 
-## Download a release
+1. Download the installer from the [download page](/download/). It runs on 64-bit Windows 10 and 11.
+2. Run it. It installs Boltget for your account, without administrator rights, and adds it to the Start menu. While Boltget is in preview the installer is not signed yet, so Windows SmartScreen asks once: choose **More info**, then **Run anyway**.
+3. Add a download: click **Add download**, press **Ctrl+N**, or paste a link with **Ctrl+V**. Boltget looks at the link, shows the file's name, size and whether it can resume, and **Enter** starts it.
 
-Get `boltget-<version>-windows-x64.zip` from the [download page](/download/) (a Linux `tar.gz` is there too, as a preview build). Unpack it and run `boltget` from that folder:
+Closing the window keeps your downloads going in the tray. Uninstall it from Windows Settings like any other app; your downloaded files always stay.
+
+## Get the command-line tool
+
+The `boltget` command-line tool comes as its own download. Get `boltget-<version>-windows-x64.zip` from the [download page](/download/) (a Linux `tar.gz` is there too). Unpack it and run `boltget` from that folder:
 
 ```powershell
-tar -xf boltget-0.1.0-windows-x64.zip
-cd boltget-0.1.0-windows-x64
+tar -xf boltget-<version>-windows-x64.zip
+cd boltget-<version>-windows-x64
 .\boltget --version
 ```
 
-To run it from anywhere, copy `boltget.exe` to a folder on your `PATH`. It needs no other files.
+To run it from anywhere, copy `boltget.exe` to a folder on your `PATH`. It needs no other files. While the app is running, `boltget` sends its downloads to the app, so both show the same list.
 
-The download page lists the SHA-256 of every file and how to check it, along with the build provenance (`gh attestation verify`). The builds are not code-signed yet, so Windows SmartScreen may warn the first time you run `boltget.exe`; signed builds arrive with v1.0.
+The download page lists the SHA-256 of every file and how to check it.
 
 ## Build from source
 

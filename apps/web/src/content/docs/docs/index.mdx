@@ -1,29 +1,16 @@
 ---
 title: Boltget documentation
-description: What Boltget is today, and where to start.
+description: What Boltget is, and where to start.
 ---
 
 Boltget is a download manager built for speed. It splits each file across several connections, keeps every connection busy until the last byte, and resumes where it stopped, even after a crash or a power cut.
 
-## What exists today
-
-Boltget is at **v0.1**: the download engine and the `boltget` command-line tool, published as a [download](/download/) for Windows (and a preview build for Linux). There is no installer yet.
-
-| Milestone | What it brings |
-|---|---|
-| v0.1 (now) | Engine and CLI: segmented downloads, adaptive connections, crash-safe resume, link refresh, speed limits, checksums, proxies, cookies, `boltget bench` |
-| v0.2 | The Windows desktop app |
-| v0.3 | Browser extension for Chrome, Edge and Firefox |
-| v0.4 | Video and audio downloads |
-| v0.5 | Scheduler, queues and polish |
-| v1.0 | Public launch, signed installer |
-
-The full plan is in the [roadmap](https://github.com/boltget/boltget/blob/main/docs/ROADMAP.md).
+It comes as a desktop app for Windows, now in preview, and as the `boltget` command-line tool, which works on its own or alongside the app. Both are on the [download page](/download/).
 
 ## Start here
 
-- [Install](/docs/getting-started/): get the CLI and make your first download.
+- [Install](/docs/getting-started/): install the app, or get the command-line tool, and make your first download.
 - [Using the CLI](/docs/cli/): pause and resume, link refresh, limits, checksums, proxies and benchmarks.
 - [Exit codes and JSON](/docs/cli/scripting/): for scripts.
 
-These pages are for people using Boltget. The design documents for contributors live in the repository's [`docs/` folder](https://github.com/boltget/boltget/tree/main/docs).
+What comes next is in the [roadmap](https://github.com/boltget/boltget/blob/main/docs/ROADMAP.md). These pages are for people using Boltget; the design documents for contributors live in the repository's [`docs/` folder](https://github.com/boltget/boltget/tree/main/docs).
