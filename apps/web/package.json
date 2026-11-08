@@ -2,7 +2,7 @@
   "name": "@boltget/web",
   "private": true,
   "version": "0.0.0",
-  "description": "boltget.app: the Boltget website and user docs (Astro, Svelte islands, Starlight).",
+  "description": "boltget.app: the Boltget website and user docs (Astro and Starlight).",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
@@ -10,20 +10,17 @@
     "dev": "node scripts/copy-brand.mjs && astro dev",
     "build": "node scripts/copy-brand.mjs && astro build",
     "preview": "astro preview",
-    "check": "astro check && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "check": "astro check --minimumFailingSeverity warning",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@astrojs/sitemap": "3.7.4",
     "@astrojs/starlight": "0.42.7",
-    "@astrojs/svelte": "9.1.1",
     "astro": "7.4.2",
-    "smol-toml": "1.9.1",
-    "svelte": "5.57.2"
+    "smol-toml": "1.9.1"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.12",
-    "svelte-check": "4.7.7",
     "typescript": "6.0.3",
     "wrangler": "^4.156.0"
   }

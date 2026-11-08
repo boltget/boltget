@@ -1,7 +1,6 @@
-// boltget.app: Astro (static output) with Svelte islands and Starlight docs.
+// boltget.app: Astro (static output) with Starlight docs.
 // See docs/WEBSITE.md and docs/TECH-STACK.md (ADR-010).
 import { defineConfig } from "astro/config";
-import svelte from "@astrojs/svelte";
 import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
 
@@ -13,10 +12,8 @@ export default defineConfig({
   // the next page ready (docs/WEBSITE.md, Character).
   prefetch: { prefetchAll: true, defaultStrategy: "hover" },
   integrations: [
-    svelte(),
-    // Added explicitly (Starlight would add it otherwise) so the design lab
-    // pages under /lab/ stay out of the sitemap. They are also noindex.
-    sitemap({ filter: (page) => !new URL(page).pathname.startsWith("/lab/") }),
+    // Added explicitly; Starlight would add it otherwise.
+    sitemap(),
     starlight({
       title: "Boltget docs",
       description: "How to install and use Boltget, the download manager built for speed.",

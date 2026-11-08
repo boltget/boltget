@@ -1,5 +1,5 @@
 // A deterministic simulation of one segmented download, shared by the home
-// page demos (and the design lab). It is illustrative, not a measurement: the
+// page demos. It is illustrative, not a measurement: the
 // numbers it produces are invented and every demo that shows them says so.
 //
 // What it models, after docs/ENGINE.md:
