@@ -51,8 +51,153 @@
       "linuxSoon": "Linux, coming soon",
       "soon": "Coming soon"
     },
-    "shot": {
-      "alt": "The Boltget app with three downloads running. One is selected, and the details pane beside the list shows its speed, the file map filling in from six connections, a speed graph and each connection's progress."
+    "app": {
+      "label": "A demonstration of the Boltget app, simulated in the page. Pick a file with the buttons above it to watch it download: a new row appears, the file map fills from several connections at once and the download finishes.",
+      "try": "Try it: pick a file",
+      "caption": "A simulation of the app, sped up.",
+      "ui": {
+        "name": "Boltget",
+        "search": "Search downloads",
+        "ctrl": "Ctrl",
+        "f": "F",
+        "add": "Add download",
+        "all": "All downloads",
+        "active": "Active",
+        "completed": "Completed",
+        "scheduled": "Scheduled",
+        "categories": "Categories",
+        "video": "Video",
+        "music": "Music",
+        "archives": "Archives",
+        "programs": "Programs",
+        "documents": "Documents",
+        "other": "Other",
+        "queues": "Queues",
+        "main": "Main",
+        "settings": "Settings",
+        "waiting": "Queued and paused",
+        "today": "Earlier today",
+        "paused": "Paused",
+        "starting": "Starting…",
+        "done": "Done",
+        "pause": "Pause",
+        "open": "Open",
+        "speed": "Speed",
+        "received": "Received",
+        "left": "Time left",
+        "connections": "Connections",
+        "size": "Size",
+        "finished": "Finished",
+        "map": "File map",
+        "mapNote": {
+          "one": "{count} connection",
+          "other": "{count} connections"
+        },
+        "verified": "SHA-256 verified",
+        "throughput": "Speed since it started",
+        "peak": "Peak {speed}",
+        "file": "File",
+        "saving": "Saving to",
+        "saved": "Saved to",
+        "link": "Link",
+        "folder": "C:\\Users\\you\\Downloads\\",
+        "sheetTitle": "Add download",
+        "saveTo": "Save to",
+        "probing": "Looking at the link…",
+        "canResume": "Can resume",
+        "cancel": "Cancel",
+        "download": "Download",
+        "join": "{first} · {second}",
+        "progress": "{done} / {total}",
+        "percent": "{value}%",
+        "units": {
+          "b": "{value} B",
+          "kib": "{value} KiB",
+          "mib": "{value} MiB",
+          "gib": "{value} GiB"
+        },
+        "speeds": {
+          "b": "{value} B/s",
+          "kib": "{value} KiB/s",
+          "mib": "{value} MiB/s",
+          "gib": "{value} GiB/s"
+        },
+        "eta": {
+          "seconds": "{count} s left",
+          "minutes": "about {count} min left"
+        },
+        "duration": {
+          "seconds": "{count} s",
+          "minutes": "{count} min"
+        }
+      },
+      "chips": {
+        "iso": {
+          "label": "Linux ISO",
+          "file": "archlinux-x86_64.iso",
+          "host": "geo.mirror.pkgbuild.com",
+          "url": "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso"
+        },
+        "film": {
+          "label": "4K film",
+          "file": "tears_of_steel_4k.mov",
+          "host": "download.blender.org",
+          "url": "https://download.blender.org/mango/tears_of_steel_4k.mov"
+        },
+        "game": {
+          "label": "Game build",
+          "file": "veloren-windows-x86_64.zip",
+          "host": "download.veloren.net",
+          "url": "https://download.veloren.net/latest/windows/veloren-windows-x86_64.zip"
+        }
+      },
+      "rows": {
+        "ubuntu": {
+          "file": "ubuntu-24.04.1-desktop-amd64.iso",
+          "host": "releases.ubuntu.com"
+        },
+        "blender": {
+          "file": "Blender-4.2.3-windows-x64.msi",
+          "host": "download.blender.org"
+        },
+        "bunny": {
+          "file": "big_buck_bunny_1080p_h264.mov",
+          "host": "download.blender.org",
+          "url": "https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_1080p_h264.mov"
+        },
+        "lecture": {
+          "file": "lecture-07-distributed-systems.pdf",
+          "host": "cs.example.edu"
+        },
+        "obs": {
+          "file": "OBS-Studio-31.0.0-Windows-Installer.exe",
+          "host": "github.com"
+        },
+        "node": {
+          "file": "node-v22.11.0-x64.msi",
+          "host": "nodejs.org"
+        },
+        "vscode": {
+          "file": "VSCodeUserSetup-x64-1.95.3.exe",
+          "host": "update.code.visualstudio.com"
+        },
+        "fedora": {
+          "file": "Fedora-Workstation-Live-x86_64-41.iso",
+          "host": "download.fedoraproject.org"
+        },
+        "libreoffice": {
+          "file": "LibreOffice_24.8.3_Win_x86-64.msi",
+          "host": "download.documentfoundation.org"
+        },
+        "sintel": {
+          "file": "sintel-4k-uhd.mkv",
+          "host": "media.xiph.org"
+        },
+        "photos": {
+          "file": "photos-backup.zip",
+          "host": "files.example.net"
+        }
+      }
     },
     "speed": {
       "heading": "Many connections. One file.",

@@ -1,0 +1,1110 @@
+---
+// The Home hero's centerpiece: a live recreation of the desktop app's window
+// in light theme, built from its source (apps/desktop/src: TitleBar, Sidebar,
+// list Row, DetailsPane, FileMap, Sparkline, AddSheet; tokens from
+// packages/ui). It is drawn here at build time in the same lively state as
+// the app screenshot it replaced (src/assets/app-light.webp, kept for
+// reference), so it is complete without JavaScript. The browser script
+// (lib/herodemo.ts) lets the visitor pick a file and watch it download on the
+// seeded simulation (lib/sim.ts), and plays one once by itself after the
+// entrance. The window is laid out at 1280 x 780 and scaled to fit, so on a
+// phone it stays faithful instead of reflowing.
+import icon16 from "../../../../../brand/svg/icon-16.svg";
+import { t } from "../../i18n";
+import en from "../../i18n/en.json";
+import { BUNNY, BUNNY_AT, Fmt, grid, samplesOf, simFor, workers } from "../../lib/appdemo";
+import { icon, mapSvg, paneHtml, rowHtml, runningStats, runningStatus, type RowModel } from "../../lib/appmarkup";
+
+const ui = en.home.app.ui;
+const fmt = new Fmt(ui);
+const rows = en.home.app.rows;
+const chips = en.home.app.chips;
+
+// The selected download: a little past half, its numbers from the simulation.
+const bunny = simFor(BUNNY);
+while (bunny.downloaded < BUNNY_AT && !bunny.finished) bunny.step();
+const samples = samplesOf(bunny);
+const peak = Math.max(...samples);
+const g = grid();
+
+const active: RowModel[] = [
+  {
+    id: "ubuntu",
+    name: rows.ubuntu.file,
+    state: "downloading",
+    fraction: 0.072,
+    status: fmt.join(fmt.join(fmt.progress(440, 6113), fmt.speed(8.7)), fmt.eta(660)),
+    rest: fmt.percent(7),
+  },
+  {
+    id: "blender",
+    name: rows.blender.file,
+    state: "downloading",
+    fraction: 0.933,
+    status: fmt.join(fmt.join(fmt.progress(319, 342), fmt.speed(21.9)), fmt.eta(2)),
+    rest: fmt.percent(93),
+  },
+  {
+    id: "bunny",
+    name: rows.bunny.file,
+    state: "downloading",
+    fraction: bunny.downloaded / bunny.o.total,
+    status: runningStatus(bunny, fmt),
+    rest: fmt.percent((bunny.downloaded / bunny.o.total) * 100),
+  },
+];
+const waiting: RowModel[] = [
+  {
+    id: "lecture",
+    name: rows.lecture.file,
+    state: "paused",
+    fraction: 0.18,
+    status: fmt.join(fmt.progress(3.22, 18), rows.lecture.host),
+    rest: ui.paused,
+    restIcon: "pause",
+  },
+];
+// Finished earlier today; the browser fills in the times (relative to now).
+const today: RowModel[] = (
+  [
+    ["obs", 153],
+    ["node", 29],
+    ["vscode", 101],
+    ["fedora", 2294],
+    ["libreoffice", 350],
+    ["sintel", 4413],
+    ["photos", 1833],
+  ] as const
+).map(([id, size]) => ({
+  id,
+  name: rows[id].file,
+  state: "completed",
+  fraction: 1,
+  status: fmt.join(fmt.bytes(size), rows[id].host),
+  rest: "",
+}));
+
+const pane = paneHtml(
+  {
+    name: rows.bunny.file,
+    sub: fmt.join(rows.bunny.host, fmt.bytes(BUNNY.total)),
+    complete: false,
+    stats: runningStats(bunny, ui, fmt),
+    note: fmt.mapNote(bunny.active),
+    samples,
+    peak: fmt.peak(peak),
+    workers: workers(bunny),
+    pathLabel: ui.saving,
+    path: ui.folder + rows.bunny.file,
+    url: rows.bunny.url,
+    map: mapSvg(bunny, g),
+  },
+  ui,
+  fmt,
+);
+
+const views = [
+  { icon: "all", label: ui.all, n: "all", count: 11, current: true },
+  { icon: "active", label: ui.active, n: "active", count: 3 },
+  { icon: "completed", label: ui.completed, n: "completed", count: 7 },
+  { icon: "scheduled", label: ui.scheduled, n: "scheduled", count: 0 },
+] as const;
+const categories = [
+  ["video", ui.video],
+  ["music", ui.music],
+  ["archives", ui.archives],
+  ["programs", ui.programs],
+  ["documents", ui.documents],
+  ["other", ui.other],
+] as const;
+const chipList = (["iso", "film", "game"] as const).map((key) => ({ key, label: chips[key].label }));
+// What the browser script needs: the app's strings and the files on offer.
+const data = JSON.stringify({ ui, chips });
+---
+
+<figure class="hero-app" aria-label={t("home.app.label")} data-hero-app data-app={data}>
+  <div class="try" data-try hidden>
+    <span class="try-label" id="hero-app-try">{t("home.app.try")}</span>
+    <span class="chips" role="group" aria-labelledby="hero-app-try">
+      {chipList.map((c) => <button type="button" class="chip" data-chip={c.key}>{c.label}</button>)}
+    </span>
+  </div>
+  <div class="bezel">
+    <div class="screen">
+      <div class="win" aria-hidden="true" inert>
+        <div class="tb">
+          <div class="tb-brand"><img src={icon16.src} width="16" height="16" alt="" /><span>{ui.name}</span></div>
+          <div class="tb-search">
+            <Fragment set:html={icon("search")} /><span class="ph">{ui.search}</span>
+            <span class="keys"><span class="key">{ui.ctrl}</span><span class="key">{ui.f}</span></span>
+          </div>
+          <div class="tb-actions"><span class="btn primary" data-add><Fragment set:html={icon("plus")} />{ui.add}</span></div>
+          <div class="caps">
+            <span class="cap"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"></path></svg></span>
+            <span class="cap"><svg viewBox="0 0 10 10"><path d="M.5.5h9v9h-9Z"></path></svg></span>
+            <span class="cap"><svg viewBox="0 0 10 10"><path d="M.5.5l9 9M9.5.5l-9 9"></path></svg></span>
+          </div>
+        </div>
+        <div class="body">
+          <nav class="side">
+            <ul class="group">
+              {
+                views.map((v) => (
+                  <li class:list={["item", { current: "current" in v }]}>
+                    <Fragment set:html={icon(v.icon)} />
+                    <span class="lbl">{v.label}</span>
+                    <span class="count" data-n={v.n}>{v.count}</span>
+                  </li>
+                ))
+              }
+            </ul>
+            <p class="heading">{ui.categories}</p>
+            <ul class="group">
+              {
+                categories.map(([name, label]) => (
+                  <li class="item">
+                    <Fragment set:html={icon(name)} />
+                    <span class="lbl">{label}</span>
+                  </li>
+                ))
+              }
+            </ul>
+            <p class="heading heading-row">{ui.queues}<Fragment set:html={icon("plus", 14)} /></p>
+            <ul class="group">
+              <li class="item">
+                <Fragment set:html={icon("queue")} /><span class="lbl">{ui.main}</span><span class="count" data-n="main">4</span>
+              </li>
+            </ul>
+            <ul class="group foot">
+              <li class="item"><Fragment set:html={icon("settings")} /><span class="lbl">{ui.settings}</span></li>
+            </ul>
+          </nav>
+          <div class="content">
+            <div class="list">
+              <div class="lhead">
+                <span class="ltitle">{ui.all}</span><span class="lcount" data-n="all">11</span>
+                <span class="opts"><span class="ib"><Fragment set:html={icon("sort")} /></span><span class="ib pressed"><Fragment set:html={icon("pane")} /></span></span>
+              </div>
+              <div class="lbody">
+                <div class="sec">{ui.active}<span class="scount" data-n="active">3</span></div>
+                <div class="rows" data-rows="active">
+                  {active.map((r) => <Fragment set:html={rowHtml(r, r.id === "bunny")} />)}
+                </div>
+                <div class="sec">{ui.waiting}<span class="scount">1</span></div>
+                <div class="rows">{waiting.map((r) => <Fragment set:html={rowHtml(r)} />)}</div>
+                <div class="sec">{ui.today}<span class="scount" data-n="today">7</span></div>
+                <div class="rows" data-rows="today">{today.map((r) => <Fragment set:html={rowHtml(r)} />)}</div>
+              </div>
+            </div>
+            <aside class="pane" data-pane set:html={pane} />
+          </div>
+        </div>
+        <div class="scrim" data-scrim></div>
+        <div class="sheet" data-sheet>
+          <div class="s-head"><span class="s-title">{ui.sheetTitle}</span><span class="ib"><Fragment set:html={icon("close")} /></span></div>
+          <div class="s-link" data-s="link"></div>
+          <div class="s-card">
+            <span class="s-type" data-s="type"></span>
+            <div class="s-text"><p class="s-name" data-s="name"></p><p class="s-meta" data-s="meta"></p></div>
+          </div>
+          <div class="s-row">
+            <span class="s-label">{ui.saveTo}</span>
+            <span class="s-folder"><Fragment set:html={icon("folder")} /><span>{ui.folder}</span><Fragment set:html={icon("down", 14)} /></span>
+          </div>
+          <div class="s-foot"><span class="btn secondary">{ui.cancel}</span><span class="btn primary" data-s="go">{ui.download}</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption class="caption" aria-hidden="true">{t("home.app.caption")}</figcaption>
+</figure>
+
+<style is:global>
+  /* The app's light theme (packages/ui tokens), scoped to the recreation. */
+  .hero-app {
+    --c-chrome: #f6f6f7;
+    --c-content: #fff;
+    --c-hairline: rgb(11 11 15 / 0.08);
+    --c-hairline-strong: rgb(11 11 15 / 0.14);
+    --c-stroke: #84848d;
+    --c-text: #0b0b0f;
+    --c-muted: #52525b;
+    --c-subtle: #69696f;
+    --c-accent: #047857;
+    --c-accent-tint: rgb(5 150 105 / 0.1);
+    --c-hover: rgb(11 11 15 / 0.04);
+    --c-press: rgb(11 11 15 / 0.08);
+    --c-track: rgb(11 11 15 / 0.07);
+    --c-idle: #84848d;
+    --c-shadow: rgb(11 11 15 / 0.12);
+    --g-progress: linear-gradient(90deg, #34d399, #10b981 55%, #047857);
+    --app-w: 1280;
+    --app-h: 780;
+    position: relative;
+    max-width: 70rem;
+    margin: 0 auto;
+  }
+
+  /* "Try it": a quiet line of three file buttons above the window. */
+  .hero-app .try {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+    color: #4b5563;
+  }
+  .hero-app .try[hidden] {
+    display: none;
+  }
+  .hero-app .chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.375rem;
+  }
+  .hero-app .chip {
+    height: 1.875rem;
+    padding: 0 0.8rem;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.82);
+    box-shadow:
+      0 0 0 1px rgb(17 17 17 / 0.08),
+      0 1px 2px rgb(17 17 17 / 0.05);
+    color: var(--ink);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 0.16s linear,
+      box-shadow 0.16s linear;
+  }
+  .hero-app .chip:hover {
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(17 17 17 / 0.14),
+      0 2px 6px rgb(17 17 17 / 0.08);
+  }
+  .hero-app .chip[aria-pressed="true"] {
+    background: var(--ink);
+    color: #fff;
+  }
+  .hero-app .chip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 999px;
+  }
+  .hero-app .caption {
+    margin-top: 0.875rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-subtle);
+  }
+
+  /* The glass bezel and the scaled screen. */
+  .hero-app .bezel {
+    padding: clamp(4px, 0.6vw, 8px);
+    border-radius: clamp(10px, 1.6vw, 20px);
+    background: rgb(255 255 255 / 0.55);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.7) inset,
+      0 0 0 1px rgb(17 17 17 / 0.06),
+      0 2px 6px rgb(17 40 32 / 0.06),
+      0 40px 80px -32px rgb(17 50 40 / 0.32),
+      0 80px 120px -60px rgb(17 50 40 / 0.22);
+  }
+  .hero-app .screen {
+    position: relative;
+    container-type: inline-size;
+    aspect-ratio: 1280 / 780;
+    overflow: hidden;
+    border-radius: clamp(6px, 1.1vw, 13px);
+    box-shadow: 0 0 0 1px rgb(17 17 17 / 0.08);
+    background: var(--c-chrome);
+  }
+  .hero-app .win {
+    --k: tan(atan2(100cqw, 1280px));
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 780px;
+    display: grid;
+    grid-template-rows: 44px minmax(0, 1fr);
+    transform: scale(var(--k));
+    transform-origin: 0 0;
+    background: var(--c-chrome);
+    color: var(--c-text);
+    font-family: "Geist", "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 18px;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+  .hero-app .win p,
+  .hero-app .win h2,
+  .hero-app .win h3,
+  .hero-app .win dl,
+  .hero-app .win dd,
+  .hero-app .win ul {
+    margin: 0;
+    padding: 0;
+    font: inherit;
+    letter-spacing: normal;
+    text-wrap: initial;
+  }
+  .hero-app .win ul {
+    list-style: none;
+  }
+  .hero-app .win svg {
+    display: block;
+    max-width: none;
+  }
+  .hero-app .i {
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.25;
+    stroke-linecap: square;
+    stroke-linejoin: miter;
+  }
+
+  /* Controls. */
+  .hero-app .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.12s linear;
+  }
+  .hero-app .btn .i {
+    margin-left: -4px;
+  }
+  .hero-app .btn.primary {
+    background: var(--c-accent);
+    color: #fff;
+  }
+  .hero-app .btn.primary.press {
+    background: #064e3b;
+  }
+  .hero-app .btn.secondary {
+    background: #fff;
+    border-color: var(--c-hairline-strong);
+  }
+  .hero-app .ib {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    color: var(--c-muted);
+  }
+  .hero-app .ib.pressed {
+    background: var(--c-press);
+  }
+
+  /* Title bar. */
+  .hero-app .tb {
+    display: flex;
+    align-items: center;
+    height: 44px;
+  }
+  .hero-app .tb-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 224px;
+    padding-left: 16px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+  .hero-app .tb-brand img {
+    display: block;
+  }
+  .hero-app .tb-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 380px;
+    height: 28px;
+    padding: 0 4px 0 8px;
+    border: 1px solid var(--c-hairline-strong);
+    border-bottom-color: var(--c-stroke);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--c-subtle);
+  }
+  .hero-app .ph {
+    flex: 1;
+  }
+  .hero-app .keys {
+    display: inline-flex;
+    gap: 2px;
+  }
+  .hero-app .key {
+    display: inline-grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--c-hairline-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: #fff;
+    color: var(--c-muted);
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 500;
+  }
+  .hero-app .tb-actions {
+    margin-left: auto;
+    padding: 0 12px;
+  }
+  .hero-app .caps {
+    display: flex;
+    align-self: stretch;
+  }
+  .hero-app .cap {
+    display: grid;
+    place-items: center;
+    width: 46px;
+  }
+  .hero-app .cap svg {
+    width: 10px;
+    height: 10px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1;
+  }
+
+  /* Sidebar. */
+  .hero-app .body {
+    display: flex;
+    min-height: 0;
+  }
+  .hero-app .side {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    width: 224px;
+    padding: 4px 8px 8px;
+  }
+  .hero-app .group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .hero-app .group.foot {
+    margin-top: auto;
+  }
+  .hero-app .item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 4px;
+    color: var(--c-muted);
+  }
+  .hero-app .item.current {
+    background: var(--c-accent-tint);
+    color: var(--c-text);
+    font-weight: 500;
+  }
+  .hero-app .item.current::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--c-accent);
+  }
+  .hero-app .item.current .i {
+    color: var(--c-accent);
+  }
+  .hero-app .lbl {
+    flex: 1;
+  }
+  .hero-app .count {
+    color: var(--c-subtle);
+    font-size: 12px;
+    font-weight: 400;
+  }
+  .hero-app .heading {
+    margin: 20px 0 4px;
+    padding: 0 12px;
+    color: var(--c-subtle);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  .hero-app .heading-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-right: 10px;
+  }
+
+  /* Content: the list and the details pane. */
+  .hero-app .content {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--c-content);
+    border-top: 1px solid var(--c-hairline);
+    border-left: 1px solid var(--c-hairline);
+    border-top-left-radius: 8px;
+  }
+  .hero-app .list {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+  .hero-app .lhead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 12px 0 24px;
+    flex: none;
+  }
+  .hero-app .ltitle {
+    font-size: 15px;
+    line-height: 20px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+  .hero-app .lcount {
+    color: var(--c-subtle);
+  }
+  .hero-app .opts {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .hero-app .lbody {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 8px;
+  }
+  .hero-app .sec {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    height: 36px;
+    padding: 0 16px 8px;
+    color: var(--c-subtle);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  .hero-app .scount {
+    font-weight: 400;
+    opacity: 0.8;
+  }
+  .hero-app .row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 40px;
+    padding: 0 8px 0 16px;
+    border-radius: 4px;
+  }
+  .hero-app .row.selected {
+    background: var(--c-accent-tint);
+  }
+  .hero-app .row.selected::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--c-accent);
+  }
+  .hero-app .row.enter {
+    overflow: hidden;
+    animation: ha-row-in 0.32s cubic-bezier(0, 0, 0, 1) both;
+  }
+  @keyframes ha-row-in {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+  }
+  .hero-app .type {
+    display: inline-flex;
+    flex: none;
+    color: var(--c-subtle);
+  }
+  .hero-app .selected .type {
+    color: var(--c-muted);
+  }
+  .hero-app .text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+  }
+  .hero-app .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hero-app .line2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: 16px;
+  }
+  .hero-app .status {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--c-subtle);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .hero-app .bar {
+    position: relative;
+    flex: 0 0 clamp(72px, 18%, 160px);
+    height: 4px;
+    overflow: hidden;
+    background: var(--c-track);
+  }
+  .hero-app .fill {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    background: var(--c-idle);
+    transition: transform 0.25s linear;
+  }
+  .hero-app .live .fill {
+    background: var(--g-progress);
+  }
+  .hero-app .end {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: none;
+    min-width: 72px;
+    height: 100%;
+  }
+  .hero-app .rest {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding-right: 8px;
+    color: var(--c-muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .hero-app .sign {
+    display: inline-flex;
+    color: var(--c-subtle);
+  }
+  .hero-app .sign.check {
+    color: var(--c-accent);
+  }
+  .hero-app .acts {
+    position: absolute;
+    right: 0;
+    display: none;
+    gap: 2px;
+  }
+  .hero-app .row.selected .acts {
+    display: flex;
+  }
+  .hero-app .row.selected .rest {
+    visibility: hidden;
+  }
+
+  /* Details pane. */
+  .hero-app .pane {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    flex: none;
+    width: 360px;
+    padding: 16px 20px 32px;
+    overflow: hidden;
+    border-left: 1px solid var(--c-hairline);
+    background: var(--c-content);
+  }
+  .hero-app .pane.swap {
+    animation: ha-fade 0.22s cubic-bezier(0, 0, 0, 1);
+  }
+  @keyframes ha-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  .hero-app .phead {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hero-app .title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .hero-app .title-row .type {
+    margin-top: 2px;
+  }
+  .hero-app .titles {
+    flex: 1;
+    min-width: 0;
+  }
+  .hero-app .pname {
+    font-size: 15px;
+    line-height: 20px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .hero-app .sub {
+    margin-top: 2px;
+    color: var(--c-subtle);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .hero-app .pactions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-left: 32px;
+  }
+  .hero-app .stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    padding: 16px 0;
+    border-block: 1px solid var(--c-hairline);
+  }
+  .hero-app .stat dt {
+    color: var(--c-subtle);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .hero-app .stat dd {
+    margin-top: 4px;
+  }
+  .hero-app .v {
+    color: var(--c-muted);
+    white-space: nowrap;
+  }
+  .hero-app .v b {
+    color: var(--c-text);
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  .hero-app .block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .hero-app .block .lbl {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    color: var(--c-muted);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  .hero-app .note {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--c-subtle);
+    font-weight: 400;
+  }
+  .hero-app .note.ok {
+    color: var(--c-accent);
+    animation: ha-fade 0.4s linear;
+  }
+  .hero-app .map canvas,
+  .hero-app .map .still {
+    display: block;
+    width: 320px;
+    height: auto;
+  }
+  .hero-app .sparkwrap {
+    position: relative;
+  }
+  .hero-app .spark {
+    width: 100%;
+    height: 56px;
+    overflow: visible;
+  }
+  .hero-app .spark .grid {
+    stroke: var(--c-hairline);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 2 3;
+  }
+  .hero-app .spark .area {
+    fill: var(--c-accent-tint);
+  }
+  .hero-app .spark .line {
+    fill: none;
+    stroke: var(--c-accent);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .hero-app .shead {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    background: var(--c-accent);
+  }
+  .hero-app .workers {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .hero-app .workers li {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 40px;
+    align-items: center;
+    gap: 8px;
+  }
+  .hero-app .wid,
+  .hero-app .wleft {
+    color: var(--c-subtle);
+  }
+  .hero-app .wleft {
+    text-align: right;
+  }
+  .hero-app .wbar {
+    position: relative;
+    height: 4px;
+    overflow: hidden;
+    background: var(--c-track);
+  }
+  .hero-app .wbar span {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    background: var(--g-progress);
+    transition: transform 0.25s linear;
+  }
+  .hero-app .facts {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hero-app .fact {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px;
+  }
+  .hero-app .fact dt {
+    padding-top: 5px;
+    color: var(--c-subtle);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .hero-app .fact dd {
+    padding-top: 4px;
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+  .hero-app .fact .ib {
+    margin-top: -2px;
+  }
+  .hero-app .mono,
+  .hero-app .s-link {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  /* The add sheet (apps/desktop/src/lib/add/AddSheet.svelte). */
+  .hero-app .scrim {
+    position: absolute;
+    inset: 0;
+    background: rgb(11 11 15 / 0.24);
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.15s cubic-bezier(0.33, 0, 0.67, 1),
+      visibility 0s 0.15s;
+  }
+  .hero-app .sheet {
+    position: absolute;
+    top: 72px;
+    left: calc(50% - 280px);
+    width: 560px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 20px 20px;
+    border: 1px solid var(--c-hairline);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px var(--c-hairline),
+      0 2px 6px var(--c-shadow),
+      0 12px 32px var(--c-shadow);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition:
+      opacity 0.15s cubic-bezier(0.33, 0, 0.67, 1),
+      transform 0.15s cubic-bezier(0.33, 0, 0.67, 1),
+      visibility 0s 0.15s;
+  }
+  .hero-app .win.adding .scrim,
+  .hero-app .win.adding .sheet {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+      opacity 0.22s cubic-bezier(0, 0, 0, 1),
+      transform 0.22s cubic-bezier(0, 0, 0, 1);
+  }
+  .hero-app .win:not(.adding) .sheet {
+    transform: translateY(-8px);
+  }
+  .hero-app .s-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: -4px -8px 0 0;
+  }
+  .hero-app .s-title {
+    font-size: 15px;
+    line-height: 20px;
+    font-weight: 600;
+  }
+  .hero-app .s-link {
+    min-height: 32px;
+    padding: 6px 12px;
+    border: 1px solid var(--c-accent);
+    box-shadow: 0 0 0 1px var(--c-accent);
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hero-app .s-link::after {
+    content: "";
+    display: inline-block;
+    width: 1px;
+    height: 14px;
+    margin-left: 1px;
+    vertical-align: -2px;
+    background: var(--c-text);
+  }
+  .hero-app .s-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 60px;
+    padding: 12px;
+    border: 1px solid var(--c-hairline);
+    border-radius: 8px;
+  }
+  .hero-app .s-card:not(.found) {
+    opacity: 0;
+  }
+  .hero-app .s-card.found {
+    animation: ha-fade 0.18s linear;
+  }
+  .hero-app .s-type {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    background: var(--c-accent-tint);
+    color: var(--c-accent);
+  }
+  .hero-app .s-name {
+    font-weight: 500;
+  }
+  .hero-app .s-meta {
+    color: var(--c-subtle);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .hero-app .s-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .hero-app .s-label {
+    width: 64px;
+    color: var(--c-muted);
+  }
+  .hero-app .s-folder {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--c-hairline-strong);
+    border-radius: 4px;
+    color: var(--c-text);
+  }
+  .hero-app .s-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-app .row.enter,
+    .hero-app .pane.swap,
+    .hero-app .note.ok,
+    .hero-app .s-card.found {
+      animation: none;
+    }
+    .hero-app .fill,
+    .hero-app .wbar span,
+    .hero-app .scrim,
+    .hero-app .sheet {
+      transition: none !important;
+    }
+  }
+</style>
+
+<script>
+  import "../../lib/herodemo";
+</script>
