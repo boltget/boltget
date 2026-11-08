@@ -1,0 +1,229 @@
+---
+// The Speed section's card on Home: one file arriving as a map of squares
+// (lib/chunkmap.ts) while a seeded simulated download (lib/sim.ts) fills it
+// from several connections at once. Calm on purpose: no counters, no offsets,
+// just the file and a status word. It loops while on screen; under reduced
+// motion and without JavaScript the finished map is drawn at build time.
+import Icon from "../Icon.astro";
+import { t } from "../../i18n";
+
+// The build-time still: every square arrived, in the map's gradient.
+const COLS = 48;
+const ROWS = 8;
+const GAP = 3;
+const CELL = 14;
+const W = COLS * CELL + (COLS - 1) * GAP;
+const H = ROWS * CELL + (ROWS - 1) * GAP;
+const squares = Array.from({ length: COLS * ROWS }, (_, i) => ({
+  x: (i % COLS) * (CELL + GAP),
+  y: Math.floor(i / COLS) * (CELL + GAP),
+}));
+const status = {
+  probe: t("home.speed.card.probe"),
+  running: t("home.speed.card.running"),
+  done: t("home.speed.card.done"),
+};
+---
+
+<figure class="card" aria-label={t("home.speed.card.label")} data-speed-card data-status={JSON.stringify(status)}>
+  <div class="panel">
+    <div class="head" aria-hidden="true">
+      <span class="file-icon"><Icon name="archive" size={16} /></span>
+      <span class="name">{t("home.speed.card.file")}</span>
+      <span class="host">{t("home.speed.card.host")}</span>
+      <span class="status" data-status-text>{status.done}</span>
+    </div>
+    <div class="map" aria-hidden="true">
+      <svg class="still" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="speed-ramp" x1="0" y1="0" x2="1" y2="0.3">
+            <stop offset="0" stop-color="#34D399" />
+            <stop offset="0.3" stop-color="#10B981" />
+            <stop offset="0.55" stop-color="#059669" />
+            <stop offset="0.78" stop-color="#0D9488" />
+            <stop offset="1" stop-color="#047857" />
+          </linearGradient>
+        </defs>
+        <path fill="url(#speed-ramp)" d={squares.map((s) => `M${s.x} ${s.y}h${CELL}v${CELL}h-${CELL}z`).join("")} />
+      </svg>
+      <canvas hidden></canvas>
+    </div>
+    <p class="legend" aria-hidden="true">{t("home.speed.card.legend")}</p>
+  </div>
+</figure>
+
+<style>
+  .card {
+    margin: 0;
+    padding: clamp(1.25rem, 5vw, 4.5rem) clamp(1rem, 5vw, 4.5rem) clamp(1.5rem, 5vw, 4rem);
+    border-radius: 24px;
+    background: linear-gradient(180deg, var(--tint-wash) 0%, color-mix(in srgb, var(--tint-wash) 35%, #fff) 45%, #fff 100%);
+    box-shadow: var(--hairline-shadow);
+  }
+  .panel {
+    max-width: 58rem;
+    margin-inline: auto;
+    padding: clamp(1rem, 2.4vw, 1.75rem);
+    border-radius: 16px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(17 17 17 / 0.06),
+      0 2px 4px rgb(17 17 17 / 0.03),
+      0 24px 48px -24px rgb(4 60 44 / 0.22);
+  }
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 0;
+    margin-bottom: 1.25rem;
+    font-size: 0.9375rem;
+  }
+  .file-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9px;
+    background: var(--tint-bg);
+    color: var(--tint-icon);
+  }
+  .name {
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .host {
+    color: var(--text-subtle);
+    white-space: nowrap;
+  }
+  .status {
+    margin-left: auto;
+    flex: none;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background: var(--tint-bg);
+    color: var(--tint-text);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+  .map {
+    position: relative;
+  }
+  .still,
+  canvas {
+    display: block;
+    width: 100%;
+  }
+  .still {
+    height: auto;
+    aspect-ratio: 48 / 8;
+  }
+  .legend {
+    margin-top: 1rem;
+    font-size: 0.8125rem;
+    color: var(--text-subtle);
+  }
+  @media (max-width: 34rem) {
+    .host {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  import { ChunkMap } from "../../lib/chunkmap";
+  import { DEMO_SIM, DownloadSim } from "../../lib/sim";
+
+  const PROBE = 0.9;
+  const PACE = 0.7;
+  const HOLD = 3.2;
+
+  for (const root of document.querySelectorAll<HTMLElement>("[data-speed-card]")) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) continue;
+    const canvas = root.querySelector("canvas");
+    const still = root.querySelector<SVGElement>(".still");
+    const label = root.querySelector<HTMLElement>("[data-status-text]");
+    if (!canvas || !still || !label) continue;
+    const words = JSON.parse(root.dataset.status ?? "{}") as Record<"probe" | "running" | "done", string>;
+    const narrow = window.matchMedia("(max-width: 34rem)");
+    const map = new ChunkMap(canvas, { cols: 48, rows: 8, gap: 3, order: "row" });
+    const layout = () => {
+      map.layout = narrow.matches ? { cols: 28, rows: 8, gap: 2, order: "row" } : { cols: 48, rows: 8, gap: 3, order: "row" };
+      map.reset();
+      map.measure();
+    };
+
+    let sim = new DownloadSim(DEMO_SIM);
+    let phase: "probe" | "running" | "done" = "probe";
+    let clock = 0;
+    let last = 0;
+    let frame = 0;
+    let visible = false;
+
+    const say = (p: typeof phase) => {
+      if (phase === p && label.textContent === words[p]) return;
+      phase = p;
+      label.textContent = words[p];
+    };
+
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      clock += dt;
+      if (phase === "probe") {
+        if (clock >= PROBE) {
+          clock = 0;
+          say("running");
+        }
+      } else if (phase === "running") {
+        sim.advance(dt * PACE);
+        if (sim.finished) {
+          clock = 0;
+          say("done");
+        }
+      } else if (clock >= HOLD) {
+        sim = new DownloadSim(DEMO_SIM);
+        map.reset();
+        clock = 0;
+        say("probe");
+      }
+      map.draw(sim, { heads: true });
+      frame = visible ? requestAnimationFrame(tick) : 0;
+    };
+
+    const start = () => {
+      if (frame || !visible || document.hidden) return;
+      last = performance.now();
+      frame = requestAnimationFrame(tick);
+    };
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    };
+
+    canvas.hidden = false;
+    still.style.display = "none";
+    layout();
+    say("probe");
+    map.draw(sim);
+    narrow.addEventListener("change", () => {
+      layout();
+      map.draw(sim);
+    });
+    new ResizeObserver(() => {
+      map.measure();
+      map.draw(sim);
+    }).observe(canvas);
+    new IntersectionObserver(([entry]) => {
+      visible = !!entry?.isIntersecting;
+      if (visible) start();
+      else stop();
+    }).observe(root);
+    document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+  }
+</script>

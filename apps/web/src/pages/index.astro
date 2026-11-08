@@ -1,140 +1,240 @@
 ---
-// Home (docs/WEBSITE.md, Home page): the atmospheric hero with the simulated
-// app preview, then five scenes that each show one thing: how a download is
-// split, measured speed, resume after a crash, the built-in details, and the
-// closing mark.
+// Home (docs/WEBSITE.md, Home as built): the Daylight hero panel with the real
+// app overlapping its foot, then three centred sections, each in its own tint
+// (Speed in emerald, resume in sky blue, Built in in violet), and the closing
+// mark.
 import Base from "../layouts/Base.astro";
-import Aurora from "../components/Aurora.astro";
-import AppDemo from "../components/home/AppDemo.astro";
-import HowItWorks from "../components/home/HowItWorks.astro";
-import SpeedRuns from "../components/home/SpeedRuns.astro";
-import ResumeDemo from "../components/home/ResumeDemo.astro";
-import Features from "../components/home/Features.astro";
+import Icon from "../components/Icon.astro";
+import AppShot from "../components/home/AppShot.astro";
+import SectionIntro from "../components/home/SectionIntro.astro";
+import SpeedCard from "../components/home/SpeedCard.astro";
+import ResumeCard from "../components/home/ResumeCard.astro";
+import Items from "../components/home/Items.astro";
 import ClosingMark from "../components/home/ClosingMark.astro";
+import skyAvif from "../assets/sky.avif";
+import skyWebp from "../assets/sky.webp";
 import { t } from "../i18n";
 
-const demo = {
-  preview: t("home.demo.preview"),
-  appName: t("home.demo.appName"),
-  nav: {
-    all: t("home.demo.nav.all"),
-    active: t("home.demo.nav.active"),
-    completed: t("home.demo.nav.completed"),
-    scheduled: t("home.demo.nav.scheduled"),
-  },
-  empty: t("home.demo.empty"),
-  download: t("home.demo.download"),
-  connecting: t("home.demo.connecting", { host: "{host}" }),
-  meta: t("home.demo.meta", { size: "{size}", host: "{host}" }),
-  stats: {
-    speed: t("home.demo.stats.speed"),
-    received: t("home.demo.stats.received"),
-    left: t("home.demo.stats.left"),
-    connections: t("home.demo.stats.connections"),
-  },
-  map: t("home.demo.map"),
-  mapNote: t("home.demo.mapNote"),
-  graph: t("home.demo.graph"),
-  conn: {
-    connecting: t("home.demo.conn.connecting"),
-    receiving: t("home.demo.conn.receiving"),
-    idle: t("home.demo.conn.idle"),
-  },
-  done: t("home.demo.done", { size: "{size}", time: "{time}" }),
-  verified: t("home.demo.verified"),
-  open: t("home.demo.open"),
-  label: t("home.demo.label"),
-  note: t("home.demo.note"),
-  noteLink: t("home.demo.noteLink"),
-  url: t("home.demo.file.url"),
-  name: t("home.demo.file.name"),
-  host: t("home.demo.file.host"),
-  recent: {
-    heading: t("home.demo.recent.heading"),
-    done: t("home.demo.recent.done"),
-    items: [
-      { name: t("home.demo.recent.one"), size: "612 MiB" },
-      { name: t("home.demo.recent.two"), size: "1.84 GiB" },
-      { name: t("home.demo.recent.three"), size: "88 MiB" },
-    ],
-  },
-};
+const skyStyle = `--sky-avif: url(${skyAvif.src}); --sky-webp: url(${skyWebp.src})`;
+
+const speedItems = [
+  { icon: "search", lead: t("home.speed.items.probe.lead"), body: t("home.speed.items.probe.body") },
+  { icon: "split", lead: t("home.speed.items.split.lead"), body: t("home.speed.items.split.body") },
+  { icon: "swap", lead: t("home.speed.items.steal.lead"), body: t("home.speed.items.steal.body") },
+] as const;
+
+const builtinItems = [
+  { icon: "queue", lead: t("home.builtin.items.queues.lead"), body: t("home.builtin.items.queues.body") },
+  { icon: "gauge", lead: t("home.builtin.items.limits.lead"), body: t("home.builtin.items.limits.body") },
+  { icon: "link", lead: t("home.builtin.items.refresh.lead"), body: t("home.builtin.items.refresh.body") },
+  { icon: "globe", lead: t("home.builtin.items.proxy.lead"), body: t("home.builtin.items.proxy.body") },
+  { icon: "terminal", lead: t("home.builtin.items.cli.lead"), body: t("home.builtin.items.cli.body") },
+  { icon: "check", lead: t("home.builtin.items.verified.lead"), body: t("home.builtin.items.verified.body") },
+] as const;
 ---
 
-<Base title={t("home.title")} description={t("home.description")} bareTitle header="field">
+<Base title={t("home.title")} description={t("home.description")} bareTitle header="overlay">
+  <script is:inline slot="head">
+    // Scroll reveals only with JavaScript and full motion; otherwise everything is simply there.
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("reveal");
+  </script>
+
   <section class="hero" aria-labelledby="hero-title">
-    <div class="sky"><Aurora /></div>
-    <div class="wrap copy" data-aurora-clamp>
-      <h1 id="hero-title">{t("home.headline")}</h1>
-      <div class="aside">
-        <p class="sentence">{t("home.sentence")}</p>
-        <p class="links">
-          <a class="tlink" href="/download/">{t("home.primary")}</a>
-          <a class="tlink" href="/benchmarks/">{t("home.secondary")}</a>
+    <div class="panel">
+      <div class="sky" style={skyStyle} aria-hidden="true"></div>
+      <div class="copy">
+        <p class="pill"><span class="dot" aria-hidden="true"></span>{t("home.pill")}</p>
+        <h1 id="hero-title">
+          <span class="l1">{t("home.headline.one")}</span>
+          <span class="l2">{t("home.headline.two")}</span>
+        </h1>
+        <p class="lede">{t("home.lede")}</p>
+        <p class="actions">
+          <a class="button button-primary" href="/download/"><Icon name="windows" size={15} />{t("home.primary")}</a>
+          <a class="button button-secondary" href="#speed">{t("home.secondary")}<Icon name="arrowDown" size={15} /></a>
         </p>
+        <p class="platforms">{t("home.platforms")}</p>
       </div>
+      <div class="overlap" aria-hidden="true"></div>
     </div>
-    <div class="wrap stage">
-      <AppDemo s={demo} />
+    <div class="stage">
+      <AppShot />
     </div>
   </section>
 
-  <HowItWorks />
-  <SpeedRuns />
-  <ResumeDemo />
-  <Features />
+  <section id="speed" class="section tint-emerald" aria-labelledby="speed-title">
+    <div class="wrap">
+      <SectionIntro
+        icon="zap"
+        label={t("home.speed.label")}
+        heading={t("home.speed.heading")}
+        lede={t("home.speed.lede")}
+        id="speed-title"
+      />
+      <div class="visual" data-reveal><SpeedCard /></div>
+      <Items items={[...speedItems]} />
+      <p class="more" data-reveal>
+        <a href="/benchmarks/">{t("home.speed.link")}<Icon name="arrowRight" size={14} /></a>
+      </p>
+    </div>
+  </section>
+
+  <section class="section tint-sky" aria-labelledby="resume-title">
+    <div class="wrap">
+      <SectionIntro
+        icon="plug"
+        label={t("home.resume.label")}
+        heading={t("home.resume.heading")}
+        lede={t("home.resume.lede")}
+        id="resume-title"
+      />
+      <div class="visual" data-reveal><ResumeCard /></div>
+    </div>
+  </section>
+
+  <section class="section tint-violet" aria-labelledby="builtin-title">
+    <div class="wrap">
+      <SectionIntro
+        icon="layers"
+        label={t("home.builtin.label")}
+        heading={t("home.builtin.heading")}
+        lede={t("home.builtin.lede")}
+        id="builtin-title"
+      />
+      <div class="grid"><Items items={[...builtinItems]} /></div>
+      <p class="next" data-reveal><Icon name="sparkle" size={14} />{t("home.builtin.next")}</p>
+    </div>
+  </section>
+
   <ClosingMark />
 </Base>
 
 <style>
+  /* Section tints: label pill, card wash, icon chips and highlighted phrases.
+     Text tints hold at least 4.5:1 on the frame, the pill and the card. */
+  .tint-emerald {
+    --tint-text: #047857;
+    --tint-icon: #059669;
+    --tint-bg: #d1fae5;
+    --tint-wash: #c9f3e0;
+  }
+  .tint-sky {
+    --tint-text: #0369a1;
+    --tint-icon: #0284c7;
+    --tint-bg: #e0f2fe;
+    --tint-wash: #cfe8fb;
+  }
+  .tint-violet {
+    --tint-text: #6d28d9;
+    --tint-icon: #7c3aed;
+    --tint-bg: #ede9fe;
+    --tint-wash: #e6e0fd;
+  }
+
+  /* Hero. */
   .hero {
+    --overlap: clamp(7rem, 24vw, 21rem);
+    position: relative;
+    padding: 0.5rem 0.5rem 0;
+  }
+  .panel {
     position: relative;
     isolation: isolate;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #eef4f1;
+    box-shadow: inset 0 0 0 1px rgb(17 17 17 / 0.035);
   }
   .sky {
     position: absolute;
-    inset: 0 0 auto;
-    height: clamp(46rem, 100svh, 62rem);
+    inset: 0 -6% 0 0;
     z-index: -1;
+    background-image: var(--sky-webp);
+    background-image: image-set(var(--sky-avif) type("image/avif"), var(--sky-webp) type("image/webp"));
+    background-size: cover;
+    background-position: 50% 100%;
+    animation: drift 140s linear infinite alternate;
+  }
+  @keyframes drift {
+    to {
+      transform: translateX(-5%);
+    }
   }
   .copy {
     display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-    gap: 2rem 4rem;
-    align-items: end;
-    padding-top: calc(var(--header-h) + clamp(3.5rem, 12vh, 8.5rem));
-    padding-bottom: clamp(3rem, 8vh, 5.5rem);
-    color: #fff;
+    justify-items: center;
+    text-align: center;
+    padding: calc(var(--header-h) + var(--header-top) + clamp(3.5rem, 9vh, 6.5rem)) var(--gutter) clamp(2.75rem, 6vw, 4rem);
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.85rem 0.4rem 0.7rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 0 0 1px rgb(17 17 17 / 0.06);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ink);
+    animation: rise 1s var(--ease-out) both;
+  }
+  .dot {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgb(16 185 129 / 0.2);
   }
   h1 {
+    margin-top: 1.5rem;
     font-size: var(--type-display);
-    line-height: 0.95;
-    letter-spacing: -0.055em;
-    max-width: 9.5ch;
-    animation: rise 1.1s var(--ease-out) both;
+    font-weight: 400;
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+    color: var(--ink);
   }
-  .aside {
-    max-width: 26rem;
-    padding-bottom: 0.6rem;
-    animation: rise 1.1s 0.12s var(--ease-out) both;
+  h1 span {
+    display: block;
   }
-  .sentence {
-    font-size: clamp(1.0625rem, 1.4vw, 1.25rem);
-    line-height: 1.5;
-    color: rgb(255 255 255 / 0.92);
+  .l1 {
+    animation: rise 1.1s 0.08s var(--ease-out) both;
   }
-  .links {
+  .l2 {
+    font-family: var(--font-serif);
+    font-style: italic;
+    letter-spacing: -0.02em;
+    animation: rise 1.1s 0.18s var(--ease-out) both;
+  }
+  .copy .lede {
+    max-width: 33rem;
+    margin-top: 1.25rem;
+    animation: rise 1.1s 0.28s var(--ease-out) both;
+  }
+  .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem 1.75rem;
-    margin-top: 1.5rem;
-    font-size: 1rem;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 2rem;
+    animation: rise 1.1s 0.36s var(--ease-out) both;
   }
-  .links a {
-    color: #fff;
+  .platforms {
+    margin-top: 0.9rem;
+    font-size: 0.8125rem;
+    color: #4b5563;
+    animation: rise 1.1s 0.42s var(--ease-out) both;
   }
-  .links a:focus-visible {
-    outline-color: #fff;
+  .overlap {
+    height: var(--overlap);
+  }
+  .stage {
+    position: relative;
+    margin-top: calc(-1 * var(--overlap));
+    padding-inline: clamp(0.75rem, 3vw, 3rem);
+    animation: rise 1.3s 0.4s var(--ease-out) both;
   }
   @keyframes rise {
     from {
@@ -143,22 +243,102 @@ const demo = {
       filter: blur(6px);
     }
   }
-  .stage {
-    position: relative;
-    max-width: 78rem;
-    animation: rise 1.2s 0.25s var(--ease-out) both;
+
+  /* Sections. */
+  .section {
+    margin-top: var(--section-gap);
+    scroll-margin-top: 1rem;
   }
-  @media (max-width: 52rem) {
-    .copy {
-      grid-template-columns: minmax(0, 1fr);
-      padding-top: calc(var(--header-h) + 2.5rem);
+  .visual {
+    margin-top: clamp(2.5rem, 5vw, 4rem);
+  }
+  .section :global(.items) {
+    margin-top: clamp(2.5rem, 5vw, 3.75rem);
+    padding-inline: clamp(0rem, 3vw, 2.5rem);
+  }
+  .more,
+  .next {
+    margin-top: 2.5rem;
+    text-align: center;
+    font-size: 0.9375rem;
+  }
+  .more a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--ink);
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-color: rgb(11 11 15 / 0.25);
+    text-underline-offset: 0.3em;
+  }
+  .more a:hover {
+    text-decoration-color: currentColor;
+  }
+  .next {
+    color: var(--text-muted);
+  }
+  .next :global(svg) {
+    display: inline-block;
+    margin-right: 0.45rem;
+    vertical-align: -0.125em;
+    color: var(--tint-icon);
+  }
+
+  /* Scroll reveals (only when the head script set .reveal). */
+  :global(.reveal [data-reveal]) {
+    transition:
+      opacity 0.9s var(--ease-out),
+      transform 0.9s var(--ease-out),
+      filter 0.9s var(--ease-out);
+  }
+  :global(.reveal [data-reveal]:not(.in)) {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(6px);
+  }
+
+  @media (max-width: 40rem) {
+    .hero {
+      padding: 0.375rem 0.375rem 0;
+    }
+    .panel {
+      border-radius: 15px;
+    }
+    .actions {
+      flex-direction: column;
+      align-items: stretch;
+      width: min(100%, 20rem);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    h1,
-    .aside,
+    .sky,
+    .pill,
+    .l1,
+    .l2,
+    .copy .lede,
+    .actions,
+    .platforms,
     .stage {
       animation: none;
     }
   }
 </style>
+
+<script>
+  // Reveal each marked block once as it scrolls into view.
+  const blocks = document.querySelectorAll<HTMLElement>("[data-reveal]");
+  if (document.documentElement.classList.contains("reveal")) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          e.target.classList.add("in");
+          io.unobserve(e.target);
+        }
+      },
+      { rootMargin: "0px 0px -8% 0px" },
+    );
+    for (const b of blocks) io.observe(b);
+  }
+</script>

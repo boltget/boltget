@@ -1,0 +1,348 @@
+---
+// The resume section's card on Home: a download row in the style of the
+// desktop app's list. It runs, the power is cut (the panel dims), it shows as
+// paused, then picks up from the same point and finishes. A tick on the bar
+// marks where it stopped. Pure CSS, started when on screen; without
+// JavaScript or under reduced motion it shows the moment after the resume.
+import Icon from "../Icon.astro";
+import { t } from "../../i18n";
+---
+
+<figure class="card" aria-label={t("home.resume.card.label")} data-resume-card>
+  <div class="panel" aria-hidden="true">
+    <span class="cut">
+      <Icon name="plug" size={14} />
+      {t("home.resume.card.cut")}
+    </span>
+    <div class="row live">
+      <span class="type"><Icon name="video" size={18} /></span>
+      <span class="text">
+        <span class="name">{t("home.resume.card.file")}</span>
+        <span class="line2">
+          <span class="bar"><span class="fill"></span><span class="mark"></span></span>
+          <span class="host">{t("home.resume.card.host")}</span>
+        </span>
+      </span>
+      <span class="state">
+        <span class="s s-run"><Icon name="down" size={14} />{t("home.resume.card.running")}</span>
+        <span class="s s-pause"><Icon name="pause" size={14} />{t("home.resume.card.paused")}</span>
+        <span class="s s-resume"><Icon name="down" size={14} />{t("home.resume.card.resuming")}</span>
+        <span class="s s-done"><Icon name="done" size={14} />{t("home.resume.card.done")}</span>
+      </span>
+    </div>
+    <div class="row quiet">
+      <span class="type"><Icon name="file" size={18} /></span>
+      <span class="text">
+        <span class="name">{t("home.resume.card.other.one")}</span>
+        <span class="line2"><span class="host">{t("home.resume.card.other.oneHost")}</span></span>
+      </span>
+      <span class="state"><span class="s s-static"><Icon name="done" size={14} />{t("home.resume.card.done")}</span></span>
+    </div>
+    <div class="row quiet">
+      <span class="type"><Icon name="file" size={18} /></span>
+      <span class="text">
+        <span class="name">{t("home.resume.card.other.two")}</span>
+        <span class="line2"><span class="host">{t("home.resume.card.other.twoHost")}</span></span>
+      </span>
+      <span class="state"><span class="s s-static"><Icon name="done" size={14} />{t("home.resume.card.done")}</span></span>
+    </div>
+  </div>
+</figure>
+
+<style>
+  .card {
+    --loop: 12s;
+    --stop: 58%;
+    margin: 0;
+    padding: clamp(1.25rem, 6vw, 5rem) clamp(1rem, 6vw, 5rem);
+    border-radius: 24px;
+    background: linear-gradient(180deg, var(--tint-wash) 0%, color-mix(in srgb, var(--tint-wash) 35%, #fff) 50%, #fff 100%);
+    box-shadow: var(--hairline-shadow);
+  }
+  .panel {
+    position: relative;
+    max-width: 44rem;
+    margin-inline: auto;
+    padding: 0.5rem;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(17 17 17 / 0.06),
+      0 2px 4px rgb(17 17 17 / 0.03),
+      0 24px 48px -24px rgb(3 60 100 / 0.22);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: 10px;
+  }
+  .live {
+    background: #ecf8f2;
+    box-shadow: inset 3px 0 0 #059669;
+  }
+  .type {
+    color: #52525b;
+    display: grid;
+  }
+  .text {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .name {
+    font-size: 0.9375rem;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .line2 {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+  .host {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bar {
+    position: relative;
+    flex: none;
+    width: clamp(6rem, 22vw, 11rem);
+    height: 4px;
+    border-radius: 2px;
+    background: #e4e7e6;
+  }
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 76%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #34d399, #059669);
+  }
+  .mark {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    left: var(--stop);
+    width: 2px;
+    border-radius: 1px;
+    background: #0b0b0f;
+    opacity: 0.55;
+  }
+  .state {
+    display: grid;
+    justify-items: end;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+  .s {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+    opacity: 0;
+  }
+  .s-resume,
+  .s-static {
+    opacity: 1;
+  }
+  .s-resume,
+  .s-run {
+    color: #047857;
+  }
+  .quiet .name {
+    color: #3f3f46;
+  }
+  .cut {
+    position: absolute;
+    top: -0.875rem;
+    left: 50%;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transform: translateX(-50%);
+    opacity: 0;
+  }
+
+  /* The loop: run to the stop, cut, paused, resume from the same point, done. */
+  :global(.play) .fill {
+    animation: fill var(--loop) linear infinite;
+  }
+  :global(.play) .s-run {
+    animation: s-run var(--loop) step-end infinite;
+  }
+  :global(.play) .s-pause {
+    animation: s-pause var(--loop) step-end infinite;
+  }
+  :global(.play) .s-resume {
+    animation: s-resume var(--loop) step-end infinite;
+  }
+  :global(.play) .s-done {
+    animation: s-done var(--loop) step-end infinite;
+  }
+  :global(.play) .mark {
+    animation: mark var(--loop) step-end infinite;
+  }
+  :global(.play) .cut {
+    animation: cut var(--loop) var(--ease-out) infinite;
+  }
+  :global(.play) .live {
+    animation: dim var(--loop) linear infinite;
+  }
+  @keyframes fill {
+    0% {
+      width: 4%;
+      filter: none;
+    }
+    33% {
+      width: var(--stop);
+      filter: none;
+    }
+    33.5%,
+    52% {
+      width: var(--stop);
+      filter: grayscale(1) brightness(1.15);
+    }
+    55% {
+      width: var(--stop);
+      filter: none;
+    }
+    82%,
+    100% {
+      width: 100%;
+      filter: none;
+    }
+  }
+  @keyframes s-run {
+    0% {
+      opacity: 1;
+    }
+    33% {
+      opacity: 0;
+    }
+  }
+  @keyframes s-pause {
+    0% {
+      opacity: 0;
+    }
+    33% {
+      opacity: 1;
+    }
+    52% {
+      opacity: 0;
+    }
+  }
+  @keyframes s-resume {
+    0% {
+      opacity: 0;
+    }
+    52% {
+      opacity: 1;
+    }
+    82% {
+      opacity: 0;
+    }
+  }
+  @keyframes s-done {
+    0% {
+      opacity: 0;
+    }
+    82% {
+      opacity: 1;
+    }
+  }
+  @keyframes mark {
+    0% {
+      opacity: 0;
+    }
+    33% {
+      opacity: 0.55;
+    }
+    96% {
+      opacity: 0;
+    }
+  }
+  @keyframes cut {
+    0%,
+    32% {
+      opacity: 0;
+      transform: translate(-50%, 4px);
+    }
+    34%,
+    46% {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    50%,
+    100% {
+      opacity: 0;
+      transform: translate(-50%, 0);
+    }
+  }
+  @keyframes dim {
+    0%,
+    32.5% {
+      opacity: 1;
+      background-color: #ecf8f2;
+    }
+    33.5% {
+      opacity: 0.35;
+    }
+    36% {
+      opacity: 1;
+      background-color: #f4f4f5;
+    }
+    52% {
+      background-color: #f4f4f5;
+    }
+    55%,
+    100% {
+      opacity: 1;
+      background-color: #ecf8f2;
+    }
+  }
+  @media (max-width: 34rem) {
+    .bar {
+      width: 5rem;
+    }
+    .row {
+      gap: 0.625rem;
+      padding-inline: 0.625rem;
+    }
+    .quiet .state {
+      display: none;
+    }
+    .live {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .live .state {
+      grid-column: 2;
+      justify-items: start;
+    }
+  }
+</style>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-resume-card]")) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) continue;
+    new IntersectionObserver(([entry]) => root.classList.toggle("play", !!entry?.isIntersecting), {
+      threshold: 0.3,
+    }).observe(root);
+  }
+</script>

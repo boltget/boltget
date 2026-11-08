@@ -1,0 +1,70 @@
+---
+// A borderless grid of short points under a Home section: a tinted icon chip,
+// then "**Bold lead.** plain sentence." Three columns on wide screens.
+import Icon, { type IconName } from "../Icon.astro";
+
+interface Props {
+  items: { icon: IconName; lead: string; body: string }[];
+}
+const { items } = Astro.props;
+---
+
+<ul class="items" data-reveal>
+  {
+    items.map((item) => (
+      <li>
+        <span class="chip">
+          <Icon name={item.icon} size={16} />
+        </span>
+        <p>
+          <strong>{item.lead}</strong> {item.body}
+        </p>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .items {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2.25rem clamp(1.5rem, 4vw, 3.5rem);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    display: grid;
+    gap: 0.9rem;
+    align-content: start;
+  }
+  .chip {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9px;
+    background: var(--tint-bg);
+    color: var(--tint-icon);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.6);
+  }
+  p {
+    font-size: 0.9875rem;
+    line-height: 1.55;
+    color: var(--text-muted);
+  }
+  strong {
+    font-weight: 500;
+    color: var(--ink);
+  }
+  @media (max-width: 52rem) {
+    .items {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 34rem) {
+    .items {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

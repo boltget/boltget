@@ -1,7 +1,7 @@
 {
   "site": {
     "name": "Boltget",
-    "description": "A download manager built for speed. Splits every file across many connections and resumes where it stopped, even after a crash.",
+    "description": "A download manager built for speed. Splits every file across many connections and picks up where it stopped, even after a crash.",
     "skip": "Skip to content",
     "repo": "https://github.com/boltget/boltget",
     "repoTree": "https://github.com/boltget/boltget/tree/main/{path}",
@@ -11,18 +11,17 @@
     "label": "Main",
     "home": "Boltget home",
     "benchmarks": "Benchmarks",
-    "compare": "Compare",
     "docs": "Docs",
     "changelog": "Changelog",
-    "github": "GitHub"
+    "github": "GitHub",
+    "download": "Download"
   },
   "footer": {
     "nav": "Footer",
-    "tagline": "Every byte, at full speed.",
+    "tagline": "The download manager built for speed.",
     "product": "Product",
     "download": "Download",
     "benchmarks": "Benchmarks",
-    "compare": "Boltget and IDM",
     "changelog": "Changelog",
     "docs": "Docs",
     "install": "Install",
@@ -32,182 +31,109 @@
     "source": "Open source on GitHub",
     "security": "Security",
     "privacy": "Privacy",
-    "credit": "© 2026 the Boltget contributors.",
-    "facts": "v{version} · benchmarks {bench} · build {commit}"
+    "credit": "© 2026 Boltget"
   },
   "home": {
     "title": "Boltget: every byte, at full speed",
-    "description": "A download manager built for speed. Splits every file across many connections and keeps each one busy until the last byte.",
-    "headline": "Every byte, at full speed.",
-    "sentence": "Splits every file across many connections and keeps each one busy until the last byte.",
-    "primary": "Try the CLI preview",
-    "secondary": "See the benchmark",
-    "demo": {
-      "preview": "Preview · v0.2 app",
-      "appName": "Boltget",
-      "nav": {
-        "all": "All downloads",
-        "active": "Active",
-        "completed": "Completed",
-        "scheduled": "Scheduled"
-      },
-      "empty": "Paste a link or drop one here.",
-      "download": "Download",
-      "connecting": "Connecting to {host}",
-      "meta": "{size} · {host} · resumable",
-      "stats": {
-        "speed": "Speed",
-        "received": "Received",
-        "left": "Time left",
-        "connections": "Connections"
-      },
-      "map": "File map",
-      "mapNote": "Each square is a slice of the file",
-      "graph": "Throughput",
-      "conn": {
-        "connecting": "Connecting",
-        "receiving": "Receiving",
-        "idle": "Finished"
-      },
-      "done": "Done. {size} in {time} s.",
-      "verified": "SHA-256 verified",
-      "open": "Show in folder",
-      "label": "A simulated preview of the planned Boltget desktop app: a link is pasted, the file is split across connections that come online one by one, and the download finishes with a verified checksum.",
-      "note": "Simulated preview of the desktop app planned for v0.2.",
-      "noteLink": "Measured results",
-      "recent": {
-        "heading": "Earlier today",
-        "one": "studio-7.1-setup.exe",
-        "two": "survey-2026-q3.parquet",
-        "three": "field-notes-114.mp3",
-        "done": "Done"
-      },
-      "file": {
-        "url": "https://cdn.example.com/releases/atlas-4.2-x64.zip",
-        "name": "atlas-4.2-x64.zip",
-        "host": "cdn.example.com",
-        "folder": "C:\\Users\\ada\\Downloads",
-        "hash": "9f2c41d07be35a8e6c1f0d94a2b7e85c3d61f0a9b4e27c58d13a6f09e2b4c7d1"
-      }
+    "description": "A download manager built for speed. Splits every file across many connections and picks up where it stopped, even after a crash.",
+    "pill": "Now in preview for Windows",
+    "headline": {
+      "one": "Every byte,",
+      "two": "at full speed."
     },
-    "how": {
-      "kicker": "How it works",
-      "heading": "One file, many connections.",
-      "note": "fig. 1 · file map, one square per slice",
-      "label": "A simulated download shown as a map of squares, one square per slice of the file, filling as connections write it. It plays through five steps; each step can be selected.",
-      "stepsLabel": "Steps",
-      "steps": {
-        "probe": {
-          "title": "Probe",
-          "body": "One request learns the size and that the server sends ranges."
-        },
-        "split": {
-          "title": "Split",
-          "body": "Four connections start, each on its own part of the file."
-        },
-        "join": {
-          "title": "Add",
-          "body": "More join one at a time, only while the download gets faster."
-        },
-        "steal": {
-          "title": "Steal",
-          "body": "A connection that finishes early takes over half of the biggest part left."
-        },
-        "done": {
-          "title": "Verify",
-          "body": "The last byte lands. The SHA-256 was computed on the way in."
-        }
-      },
-      "readout": {
-        "connections": {
-          "one": "{count} connection",
-          "other": "{count} connections"
-        },
-        "received": "{done} / {total}",
-        "verified": "SHA-256 verified",
-        "probe": "{total} · ranges: yes",
-        "time": "{value} s"
-      },
-      "took": "#{who} took half of #{from}",
-      "play": {
-        "tag": "Simulation",
-        "size": "File size",
-        "limit": "Server limits each connection to 2 MiB/s",
-        "replay": "Replay",
-        "pause": "Pause",
-        "resume": "Play",
-        "summary": "{connections} at most · {steals} steals · {time} s"
-      }
+    "lede": "Boltget splits every file across many connections, keeps each one busy to the last byte, and never loses its place.",
+    "primary": "Download for Windows",
+    "secondary": "See how it works",
+    "platforms": "Windows 10 and 11",
+    "shot": {
+      "alt": "The Boltget app with three downloads running. One is selected, and the details pane beside the list shows its speed, the file map filling in from six connections, a speed graph and each connection's progress."
     },
     "speed": {
-      "kicker": "Measured",
-      "heading": "Real downloads, replayed at measured speed.",
-      "body": "Median of {runs} runs per target, measured {date}.",
-      "link": "Method and raw data",
-      "seconds": "{value} s",
-      "rate": "{value} MiB/s",
-      "replay": "Replay",
-      "targets": {
-        "lab-1gib": "1 GiB · local server",
-        "cachefly-100mb": "100 MiB · CacheFly CDN",
-        "cachefly-10mb": "10 MiB · CacheFly CDN",
-        "nforce-100mb": "100 MiB · NFOrce, HTTPS",
-        "lab-throttled-100mib": "100 MiB · 2 MiB/s per connection"
+      "label": "Speed",
+      "heading": "Many connections. One file.",
+      "lede": "Boltget [reads the server first], splits the file into parts and adds connections [only while they make it faster]. When one finishes early, it [takes over] the biggest part left.",
+      "card": {
+        "label": "A simulated download shown as a map of squares, one per slice of the file. Connections fill their own parts at the same time until the whole file has arrived.",
+        "file": "atlas-4.2-x64.zip",
+        "host": "cdn.example.com",
+        "probe": "Reading the server",
+        "running": "Downloading",
+        "done": "Done",
+        "legend": "Each square is a slice of the file."
       },
-      "note": "source: bench/results/{run}",
-      "dimension": "whole file",
-      "dimFigure": "median · MiB/s"
+      "items": {
+        "probe": {
+          "lead": "Reads the server first.",
+          "body": "One request learns the file's size and whether the server can send it in parts."
+        },
+        "split": {
+          "lead": "Splits the file.",
+          "body": "Connections start on parts of their own, and more join only while the download gets faster."
+        },
+        "steal": {
+          "lead": "Finished parts take over.",
+          "body": "A connection that runs out of work takes half of the biggest part left, so they all finish together."
+        }
+      },
+      "link": "How we measure"
     },
     "resume": {
-      "kicker": "Never loses progress",
+      "label": "Never loses progress",
       "heading": "Pull the plug. It picks up where it stopped.",
-      "figure": "1,000",
-      "figureBody": "kills over 349 downloads in testing. Every file byte-identical.",
-      "label": "A simulated download is killed at 63%, resumes from its last checkpoint and finishes with the same checksum as a clean download.",
-      "note": "Simulated",
-      "file": "atlas-4.2-x64.zip",
-      "running": "Downloading",
-      "killed": "Process killed",
-      "resuming": "Resuming from checkpoint",
-      "done": "Byte-identical",
-      "checkpoint": "checkpoint",
-      "command": "boltget resume 7",
-      "link": "How resume works",
-      "sheetNote": "harness: kill, resume, compare SHA-256"
+      "lede": "Progress counts only once the bytes are [safely on disk]. After a crash, a restart or a dropped line, the download [carries on from there], not from zero.",
+      "card": {
+        "label": "A download in the Boltget app is interrupted by a power cut, shows as paused, then resumes from where it stopped and finishes.",
+        "file": "big_buck_bunny_1080p_h264.mov",
+        "host": "download.blender.org",
+        "running": "Downloading",
+        "cut": "Power cut",
+        "paused": "Paused",
+        "resuming": "Picking up where it stopped",
+        "done": "Done",
+        "other": {
+          "one": "Blender-4.2.3-windows-x64.msi",
+          "oneHost": "download.blender.org",
+          "two": "kexp-live-session-2026.flac",
+          "twoHost": "archive.org"
+        }
+      }
     },
-    "features": {
-      "kicker": "Built in",
+    "builtin": {
+      "label": "Built in",
       "heading": "The details, handled.",
-      "soon": "Planned · {milestone}",
-      "limit": {
-        "title": "Speed limits",
-        "body": "Per download or for all of them, changed live."
+      "lede": "The things a download manager should simply do, [with nothing to set up] and [nothing to babysit].",
+      "items": {
+        "queues": {
+          "lead": "Queues.",
+          "body": "Line downloads up and let a few run at a time while the rest wait their turn."
+        },
+        "limits": {
+          "lead": "Speed limits.",
+          "body": "For one download or all of them, changed while they run."
+        },
+        "refresh": {
+          "lead": "Link refresh.",
+          "body": "Link expired near the end? Give it a new one and it carries on."
+        },
+        "proxy": {
+          "lead": "Proxy.",
+          "body": "HTTP, HTTPS and SOCKS5, with cookies and sign-in when a site needs them."
+        },
+        "cli": {
+          "lead": "Command line.",
+          "body": "Every download from a terminal, with exit codes and JSON for scripts."
+        },
+        "verified": {
+          "lead": "Verified files.",
+          "body": "Checksums are computed on the way in, so a damaged file never passes as done."
+        }
       },
-      "checksum": {
-        "title": "Checksums",
-        "body": "SHA-256, SHA-512, SHA-1 or MD5, hashed as it downloads."
-      },
-      "refresh": {
-        "title": "Link refresh",
-        "body": "Link expired at 97%? Give it a new one and it carries on."
-      },
-      "network": {
-        "title": "Proxies and cookies",
-        "body": "HTTP, HTTPS and SOCKS5 proxies, cookies.txt, Basic auth."
-      },
-      "json": {
-        "title": "Made for scripts",
-        "body": "Exit codes and line-delimited JSON for every change."
-      },
-      "browser": {
-        "title": "Browser extension",
-        "body": "Chrome, Edge and Firefox hand downloads straight over."
-      },
-      "note": "v0.1 unless marked"
+      "next": "Coming next: browser extension and video downloads."
     },
     "cta": {
-      "heading": "Build it, run it, measure it.",
-      "primary": "Try the CLI preview",
+      "heading": "Faster from the first byte.",
+      "lede": "Install it, paste a link, and watch the file arrive.",
+      "primary": "Download for Windows",
       "secondary": "Read the docs",
       "mark": "The Boltget mark lighting up row by row."
     }

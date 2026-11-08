@@ -1,5 +1,7 @@
 ---
-// Shell for every marketing page: metadata, header, footer.
+// Shell for every marketing page: metadata, then the frame (docs/WEBSITE.md,
+// Character): a white body with the whole page in one rounded panel, the
+// floating header at its top and the footer at its foot.
 import "../styles/global.css";
 import geistRegular from "../fonts/Geist-400-latin.woff2?url";
 import Header from "../components/Header.astro";
@@ -11,11 +13,11 @@ interface Props {
   description: string;
   /** Use the title as is, without the " | Boltget" suffix. */
   bareTitle?: boolean;
-  /** "field": the header sits on the Home hero's atmosphere instead of paper. */
-  header?: "paper" | "field";
+  /** "overlay": the header floats over the page's first panel (Home's hero). */
+  header?: "flow" | "overlay";
 }
 
-const { title, description, bareTitle = false, header = "paper" } = Astro.props;
+const { title, description, bareTitle = false, header = "flow" } = Astro.props;
 const site = t("site.name");
 const fullTitle = bareTitle ? title : `${title} | ${site}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -30,9 +32,10 @@ const ogImage = new URL("/og-image.png", Astro.site);
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
-    <meta name="theme-color" content={header === "field" ? "#031E18" : "#FFFFFF"} />
+    <meta name="theme-color" content="#FFFFFF" />
     <meta name="color-scheme" content="light" />
     <link rel="preload" href={geistRegular} as="font" type="font/woff2" crossorigin />
+    <slot name="preload" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -55,31 +58,52 @@ const ogImage = new URL("/og-image.png", Astro.site);
   </head>
   <body>
     <a class="skip" href="#main">{t("site.skip")}</a>
-    <Header variant={header} />
-    <main id="main" tabindex="-1">
-      <slot />
-    </main>
-    <Footer />
+    <div class="frame">
+      <Header overlay={header === "overlay"} />
+      <main id="main" tabindex="-1">
+        <slot />
+      </main>
+      <Footer />
+    </div>
   </body>
 </html>
 
 <style>
+  .frame {
+    position: relative;
+    margin: var(--frame-gap);
+    min-height: calc(100svh - 2 * var(--frame-gap));
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--frame-radius);
+    background: var(--frame);
+    box-shadow: var(--hairline-shadow);
+  }
+  main {
+    flex: 1;
+  }
   .skip {
     position: absolute;
-    left: var(--gutter);
+    left: calc(var(--frame-gap) + 1rem);
     top: -10rem;
-    z-index: 10;
+    z-index: 20;
     padding: 0.625rem 1rem;
-    background: var(--accent);
-    color: var(--on-accent);
-    font-weight: 600;
+    border-radius: 999px;
+    background: var(--ink);
+    color: #fff;
+    font-weight: 500;
     text-decoration: none;
   }
   .skip:focus {
-    top: 0.75rem;
+    top: calc(var(--frame-gap) + 0.75rem);
   }
   main:focus {
     outline: none;
+  }
+  @media (max-width: 40rem) {
+    .frame {
+      --frame-radius: 20px;
+    }
   }
   :global(.frozen *),
   :global(.frozen *::before),

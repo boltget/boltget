@@ -1,12 +1,10 @@
 ---
-// Site footer, the same on every marketing page: the calm aurora under a
-// gentle wave with a feathered edge (docs/WEBSITE.md, Character), the
-// link columns in light text, and the build facts in mono. The source link here is the site's only
+// Site footer, the same on every marketing page: the foot of the frame, light
+// and quiet (docs/WEBSITE.md, Character). The logo with one line, three short
+// link columns, and the copyright. The source link here is the page's only
 // mention of the project being open source.
-import Aurora from "./Aurora.astro";
-import mark from "../../../../brand/svg/mark.svg";
+import lockup from "../../../../brand/svg/lockup-horizontal-on-light.svg";
 import { t } from "../i18n";
-import { facts } from "../lib/facts";
 
 const groups = [
   {
@@ -14,7 +12,6 @@ const groups = [
     links: [
       { href: "/download/", label: t("footer.download") },
       { href: "/benchmarks/", label: t("footer.benchmarks") },
-      { href: "/compare/idm/", label: t("footer.compare") },
       { href: "/changelog/", label: t("footer.changelog") },
     ],
   },
@@ -35,14 +32,14 @@ const groups = [
     ],
   },
 ];
-const factLine = t("footer.facts", { version: facts.version, bench: facts.benchDate, commit: facts.commit });
+const height = 22;
+const width = Math.round((lockup.width / lockup.height) * height);
 ---
 
 <footer class="footer">
-  <div class="field"><Aurora mode="calm" /></div>
-  <div class="wrap grid">
+  <div class="wrap"><div class="grid">
     <div class="about">
-      <img src={mark.src} width="30" height="30" alt="" />
+      <img src={lockup.src} width={width} height={height} alt={t("site.name")} />
       <p>{t("footer.tagline")}</p>
     </div>
     <nav aria-label={t("footer.nav")}>
@@ -61,43 +58,33 @@ const factLine = t("footer.facts", { version: facts.version, bench: facts.benchD
         ))
       }
     </nav>
-  </div>
-  <div class="wrap base">
-    <p>{t("footer.credit")}</p>
-    <p class="facts">{factLine}</p>
+  </div></div>
+  <div class="wrap">
+    <p class="base">{t("footer.credit")}</p>
   </div>
 </footer>
 
 <style>
   .footer {
-    --feather: clamp(6rem, 9vw, 8rem);
-    position: relative;
-    isolation: isolate;
-    margin-top: clamp(4rem, 9vw, 7rem);
-    padding-top: var(--feather);
-    color: #fff;
+    margin-top: var(--section-gap);
     font-size: 0.875rem;
-  }
-  .field {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    overflow: hidden;
   }
   .grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
     gap: 2.5rem 3rem;
-    padding-block: 2.5rem 3rem;
+    padding-block: 3.5rem 3rem;
+    border-top: 1px solid rgb(17 17 17 / 0.06);
   }
   .about {
     display: grid;
     align-content: start;
-    gap: 1rem;
-    font-size: 1.125rem;
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    gap: 0.875rem;
+  }
+  .about p {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    color: var(--ink-78);
   }
   nav {
     display: grid;
@@ -105,45 +92,30 @@ const factLine = t("footer.facts", { version: facts.version, bench: facts.benchD
     gap: 2rem;
   }
   h2 {
-    font: 400 0.75rem/1 var(--font-mono);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #a7f3d0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--ink);
   }
   ul {
     display: grid;
     gap: 0.6rem;
-    margin: 1.1rem 0 0;
+    margin: 1rem 0 0;
     padding: 0;
     list-style: none;
   }
   a {
-    color: rgb(255 255 255 / 0.9);
+    color: var(--text-muted);
     text-decoration: none;
     transition: color 0.2s;
   }
   a:hover {
-    color: #fff;
-    text-decoration: underline;
-    text-underline-offset: 0.25em;
-  }
-  a:focus-visible {
-    outline-color: #fff;
+    color: var(--ink);
   }
   .base {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.5rem 2rem;
-    padding-block: 1.25rem 2.25rem;
-    border-top: 1px solid rgb(255 255 255 / 0.14);
-    color: rgb(255 255 255 / 0.82);
+    padding-block: 1.25rem 1.75rem;
+    color: var(--text-muted);
     font-size: 0.8125rem;
-  }
-  .facts {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-variant-numeric: tabular-nums;
   }
   @media (max-width: 48rem) {
     .grid {

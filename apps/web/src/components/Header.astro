@@ -1,28 +1,28 @@
 ---
-// Site header. On paper it is sticky and translucent; on the Home hero
-// ("field") it sits on the atmosphere in white. Three links; the source code
-// is linked from the footer only (docs/WEBSITE.md, Home page).
-import onDark from "../../../../brand/svg/lockup-horizontal-on-dark.svg";
-import onLight from "../../../../brand/svg/lockup-horizontal-on-light.svg";
+// Site header: a floating white bar, sticky at the top of the frame (docs/
+// WEBSITE.md, Character). Logo left; plain text links, GitHub and the black
+// Download pill right. It keeps its place across page loads through a named
+// view transition. On Home it floats over the hero panel ("overlay").
+import lockup from "../../../../brand/svg/lockup-horizontal-on-light.svg";
+import Icon from "./Icon.astro";
 import { t } from "../i18n";
 
 interface Props {
-  variant?: "paper" | "field";
+  overlay?: boolean;
 }
-const { variant = "paper" } = Astro.props;
-const lockup = variant === "field" ? onDark : onLight;
+const { overlay = false } = Astro.props;
 const path = Astro.url.pathname.replace(/\/$/, "") || "/";
 const links = [
-  { href: "/benchmarks/", label: t("nav.benchmarks"), match: "/benchmarks" },
-  { href: "/docs/", label: t("nav.docs"), match: "/docs" },
-  { href: "/changelog/", label: t("nav.changelog"), match: "/changelog" },
+  { href: "/benchmarks/", label: t("nav.benchmarks"), match: "/benchmarks", wide: true },
+  { href: "/docs/", label: t("nav.docs"), match: "/docs", wide: false },
+  { href: "/changelog/", label: t("nav.changelog"), match: "/changelog", wide: true },
 ];
 const height = 24;
 const width = Math.round((lockup.width / lockup.height) * height);
 ---
 
-<header class:list={["header", variant]}>
-  <div class="wrap bar">
+<header class:list={["header", { overlay }]}>
+  <div class="bar">
     <a class="brand" href="/" aria-label={t("nav.home")}>
       <img src={lockup.src} width={width} height={height} alt="" />
     </a>
@@ -30,13 +30,24 @@ const width = Math.round((lockup.width / lockup.height) * height);
       <ul>
         {
           links.map((link) => (
-            <li>
-              <a href={link.href} aria-current={path.startsWith(link.match) ? "page" : undefined}>
+            <li class:list={{ wide: link.wide }}>
+              <a class="link" href={link.href} aria-current={path.startsWith(link.match) ? "page" : undefined}>
                 {link.label}
               </a>
             </li>
           ))
         }
+        <li>
+          <a class="link github" href={t("site.repo")} aria-label={t("nav.github")}>
+            <Icon name="github" size={16} />
+            <span class="github-label">{t("nav.github")}</span>
+          </a>
+        </li>
+        <li>
+          <a class="cta" href="/download/" aria-current={path.startsWith("/download") ? "page" : undefined}>
+            {t("nav.download")}
+          </a>
+        </li>
       </ul>
     </nav>
   </div>
@@ -44,68 +55,107 @@ const width = Math.round((lockup.width / lockup.height) * height);
 
 <style>
   .header {
-    z-index: 5;
-    height: var(--header-h);
-  }
-  .paper {
     position: sticky;
-    top: 0;
-    background: color-mix(in srgb, #fff 84%, transparent);
-    backdrop-filter: blur(14px) saturate(1.4);
-    -webkit-backdrop-filter: blur(14px) saturate(1.4);
-    border-bottom: 1px solid color-mix(in srgb, var(--hairline) 80%, transparent);
+    top: var(--header-top);
+    z-index: 10;
+    padding-inline: var(--header-top);
+    margin-top: var(--header-top);
+    view-transition-name: site-header;
   }
-  .field {
-    position: absolute;
-    inset: 0 0 auto;
+  .overlay {
+    margin-bottom: calc(-1 * (var(--header-h) + var(--header-top)));
   }
   .bar {
-    height: 100%;
+    max-width: 72rem;
+    height: var(--header-h);
+    margin-inline: auto;
+    padding-inline: 1.125rem 0.5rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1.5rem;
+    gap: 1rem;
+    border-radius: 18px;
+    background: rgb(255 255 255 / 0.9);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    box-shadow:
+      0 0 0 1px rgb(17 17 17 / 0.05),
+      0 1px 2px rgb(17 17 17 / 0.04),
+      0 8px 24px -12px rgb(17 17 17 / 0.12);
   }
   .brand {
     flex: none;
     display: block;
     padding-block: 0.5rem;
+    border-radius: 6px;
+    view-transition-name: site-logo;
   }
   ul {
     display: flex;
-    gap: clamp(1.25rem, 2.6vw, 2.25rem);
+    align-items: center;
+    gap: 0.25rem;
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  nav a {
-    display: block;
-    padding-block: 0.5rem;
+  .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
     font-size: 0.875rem;
+    font-weight: 500;
     color: var(--text-muted);
     text-decoration: none;
-    transition: color 0.2s;
+    transition:
+      color 0.2s,
+      background-color 0.2s;
   }
-  nav a:hover,
-  nav a[aria-current="page"] {
+  .link:hover,
+  .link[aria-current="page"] {
     color: var(--ink);
+    background: rgb(11 11 15 / 0.04);
   }
-  .field nav a {
-    color: rgb(255 255 255 / 0.8);
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    height: 2.5rem;
+    margin-left: 0.375rem;
+    padding: 0 1.05rem;
+    border-radius: 12px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.16),
+      0 1px 2px rgb(11 11 15 / 0.2);
+    transition: background-color 0.16s linear;
   }
-  .field nav a:hover {
+  .cta:hover {
+    background: #2a2a30;
     color: #fff;
   }
-  .field :focus-visible {
-    outline-color: #fff;
+  @media (max-width: 46rem) {
+    .wide {
+      display: none;
+    }
   }
   @media (max-width: 26rem) {
+    .bar {
+      padding-left: 0.875rem;
+    }
     .brand img {
       width: auto;
-      height: 21px;
+      height: 20px;
     }
-    ul {
-      gap: 1rem;
+    .github-label {
+      display: none;
+    }
+    .link {
+      padding-inline: 0.6rem;
     }
   }
 </style>

@@ -9,8 +9,9 @@ export default defineConfig({
   site: "https://boltget.app",
   output: "static",
   trailingSlash: "ignore",
-  // Marketing pages ship no JavaScript except the hero island (docs/WEBSITE.md).
-  prefetch: false,
+  // Links are prefetched on hover, so the cross-document view transition has
+  // the next page ready (docs/WEBSITE.md, Character).
+  prefetch: { prefetchAll: true, defaultStrategy: "hover" },
   integrations: [
     svelte(),
     // Added explicitly (Starlight would add it otherwise) so the design lab
