@@ -1,0 +1,100 @@
+---
+// "Available on": the platform glyphs under a download button (docs/WEBSITE.md,
+// Home as built). Windows in ink (a link to /download, or plain where the page
+// is the download page); macOS and Linux greyed, focusable, with a CSS-only
+// "Coming soon" tooltip on hover and focus.
+import Icon from "./Icon.astro";
+import { t } from "../i18n";
+
+interface Props {
+  /** Where Windows links to; omit to show it without a link. */
+  windowsHref?: string;
+  class?: string;
+}
+const { windowsHref, class: className } = Astro.props;
+---
+
+<p class:list={["platform-row", className]}>
+  <span class="lead">{t("platforms.lead")}</span>
+  {
+    windowsHref ? (
+      <a class="os" href={windowsHref} aria-label={t("platforms.windowsLink")}>
+        <Icon name="windows" size={12} />
+      </a>
+    ) : (
+      <span class="os" role="img" aria-label={t("platforms.windows")}>
+        <Icon name="windows" size={12} />
+      </span>
+    )
+  }
+  <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("platforms.macosSoon")} data-tip={t("platforms.soon")}><Icon name="apple" size={15} /></span>
+  <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("platforms.linuxSoon")} data-tip={t("platforms.soon")}><Icon name="linux" size={15} /></span>
+</p>
+
+<style>
+  .platform-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+  .lead {
+    margin-right: 0.2rem;
+  }
+  .os {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 1.625rem;
+    height: 1.625rem;
+    border-radius: 7px;
+    color: var(--ink);
+    transition:
+      color 0.16s linear,
+      background-color 0.16s linear;
+  }
+  a.os:hover {
+    background: rgb(255 255 255 / 0.7);
+  }
+  .off {
+    color: #b4bac1;
+    cursor: default;
+  }
+  .off:hover,
+  .off:focus-visible {
+    color: #8a929b;
+  }
+  .off::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: 50%;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 3px);
+    transition:
+      opacity 0.14s linear,
+      transform 0.14s var(--ease-out);
+  }
+  .off:hover::after,
+  .off:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .off::after {
+      transition: none;
+      transform: translate(-50%, 0);
+    }
+  }
+</style>

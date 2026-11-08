@@ -17,12 +17,16 @@ const TIMEOUT_MS = 10_000;
 /** The release page used when nothing could be resolved. */
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
-export type Platform = "windows-x64" | "linux-x64";
+/**
+ * What a file is, from its name: the desktop app's Windows installer, or the
+ * command-line tool for Windows (zip) or Linux (tar.gz).
+ */
+export type Kind = "app" | "cli-windows" | "cli-linux";
 
 export interface Asset {
   name: string;
-  /** Known platform, from the file name; `null` for any other file. */
-  platform: Platform | null;
+  /** Known kind, from the file name; `null` for any other file. */
+  kind: Kind | null;
   url: string;
   size: number;
   /** Lowercase hex SHA-256, or `null` if neither source had one. */
@@ -59,14 +63,21 @@ interface ApiRelease {
   assets: ApiAsset[];
 }
 
-const PLATFORMS: [RegExp, Platform][] = [
-  [/-windows-x64\.zip$/, "windows-x64"],
-  [/-linux-x64\.tar\.gz$/, "linux-x64"],
+const KINDS: [RegExp, Kind][] = [
+  [/-windows-x64-setup\.exe$/, "app"],
+  [/-windows-x64\.zip$/, "cli-windows"],
+  [/-linux-x64\.tar\.gz$/, "cli-linux"],
 ];
-const ORDER: (Platform | null)[] = ["windows-x64", "linux-x64", null];
+const ORDER: (Kind | null)[] = ["app", "cli-windows", "cli-linux", null];
 
-function platformOf(name: string): Platform | null {
-  return PLATFORMS.find(([re]) => re.test(name))?.[1] ?? null;
+/** The kind of a release file, from its name; `null` for any other file. */
+export function kindOf(name: string): Kind | null {
+  return KINDS.find(([re]) => re.test(name))?.[1] ?? null;
+}
+
+/** The release's file of one kind, if it has one. */
+export function assetOf(release: Release | null, kind: Kind): Asset | undefined {
+  return release?.assets.find((a) => a.kind === kind);
 }
 
 /** Parses `sha256sum` output: `<64 hex>  [*]<file name>` per line. */
@@ -124,13 +135,13 @@ async function resolve(): Promise<Release | null> {
       const digest = a.digest?.startsWith("sha256:") ? a.digest.slice(7).toLowerCase() : null;
       return {
         name: a.name,
-        platform: platformOf(a.name),
+        kind: kindOf(a.name),
         url: a.browser_download_url,
         size: a.size,
         sha256: sums.get(a.name) ?? digest,
       };
     })
-    .sort((a, b) => ORDER.indexOf(a.platform) - ORDER.indexOf(b.platform));
+    .sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
 
   return {
     version: latest.tag_name.replace(/^v/, ""),
@@ -152,4 +163,14 @@ export function latestRelease(): Promise<Release | null> {
     return null;
   });
   return cached;
+}
+
+/**
+ * Splits a version for display: `0.2.0-preview.1` is `{ base: "0.2.0",
+ * preview: 1 }`, `0.1.0` is `{ base: "0.1.0", preview: null }`. Any other
+ * pre-release suffix is kept in `base` as it is.
+ */
+export function versionParts(version: string): { base: string; preview: number | null } {
+  const m = /^(\d+\.\d+\.\d+)-preview\.(\d+)$/.exec(version);
+  return m?.[1] && m[2] ? { base: m[1], preview: Number(m[2]) } : { base: version, preview: null };
 }

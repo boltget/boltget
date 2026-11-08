@@ -1,0 +1,364 @@
+---
+// A stylised Windows "protected your PC" prompt for /download (docs/WEBSITE.md,
+// Download page), drawn in HTML and CSS: generic, not a copy of the real
+// dialog. Laid out at 360 x 250 and scaled as one piece to its width.
+//
+// Without `step` it loops: a cursor clicks More info, the details and Run
+// anyway appear, it clicks Run anyway and the setup window opens. With `step`
+// it is a still of that step (the reduced-motion pair). Always decorative: the
+// sentence beside it carries the meaning.
+import icon from "../../../../brand/svg/icon-64.svg";
+import { t } from "../i18n";
+
+interface Props {
+  step?: 1 | 2;
+}
+const { step } = Astro.props;
+---
+
+<div class:list={["ss", step ? `still s${step}` : "live"]} aria-hidden="true">
+  <div class="box">
+    <div class="dialog">
+      <span class="close"></span>
+      <p class="title">{t("download.smartscreen.title")}</p>
+      <span class="line l1"></span>
+      <span class="line l2"></span>
+      <p class="a more"><span>{t("download.smartscreen.more")}</span></p>
+      <dl class="b details">
+        <div><dt>{t("download.smartscreen.app")}</dt><dd>{t("download.smartscreen.appValue")}</dd></div>
+        <div><dt>{t("download.smartscreen.publisher")}</dt><dd>{t("download.smartscreen.unknown")}</dd></div>
+      </dl>
+      <span class="rule"></span>
+      <span class="btn b run">{t("download.smartscreen.run")}</span>
+      <span class="btn dont">{t("download.smartscreen.dont")}</span>
+    </div>
+    <div class="setup">
+      <img src={icon.src} width="28" height="28" alt="" />
+      <p>{t("download.smartscreen.setup")}</p>
+      <span class="bar"><span class="fill"></span></span>
+    </div>
+    <svg class="cursor" width="20" height="20" viewBox="0 0 20 20">
+      <path d="M2 1.5v15.2l4.1-3.9 2.6 5.9 2.9-1.3-2.6-5.7h5.7z" fill="#0b0b0f" stroke="#fff" stroke-width="1.4" stroke-linejoin="round" />
+    </svg>
+  </div>
+</div>
+
+<style>
+  .ss {
+    container-type: inline-size;
+    position: relative;
+    width: min(100%, 360px);
+    aspect-ratio: 360 / 250;
+  }
+  .box {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 360px;
+    height: 250px;
+    transform: scale(tan(atan2(100cqw, 360px)));
+    transform-origin: 0 0;
+    font-family: var(--font-sans);
+    text-align: left;
+  }
+  .dialog {
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #2163b8, #1a56a3);
+    color: #fff;
+    box-shadow:
+      0 0 0 1px rgb(11 11 15 / 0.08),
+      0 18px 40px -18px rgb(11 30 70 / 0.55);
+  }
+  .close {
+    position: absolute;
+    top: 16px;
+    right: 18px;
+    width: 11px;
+    height: 11px;
+    background:
+      linear-gradient(45deg, transparent 45%, rgb(255 255 255 / 0.8) 45% 55%, transparent 55%),
+      linear-gradient(-45deg, transparent 45%, rgb(255 255 255 / 0.8) 45% 55%, transparent 55%);
+  }
+  .title {
+    position: absolute;
+    top: 30px;
+    left: 26px;
+    font-size: 21px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .line {
+    position: absolute;
+    left: 26px;
+    height: 7px;
+    border-radius: 4px;
+    background: rgb(255 255 255 / 0.4);
+  }
+  .l1 {
+    top: 74px;
+    width: 280px;
+  }
+  .l2 {
+    top: 89px;
+    width: 196px;
+  }
+  .more {
+    position: absolute;
+    top: 108px;
+    left: 26px;
+    font-size: 13px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .details {
+    position: absolute;
+    top: 108px;
+    left: 26px;
+    display: grid;
+    gap: 3px;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .details div {
+    display: flex;
+    gap: 6px;
+  }
+  .details dt {
+    width: 62px;
+    color: rgb(255 255 255 / 0.75);
+  }
+  .details dd {
+    margin: 0;
+  }
+  .rule {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 190px;
+    height: 1px;
+    background: rgb(255 255 255 / 0.18);
+  }
+  .btn {
+    position: absolute;
+    top: 205px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 4px;
+    font-size: 12.5px;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.75);
+  }
+  .run {
+    left: 136px;
+    width: 100px;
+  }
+  .dont {
+    left: 246px;
+    width: 90px;
+  }
+  .setup {
+    position: absolute;
+    top: 72px;
+    left: 70px;
+    width: 220px;
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 20px 22px 22px;
+    border-radius: 12px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow:
+      0 0 0 1px rgb(11 11 15 / 0.06),
+      0 18px 40px -18px rgb(11 11 15 / 0.35);
+    opacity: 0;
+  }
+  .bar {
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: #e7eae9;
+  }
+  .fill {
+    display: block;
+    height: 100%;
+    background: #047857;
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+  }
+  .cursor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 2px 1.5px;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.25));
+  }
+
+  /* The loop: 10 s. More info is clicked at 24%, Run anyway at 50%. */
+  .live .dialog {
+    animation: ss-dialog 10s infinite;
+  }
+  .live .a {
+    animation: ss-a 10s infinite;
+  }
+  .live .b {
+    animation: ss-b 10s infinite;
+  }
+  .live .run {
+    animation:
+      ss-b 10s infinite,
+      ss-press 10s infinite;
+  }
+  .live .setup {
+    animation: ss-setup 10s infinite;
+  }
+  .live .fill {
+    animation: ss-fill 10s infinite;
+  }
+  .live .cursor {
+    animation: ss-cursor 10s infinite;
+  }
+  @keyframes ss-cursor {
+    0% {
+      opacity: 0;
+      transform: translate(310px, 245px);
+      animation-timing-function: var(--ease-out);
+    }
+    5% {
+      opacity: 1;
+    }
+    22% {
+      transform: translate(52px, 112px) scale(1);
+    }
+    24% {
+      transform: translate(52px, 112px) scale(0.85);
+    }
+    26%,
+    30% {
+      transform: translate(52px, 112px) scale(1);
+      animation-timing-function: var(--ease-out);
+    }
+    48% {
+      transform: translate(180px, 214px) scale(1);
+    }
+    50% {
+      transform: translate(180px, 214px) scale(0.85);
+    }
+    52%,
+    56% {
+      opacity: 1;
+      transform: translate(180px, 214px) scale(1);
+    }
+    60%,
+    100% {
+      opacity: 0;
+      transform: translate(180px, 214px) scale(1);
+    }
+  }
+  @keyframes ss-a {
+    0%,
+    24% {
+      opacity: 1;
+    }
+    26%,
+    92% {
+      opacity: 0;
+    }
+    93%,
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes ss-b {
+    0%,
+    24% {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    27%,
+    92% {
+      opacity: 1;
+      transform: none;
+    }
+    93%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes ss-press {
+    0%,
+    49% {
+      background: transparent;
+    }
+    50%,
+    58% {
+      background: rgb(255 255 255 / 0.28);
+    }
+    59%,
+    100% {
+      background: transparent;
+    }
+  }
+  @keyframes ss-dialog {
+    0%,
+    56% {
+      opacity: 1;
+      transform: none;
+    }
+    61%,
+    91% {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    97%,
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes ss-setup {
+    0%,
+    58% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    63%,
+    86% {
+      opacity: 1;
+      transform: none;
+    }
+    91%,
+    100% {
+      opacity: 0;
+      transform: none;
+    }
+  }
+  @keyframes ss-fill {
+    0%,
+    63% {
+      transform: scaleX(0);
+    }
+    86%,
+    100% {
+      transform: scaleX(1);
+    }
+  }
+
+  /* The stills: step 1 points at More info, step 2 at Run anyway. */
+  .s1 .b,
+  .s2 .a {
+    opacity: 0;
+  }
+  .s1 .cursor {
+    transform: translate(52px, 112px);
+  }
+  .s2 .cursor {
+    transform: translate(180px, 214px);
+  }
+</style>

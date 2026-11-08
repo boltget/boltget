@@ -5,6 +5,7 @@
 // mark.
 import Base from "../layouts/Base.astro";
 import Icon from "../components/Icon.astro";
+import PlatformRow from "../components/PlatformRow.astro";
 import HeroApp from "../components/home/HeroApp.astro";
 import SectionIntro from "../components/home/SectionIntro.astro";
 import SpeedCard from "../components/home/SpeedCard.astro";
@@ -53,12 +54,7 @@ const builtinItems = [
           <a class="button button-secondary" href="#speed">{t("home.secondary")}<Icon name="arrowDown" size={15} /></a>
         </p>
         <p class="platforms">{t("home.platforms")}</p>
-        <p class="also">
-          <span class="also-lead">{t("home.also.lead")}</span>
-          <a class="os" href="/download/" aria-label={t("home.also.windows")}><Icon name="windows" size={12} /></a>
-          <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("home.also.macosSoon")} data-tip={t("home.also.soon")}><Icon name="apple" size={15} /></span>
-          <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("home.also.linuxSoon")} data-tip={t("home.also.soon")}><Icon name="linux" size={15} /></span>
-        </p>
+        <PlatformRow class="also" windowsHref="/download/" />
       </div>
       <div class="overlap" aria-hidden="true"></div>
     </div>
@@ -200,66 +196,9 @@ const builtinItems = [
     color: #4b5563;
     animation: rise 1.1s 0.42s var(--ease-out) both;
   }
-  .also {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
+  .copy :global(.also) {
     margin-top: 0.6rem;
-    font-size: 0.75rem;
-    color: #6b7280;
     animation: rise 1.1s 0.46s var(--ease-out) both;
-  }
-  .also-lead {
-    margin-right: 0.2rem;
-  }
-  .os {
-    position: relative;
-    display: inline-grid;
-    place-items: center;
-    width: 1.625rem;
-    height: 1.625rem;
-    border-radius: 7px;
-    color: var(--ink);
-    transition:
-      color 0.16s linear,
-      background-color 0.16s linear;
-  }
-  a.os:hover {
-    background: rgb(255 255 255 / 0.7);
-  }
-  .off {
-    color: #b4bac1;
-    cursor: default;
-  }
-  .off:hover,
-  .off:focus-visible {
-    color: #8a929b;
-  }
-  /* "Coming soon": a small CSS-only tooltip on hover and keyboard focus. */
-  .off::after {
-    content: attr(data-tip);
-    position: absolute;
-    bottom: calc(100% + 0.4rem);
-    left: 50%;
-    padding: 0.25rem 0.5rem;
-    border-radius: 6px;
-    background: var(--ink);
-    color: #fff;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    line-height: 1.2;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transform: translate(-50%, 3px);
-    transition:
-      opacity 0.14s linear,
-      transform 0.14s var(--ease-out);
-  }
-  .off:hover::after,
-  .off:focus-visible::after {
-    opacity: 1;
-    transform: translate(-50%, 0);
   }
   .overlap {
     height: var(--overlap);
@@ -346,13 +285,9 @@ const builtinItems = [
     .copy .lede,
     .actions,
     .platforms,
-    .also,
+    .copy :global(.also),
     .stage {
       animation: none;
-    }
-    .off::after {
-      transition: none;
-      transform: translate(-50%, 0);
     }
   }
 </style>

@@ -1,340 +1,439 @@
 ---
-// /download: the newest published release, resolved from GitHub at build time
-// (src/lib/releases.ts). Without the API the page still builds and links to
-// the releases page. No JavaScript of its own. See docs/WEBSITE.md, Download page.
+// /download (docs/WEBSITE.md, Download page): the newest published release,
+// resolved from GitHub at build time (src/lib/releases.ts). Centred: the
+// installer as the one primary button, the platform row, the SmartScreen
+// help, the command-line files, and the checksums folded away. Without the
+// API the page still builds and links to the releases page. Its only script
+// is the copy button's.
 import Base from "../layouts/Base.astro";
-import PageIntro from "../components/PageIntro.astro";
-import { t, tDynamic } from "../i18n";
-import { longDate } from "../lib/format";
-import { latestRelease, RELEASES_URL, type Asset } from "../lib/releases";
+import Icon from "../components/Icon.astro";
+import PlatformRow from "../components/PlatformRow.astro";
+import SmartScreen from "../components/SmartScreen.astro";
+import { t } from "../i18n";
+import { assetOf, latestRelease, RELEASES_URL, versionParts, type Asset } from "../lib/releases";
 
 const release = await latestRelease();
-const windows = release?.assets.find((a) => a.platform === "windows-x64");
-const linux = release?.assets.find((a) => a.platform === "linux-x64");
+const app = assetOf(release, "app");
+const cliWindows = assetOf(release, "cli-windows");
+const cliLinux = assetOf(release, "cli-linux");
 
-const size = (bytes: number) => t("download.files.size", { value: (bytes / 1024 / 1024).toFixed(1) });
-const platformLabel = (a: Asset) => (a.platform ? tDynamic(`download.platforms.${a.platform}`) : a.name);
+const size = (a: Asset) => t("download.size", { value: (a.size / 1024 / 1024).toFixed(1) });
 
-const label = release
-  ? t(release.prerelease ? "download.labelPreview" : "download.label", {
-      version: release.version,
-      date: longDate(release.date),
-    })
-  : t("download.labelFallback");
+const version = release ? versionParts(release.version) : null;
+const versionLabel = version
+  ? version.preview === null
+    ? t("download.version", { version: version.base })
+    : t("download.versionPreview", { version: version.base, n: version.preview })
+  : null;
 
-// File names in the commands: the real ones, or the pattern BUILDING.md uses.
-const winFile = windows?.name ?? "boltget-X.Y.Z-windows-x64.zip";
-const folder = winFile.replace(/\.zip$/, "");
-const verify = [
-  { label: t("download.verify.windows"), code: `(Get-FileHash ${winFile} -Algorithm SHA256).Hash` },
-  { label: t("download.verify.linux"), code: `sha256sum -c SHA256SUMS --ignore-missing` },
-  { label: t("download.verify.provenance"), code: `gh attestation verify ${winFile} --repo boltget/boltget` },
-];
-const start = [`tar -xf ${winFile}`, `cd ${folder}`, `.\\boltget get https://example.com/file.iso`].join("\n");
+// One command per command-line file: fetch it, unpack it, run it.
+const folder = (a: Asset) => a.name.replace(/\.(zip|tar\.gz)$/, "");
+const cli = [
+  cliWindows && {
+    asset: cliWindows,
+    label: t("download.terminal.windows"),
+    shell: t("download.terminal.windowsShell"),
+    command: `curl.exe -LO ${cliWindows.url}; tar -xf ${cliWindows.name}; cd ${folder(cliWindows)}; .\\boltget --version`,
+  },
+  cliLinux && {
+    asset: cliLinux,
+    label: t("download.terminal.linux"),
+    shell: t("download.terminal.linuxShell"),
+    command: `curl -LO ${cliLinux.url} && tar -xzf ${cliLinux.name} && cd ${folder(cliLinux)} && ./boltget --version`,
+  },
+].filter((c) => !!c);
 
-const next = [
-  { name: t("download.next.app"), when: t("download.next.appWhen") },
-  { name: t("download.next.extension"), when: t("download.next.extensionWhen") },
-  { name: t("download.next.macos"), when: t("download.next.macosWhen") },
-];
+const hashed = [app, cliWindows, cliLinux].filter((a): a is Asset => !!a);
+const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-setup.exe";
 ---
 
 <Base title={t("download.title")} description={t("download.description")}>
-  <div class="wrap">
-    <PageIntro label={label} title={t("download.heading")} lede={t("download.lede")}>
+  <div class="wrap page">
+    <header class="intro">
+      {versionLabel && <p class="version">{versionLabel}</p>}
+      <h1>{t("download.heading")}</h1>
+      <p class="lede">{t("download.lede")}</p>
       <div class="get">
         {
-          windows ? (
-            <>
-              <a class="button button-primary" href={windows.url}>
-                {t("download.primary")}
-              </a>
-              <p class="meta num">{t("download.primaryMeta", { file: windows.name, size: size(windows.size) })}</p>
-            </>
+          app ? (
+            <a class="button button-primary big" href={app.url}>
+              <Icon name="windows" size={15} />
+              {t("download.primary")}
+              <span class="size">{size(app)}</span>
+            </a>
           ) : (
-            <>
-              <a class="button button-primary" href={release?.url ?? RELEASES_URL}>
-                {t("download.primaryFallback")}
-              </a>
-              <p class="meta">{t("download.fallbackMeta")}</p>
-            </>
-          )
-        }
-      </div>
-      <p class="also">
-        {
-          linux && (
-            <span>
-              <a class="tlink" href={linux.url}>
-                {t("download.linux")}
-              </a>{" "}
-              <span class="muted">{t("download.linuxNote")}</span>
-            </span>
-          )
-        }
-        {
-          release && (
-            <a class="tlink" href={release.url}>
-              {t("download.notes")}
+            <a class="button button-primary big" href={release?.url ?? RELEASES_URL}>
+              {t("download.primaryFallback")}
             </a>
           )
         }
-      </p>
-    </PageIntro>
+        <p class="req">{app ? t("download.requirements") : t("download.fallbackMeta")}</p>
+        <PlatformRow class="row" />
+      </div>
+    </header>
 
-    {
-      release && release.assets.length > 0 && (
-        <section aria-labelledby="files">
-          <h2 id="files">{t("download.files.heading")}</h2>
-          <p class="muted note">{t("download.files.note")}</p>
-          <ul class="files">
-            {release.assets.map((a) => (
+    <section class="first" aria-labelledby="first-run">
+      <h2 id="first-run">{t("download.smartscreen.heading")}</h2>
+      <figure class="stage">
+        <div class="live-wrap"><SmartScreen /></div>
+        <div class="pair">
+          <div class="step">
+            <SmartScreen step={1} />
+            <p>{t("download.smartscreen.step1")}</p>
+          </div>
+          <div class="step">
+            <SmartScreen step={2} />
+            <p>{t("download.smartscreen.step2")}</p>
+          </div>
+        </div>
+      </figure>
+      <p class="note">{t("download.smartscreen.note")}</p>
+    </section>
+
+    <section class="terminal" aria-labelledby="terminal">
+      <h2 id="terminal">{t("download.terminal.heading")}</h2>
+      <p class="card-lede">{t("download.terminal.body")}</p>
+      {
+        cli.length > 0 ? (
+          <ul class="cli">
+            {cli.map((c) => (
               <li>
-                <div class="file">
-                  <span class="platform">
-                    {platformLabel(a)}
-                    {a.platform === "linux-x64" && <span class="pill">{t("download.previewBuild")}</span>}
-                  </span>
-                  <a class="name num" href={a.url}>
-                    {a.name}
-                  </a>
-                  <span class="size num muted">{size(a.size)}</span>
-                </div>
-                <p class="sha num">
-                  <span class="sha-label">{t("download.files.sha")}</span>
-                  <span class="hash">{a.sha256 ?? t("download.files.unknown")}</span>
+                <p class="file">
+                  <a href={c.asset.url}>{c.label}</a>
+                  <span>{size(c.asset)}</span>
                 </p>
+                <div class="cmd">
+                  <p class="cmd-head">
+                    <span class="shell">{c.shell}</span>
+                    <button class="copy" type="button" hidden data-copy={c.command} data-done={t("download.terminal.copied")}>
+                      {t("download.terminal.copy")}
+                    </button>
+                  </p>
+                  <pre tabindex="0"><code>{c.command}</code></pre>
+                </div>
               </li>
             ))}
           </ul>
-          <p class="links">
-            {release.sums && (
-              <a class="num" href={release.sums.url}>
-                {t("download.files.sums")}
-              </a>
-            )}
-            <a href={RELEASES_URL}>{t("download.files.all")}</a>
+        ) : (
+          <p class="file">
+            <a href={release?.url ?? RELEASES_URL}>{t("download.primaryFallback")}</a>
           </p>
-        </section>
-      )
-    }
+        )
+      }
+    </section>
 
-    <section aria-labelledby="verify">
-      <h2 id="verify">{t("download.verify.heading")}</h2>
-      <p class="muted note">{t("download.verify.body")}</p>
-      <div class="commands">
+    <p class="links">
+      <a href="/changelog/">{t("download.links.notes")}</a>
+      <span aria-hidden="true">·</span>
+      <a href={RELEASES_URL}>{t("download.links.all")}</a>
+    </p>
+
+    <details class="verify">
+      <summary>{t("download.verify.heading")}</summary>
+      <div class="verify-body">
+        <p>{t("download.verify.body")}</p>
         {
-          verify.map((v) => (
-            <div>
-              <p class="cmd-label">{v.label}</p>
-              <pre tabindex="0"><code>{v.code}</code></pre>
-            </div>
-          ))
+          hashed.length > 0 && (
+            <dl class="hashes">
+              {hashed.map((a) => (
+                <div>
+                  <dt class="num">{a.name}</dt>
+                  <dd class="num">{a.sha256 ?? t("download.verify.unknown")}</dd>
+                </div>
+              ))}
+            </dl>
+          )
         }
+        <p class="cmd-label">{t("download.verify.powershell")}</p>
+        <pre tabindex="0"><code>{`(Get-FileHash ${hashFile}).Hash`}</code></pre>
+        <p>
+          {release?.sums ? <a href={release.sums.url}>{t("download.verify.sums")}</a> : <a href={RELEASES_URL}>{t("download.links.all")}</a>}
+        </p>
       </div>
-      <p class="aside">
-        <strong>{t("download.verify.unsigned")}</strong>{" "}
-        {t("download.verify.unsignedBody")}
-      </p>
-      <p class="aside">
-        {t("download.verify.sourceLead")}{" "}
-        <a href={t("site.repoBlob", { path: "docs/BUILDING.md" })}>{t("download.verify.sourceLink")}</a>
-      </p>
-    </section>
-
-    <section aria-labelledby="start">
-      <h2 id="start">{t("download.start.heading")}</h2>
-      <p class="muted note">{t("download.start.body")}</p>
-      <pre class="start" tabindex="0"><code>{start}</code></pre>
-      <p class="more"><a href="/docs/cli/">{t("download.start.more")}</a></p>
-    </section>
-
-    <section aria-labelledby="next">
-      <h2 id="next">{t("download.next.heading")}</h2>
-      <dl class="next">
-        {
-          next.map((n) => (
-            <div>
-              <dt>{n.name}</dt>
-              <dd class="num">{n.when}</dd>
-            </div>
-          ))
-        }
-      </dl>
-      <p class="muted note">
-        {t("download.next.stores")}{" "}
-        <a href={t("site.repoBlob", { path: "docs/ROADMAP.md" })}>{t("download.next.roadmap")}</a>
-      </p>
-    </section>
+    </details>
   </div>
 </Base>
 
 <style>
-  section {
-    margin-top: 4rem;
+  .page {
     max-width: 52rem;
+    text-align: center;
   }
-  .note {
-    margin-top: 0.75rem;
+  .intro {
+    display: grid;
+    justify-items: center;
+    padding-top: clamp(3.5rem, 10vh, 6rem);
+  }
+  .version {
+    margin-bottom: 1.25rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  h1 {
+    font-size: var(--type-display);
+    font-weight: 400;
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+  .intro .lede {
+    max-width: 30rem;
+    margin-top: 1.25rem;
   }
   .get {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem 1.25rem;
-    margin-top: 2rem;
+    display: grid;
+    justify-items: center;
+    margin-top: 2.25rem;
   }
-  .meta {
+  .big {
+    min-height: 3rem;
+    padding-inline: 1.4rem;
+  }
+  .size {
+    margin-left: 0.15rem;
+    font-variant-numeric: tabular-nums;
     font-size: 0.8125rem;
-    color: var(--text-muted);
-    overflow-wrap: anywhere;
+    color: rgb(255 255 255 / 0.6);
   }
-  .also {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.75rem;
-    margin-top: 1.25rem;
-    font-size: 0.9375rem;
+  .req {
+    margin-top: 0.9rem;
+    font-size: 0.8125rem;
+    color: #4b5563;
   }
-  .also .muted {
-    font-size: 0.875rem;
+  .get :global(.row) {
+    margin-top: 0.6rem;
   }
 
-  .files {
+  h2 {
+    font-size: clamp(1.5rem, 2.6vw, 1.875rem);
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+  .first {
+    margin-top: clamp(4.5rem, 10vw, 7rem);
+  }
+  .stage {
+    display: grid;
+    place-items: center;
+    margin: 1.75rem 0 0;
+    padding: clamp(1.75rem, 6vw, 3.5rem) clamp(1rem, 4vw, 3rem);
+    border-radius: 20px;
+    background: linear-gradient(180deg, #e0f2fe, #f1f7fb 70%, #fff);
+    box-shadow: var(--hairline-shadow);
+  }
+  .live-wrap {
+    width: min(100%, 360px);
+  }
+  .pair {
+    display: none;
+    width: 100%;
+    gap: 1.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .step {
+    display: grid;
+    justify-items: center;
+    gap: 0.75rem;
+    width: min(100%, 300px);
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+  .step :global(.ss) {
+    width: 100%;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .live-wrap {
+      display: none;
+    }
+    .pair {
+      display: flex;
+    }
+  }
+  .note {
+    max-width: 34rem;
+    margin: 1.25rem auto 0;
+    font-size: 0.9375rem;
+    color: var(--text-muted);
+  }
+
+  .terminal {
+    margin-top: clamp(4rem, 9vw, 6rem);
+    padding: clamp(1.5rem, 4vw, 2.25rem);
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: var(--hairline-shadow);
+    text-align: left;
+  }
+  .card-lede {
+    margin-top: 0.5rem;
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    color: var(--ink-78);
+  }
+  .cli {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
     margin: 1.5rem 0 0;
     padding: 0;
     list-style: none;
-    border-top: 1px solid var(--border);
-  }
-  .files li {
-    padding: 1rem 0;
-    border-bottom: 1px solid var(--border);
   }
   .file {
-    display: grid;
-    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) auto;
-    gap: 0.25rem 1.5rem;
-    align-items: baseline;
-  }
-  .platform {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.5rem;
-    font-weight: 600;
+    gap: 0.25rem 0.75rem;
+    font-size: 0.9375rem;
   }
-  .pill {
-    padding: 0.125rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    font-size: 0.6875rem;
-    font-weight: 400;
-    color: var(--text-muted);
-    white-space: nowrap;
+  .file a {
+    color: var(--ink);
+    font-weight: 500;
+    text-decoration-color: rgb(11 11 15 / 0.25);
+    text-underline-offset: 0.3em;
   }
-  .name {
-    font-size: 0.875rem;
-    overflow-wrap: anywhere;
+  .file a:hover {
+    text-decoration-color: currentColor;
   }
-  .size {
+  .file span {
     font-size: 0.8125rem;
-    white-space: nowrap;
-  }
-  .sha {
-    display: grid;
-    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
-    gap: 0.25rem 1.5rem;
-    margin-top: 0.5rem;
-    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
     color: var(--text-muted);
   }
-  .sha-label,
+  .cmd {
+    margin-top: 0.6rem;
+  }
+  .cmd-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 1.75rem;
+  }
+  .shell,
   .cmd-label {
-    font-family: var(--font-mono);
+    display: block;
     font-size: 0.75rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-weight: 500;
     color: var(--text-subtle);
   }
-  .hash {
-    overflow-wrap: anywhere;
-    user-select: all;
-  }
-  .links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.5rem;
-    margin-top: 1rem;
-    font-size: 0.875rem;
-  }
-  @media (max-width: 40rem) {
-    .file {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-    .platform {
-      grid-column: 1 / -1;
-    }
-    .sha {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-
-  .commands {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.25rem;
-    margin-top: 1.5rem;
-  }
   pre {
-    margin: 0.5rem 0 0;
-    padding: 0.875rem 1rem;
+    margin: 0.4rem 0 0;
+    padding: 0.8rem 1rem;
     overflow-x: auto;
-    border: 1px solid var(--hairline);
     border-radius: 12px;
     background: var(--soft);
+    box-shadow: inset 0 0 0 1px var(--hairline);
     color: var(--ink);
     font-size: 0.8125rem;
     line-height: 1.6;
+    text-align: left;
+  }
+  .cmd pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .cmd pre code {
+    white-space: inherit;
   }
   pre code {
     font-size: inherit;
+    white-space: pre;
   }
-  .start {
-    margin-top: 1.25rem;
+  .copy {
+    padding: 0.3rem 0.7rem;
+    border: 0;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgb(11 11 15 / 0.1);
+    color: var(--ink);
+    font: 500 0.75rem/1.2 var(--font-sans);
+    cursor: pointer;
   }
-  .aside {
-    margin-top: 1.25rem;
-    font-size: 0.9375rem;
-    color: var(--text-muted);
-  }
-  .aside strong {
-    color: var(--text);
-    font-weight: 600;
-  }
-  .more {
-    margin-top: 1rem;
-    font-size: 0.9375rem;
+  .copy:hover {
+    box-shadow: 0 0 0 1px rgb(11 11 15 / 0.2);
   }
 
-  .next {
-    margin: 1.5rem 0 0;
-    border-top: 1px solid var(--border);
-  }
-  .next div {
+  .links {
     display: flex;
     flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 0.25rem 1.5rem;
-    padding: 0.875rem 0;
-    border-bottom: 1px solid var(--border);
+    justify-content: center;
+    gap: 0.5rem 0.75rem;
+    margin-top: 2.5rem;
+    font-size: 0.9375rem;
+    color: var(--text-subtle);
   }
-  .next dt {
-    font-weight: 600;
+  .links a,
+  .verify-body a {
+    color: var(--ink);
+    text-decoration-color: rgb(11 11 15 / 0.25);
+    text-underline-offset: 0.3em;
   }
-  .next dd {
-    margin: 0;
-    font-size: 0.8125rem;
+  .links a:hover,
+  .verify-body a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .verify {
+    margin-top: 2rem;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    text-align: left;
+  }
+  summary {
+    padding: 1rem 0.25rem;
+    font-weight: 500;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .verify-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
+    padding: 0 0.25rem 1.5rem;
+    font-size: 0.9375rem;
     color: var(--text-muted);
   }
+  .hashes {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+  }
+  .hashes dt {
+    font-size: 0.8125rem;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .hashes dd {
+    margin: 0.15rem 0 0;
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .cmd-label {
+    margin-top: 0.4rem;
+  }
+  .verify-body pre {
+    margin-top: -0.5rem;
+  }
 </style>
+
+<script is:inline>
+  // Copy buttons: shown only when the clipboard can be written.
+  (() => {
+    if (!navigator.clipboard) return;
+    for (const b of document.querySelectorAll("button[data-copy]")) {
+      const label = b.textContent;
+      b.hidden = false;
+      b.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(b.dataset.copy ?? "");
+          b.textContent = b.dataset.done ?? label;
+          setTimeout(() => (b.textContent = label), 1600);
+        } catch {}
+      });
+    }
+  })();
+</script>

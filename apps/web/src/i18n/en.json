@@ -33,6 +33,14 @@
     "privacy": "Privacy",
     "credit": "© 2026 Boltget"
   },
+  "platforms": {
+    "lead": "Available on",
+    "windows": "Windows",
+    "windowsLink": "Windows: download",
+    "macosSoon": "macOS, coming soon",
+    "linuxSoon": "Linux, coming soon",
+    "soon": "Coming soon"
+  },
   "home": {
     "title": "Boltget: every byte, at full speed",
     "description": "A download manager built for speed. Splits every file across many connections and picks up where it stopped, even after a crash.",
@@ -44,13 +52,6 @@
     "primary": "Download for Windows",
     "secondary": "See how it works",
     "platforms": "Windows 10 and 11",
-    "also": {
-      "lead": "Available on",
-      "windows": "Windows: download",
-      "macosSoon": "macOS, coming soon",
-      "linuxSoon": "Linux, coming soon",
-      "soon": "Coming soon"
-    },
     "app": {
       "label": "A demonstration of the Boltget app, simulated in the page. Pick a file with the buttons above it to watch it download: a new row appears, the file map fills from several connections at once and the download finishes.",
       "try": "Try it: pick a file",
@@ -345,59 +346,51 @@
   },
   "download": {
     "title": "Download",
-    "description": "Download the Boltget command-line downloader for Windows, with SHA-256 checksums and build provenance for every file.",
+    "description": "Download Boltget for Windows: the desktop app's installer, the command-line tool, and the SHA-256 of every file.",
     "heading": "Download Boltget",
-    "label": "v{version} · {date}",
-    "labelPreview": "v{version} · Preview · {date}",
-    "labelFallback": "Latest release",
-    "lede": "The command-line downloader, ready today. The desktop app follows in v0.2.",
+    "version": "{version}",
+    "versionPreview": "{version} preview {n}",
+    "lede": "The desktop app for Windows, now in preview.",
     "primary": "Download for Windows",
-    "primaryMeta": "{file} · {size}",
+    "size": "{value} MiB",
     "primaryFallback": "Download from GitHub",
-    "fallbackMeta": "The newest files and their checksums are on the release page.",
-    "linux": "Linux x64",
-    "linuxNote": "preview build",
-    "notes": "Release notes",
-    "platforms": {
-      "windows-x64": "Windows x64",
-      "linux-x64": "Linux x64"
+    "fallbackMeta": "The newest files are on the release page.",
+    "requirements": "Windows 10 and 11 · 64-bit",
+    "smartscreen": {
+      "heading": "Opening it the first time",
+      "title": "Windows protected your PC",
+      "more": "More info",
+      "app": "App",
+      "appValue": "boltget-windows-x64-setup.exe",
+      "publisher": "Publisher",
+      "unknown": "Unknown publisher",
+      "run": "Run anyway",
+      "dont": "Don't run",
+      "setup": "Boltget Setup",
+      "step1": "Choose More info,",
+      "step2": "then Run anyway.",
+      "note": "While Boltget is in preview the installer isn't signed yet, so Windows asks once. Choose More info, then Run anyway."
     },
-    "previewBuild": "Preview build",
-    "files": {
-      "heading": "Files",
-      "note": "Each SHA-256 comes from the release's SHA256SUMS file.",
-      "size": "{value} MiB",
-      "sha": "SHA-256",
-      "unknown": "not published",
-      "sums": "SHA256SUMS",
+    "terminal": {
+      "heading": "Prefer the terminal?",
+      "body": "The command-line tool on its own: one program, nothing to install.",
+      "windows": "Windows · zip",
+      "windowsShell": "PowerShell",
+      "linux": "Linux · tar.gz",
+      "linuxShell": "Terminal",
+      "copy": "Copy",
+      "copied": "Copied"
+    },
+    "links": {
+      "notes": "Release notes",
       "all": "All releases"
     },
     "verify": {
-      "heading": "Verify",
-      "body": "Check the file's SHA-256, then that GitHub built it from this repository.",
-      "windows": "Windows, PowerShell",
-      "linux": "Linux",
-      "provenance": "Build provenance, GitHub CLI",
-      "unsigned": "Not code-signed yet.",
-      "unsignedBody": "Windows SmartScreen may warn the first time you run boltget.exe. Signed builds arrive with v1.0.",
-      "sourceLead": "Prefer to build it yourself?",
-      "sourceLink": "Building from source"
-    },
-    "start": {
-      "heading": "Quick start",
-      "body": "Unpack the zip, then download something.",
-      "more": "Every command, in Using the CLI"
-    },
-    "next": {
-      "heading": "What comes next",
-      "app": "Desktop app",
-      "appWhen": "v0.2, in progress",
-      "extension": "Browser extension",
-      "extensionWhen": "v0.3",
-      "macos": "macOS",
-      "macosWhen": "After 1.0",
-      "stores": "An installer, winget and the extension stores arrive with those releases.",
-      "roadmap": "Read the roadmap"
+      "heading": "Verify your download",
+      "body": "Compare the SHA-256 of the file you downloaded with the one listed here.",
+      "unknown": "not published",
+      "powershell": "In PowerShell, from the folder with the file",
+      "sums": "SHA256SUMS"
     }
   },
   "changelog": {
