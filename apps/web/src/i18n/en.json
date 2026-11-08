@@ -289,60 +289,29 @@
   },
   "bench": {
     "title": "Benchmarks",
-    "description": "How Boltget's download times are measured, with dated results, the comparison with IDM and links to the raw data.",
-    "label": "Measured {date}",
-    "lede": "Every number on this page is read from a published run, with the raw data in the repository. Nothing is estimated or rounded in Boltget's favour. A difference is claimed only when the run-to-run spreads do not overlap.",
-    "setupHeading": "Setup",
-    "resultsHeading": "Results",
-    "resultsNote": "Wall-clock seconds, {runs} measured runs per configuration after {warmup} warm-up run.",
-    "setup": {
-      "machine": "Machine",
-      "machineValue": "{cpu} ({cpus} logical CPUs), {ram} GiB RAM, {disk}",
-      "os": "Operating system",
-      "network": "Network",
-      "networkValue": "{nic}, {speed} link, wired",
-      "idm": "IDM",
-      "idmValue": "{version}, settings as installed",
+    "description": "Median download times for Boltget and another download manager at default settings, with the method and the raw data.",
+    "heading": "Measured, not promised.",
+    "lede": "The same files, downloaded again and again by Boltget and [another download manager], both at their defaults. Lower is faster.",
+    "chartLabel": "Median download time per test, in seconds, for Boltget and another download manager. Each pair of bars is scaled to its own test.",
+    "series": {
       "boltget": "Boltget",
-      "boltgetValue": "{version}, engine at commit {commit}, release build"
+      "other": "Another download manager"
     },
-    "table": {
-      "caption": "{target}: {about}",
-      "tool": "Configuration",
-      "median": "Median",
-      "iqr": "q1 to q3",
-      "range": "min to max",
-      "throughput": "MiB/s",
-      "connections": "Connections",
-      "seconds": "{value} s",
-      "rangeValue": "{from} to {to} s",
-      "defaultConnections": "8 (default)"
-    },
-    "tools": {
-      "idm": "IDM, default",
-      "boltget-auto": "Boltget, adaptive",
-      "boltget-8": "Boltget, 8 connections"
-    },
-    "verdict": {
-      "faster": "Every adaptive Boltget run was faster than every IDM run.",
-      "slower": "Every IDM run was faster than every adaptive Boltget run.",
-      "overlap": "The spreads overlap, so no difference is claimed."
+    "seconds": "{value} s",
+    "result": {
+      "faster": "Boltget was faster in every run on {count} of {total} tests.",
+      "slower": "The other download manager was faster in every run on {count} of {total}.",
+      "overlap": "Where the runs overlap, we claim no difference."
     },
     "targets": {
-      "cachefly-10mb": "10 MiB from the CacheFly CDN over HTTP",
-      "cachefly-100mb": "100 MiB from the CacheFly CDN over HTTP",
-      "nforce-100mb": "100 MiB from NFOrce in the Netherlands over HTTPS",
-      "lab-throttled-100mib": "100 MiB from a local server that limits every connection to 2 MiB/s",
-      "lab-1gib": "1 GiB from a local server over loopback, no limit"
+      "cachefly-10mb": "10 MiB from a public CDN",
+      "cachefly-100mb": "100 MiB from a public CDN",
+      "nforce-100mb": "100 MiB from a hosting provider, over HTTPS",
+      "lab-throttled-100mib": "100 MiB from a server that slows each connection",
+      "lab-1gib": "1 GiB from a local server"
     },
-    "connectionsNote": "Connections: for local targets, the most simultaneous connections the server saw; for public targets, Boltget's own count (IDM's is not visible from outside).",
-    "raw": {
-      "heading": "Raw data",
-      "body": "Every run, including warm-ups, with the environment and the target list used:",
-      "folder": "Results folder",
-      "report": "Full report with method and reading",
-      "harness": "Benchmark harness"
-    }
+    "raw": "Raw data on GitHub",
+    "method": "Full method"
   },
   "download": {
     "title": "Download",

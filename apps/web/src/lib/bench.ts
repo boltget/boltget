@@ -209,12 +209,6 @@ export function latestRun(): Run {
   return run;
 }
 
-/** The configurations of one target, in the order IDM, Boltget adaptive, Boltget fixed. */
-export function rowsFor(run: Run, target: string): SummaryRow[] {
-  const rank = (r: SummaryRow) => (r.tool === "idm" ? 0 : r.setting === "auto" ? 1 : 2);
-  return run.rows.filter((r) => r.target === target).sort((a, b) => rank(a) - rank(b));
-}
-
 /** The row for one configuration, or a build error if the run does not have it. */
 export function rowOf(run: Run, target: string, tool: SummaryRow["tool"], setting: string): SummaryRow {
   const row = run.rows.find((r) => r.target === target && r.tool === tool && r.setting === setting);
@@ -228,7 +222,8 @@ export function targetsOf(run: Run): string[] {
 }
 
 /**
- * Compares Boltget's adaptive default with IDM's default the way
+ * Compares Boltget's adaptive default with the other download manager's
+ * default (the `idm` rows of summary.csv) the way
  * docs/BENCHMARK.md does: a difference only when every run of one is faster
  * than every run of the other (the min-to-max spreads do not overlap).
  */
