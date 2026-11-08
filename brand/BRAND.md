@@ -277,6 +277,7 @@ rather than flat swatches:
 |---|---|---|
 | Everything | **Geist** (SIL OFL 1.1, by Vercel) | Weights 400 / 500 / 600. Avoid 700+ in UI |
 | Numbers, sizes, speeds, URLs, hashes, labels | **Geist Mono** | Tabular by nature, so download stats don't jitter. In the desktop app's dense lists, numbers use Geist with tabular figures (`tnum`) instead, and Mono is kept for URLs, hashes, headers and logs ([APP-DESIGN.md](../docs/APP-DESIGN.md)) |
+| Website ledes and the italic accent line | **Source Serif 4** (SIL OFL 1.1, by Adobe) | The website only, 400 and 400 italic, never in the app or for UI ([docs/WEBSITE.md](../docs/WEBSITE.md#character)) |
 
 The fonts are in `fonts/` (woff2 plus `OFL.txt`). They also come from the `geist`
 npm package or Google Fonts.
