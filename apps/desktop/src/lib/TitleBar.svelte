@@ -9,7 +9,10 @@
   import { t } from "@boltget/ui/messages";
   import { onMount } from "svelte";
   import icon16 from "../../../../brand/svg/icon-16.svg";
+  import icon20 from "../../../../brand/svg/icon-20.svg";
   import icon24 from "../../../../brand/svg/icon-24.svg";
+  import icon32 from "../../../../brand/svg/icon-32.svg";
+  import icon40 from "../../../../brand/svg/icon-40.svg";
   import CaptionButtons from "./CaptionButtons.svelte";
   import Icon from "./Icon.svelte";
   import { app } from "./app.svelte";
@@ -76,10 +79,10 @@
 
 <header class="titlebar" class:inactive={!focused} data-tauri-drag-region="deep">
   <div class="brand">
-    <!-- The pixel-snapped app icon: the 16 px design at 1x and 2x, 24 px at 1.5x. -->
+    <!-- The pixel-snapped app icon: the native design for each display scale. -->
     <img
       src={icon16}
-      srcset="{icon16} 1x, {icon24} 1.5x, {icon16} 2x"
+      srcset="{icon16} 1x, {icon20} 1.25x, {icon24} 1.5x, {icon32} 2x, {icon40} 2.5x"
       width="16"
       height="16"
       alt=""
