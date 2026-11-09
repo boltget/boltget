@@ -669,6 +669,36 @@ function buildLogos() {
       }
     }
   }
+
+  /*
+   * Tile marks: the one-colour mark on a premium tile, for the website's
+   * illustrations (the installer window on /download). Light: ink cells on a
+   * white tile with a soft top-to-bottom sheen, a hairline and a short
+   * shadow. Dark: white cells on the ink tile. Drawn on a 40 px grid with the
+   * header's proportions (3 px pitch, 2.5 px cells), so they scale cleanly.
+   */
+  {
+    const S = 40, pitch = 3, px = 2.5, off = (S - (8 * pitch + px)) / 2, rx = 9;
+    const cells = (fill) => CELLS.map(({ r, c }) => `<rect x="${off + c * pitch}" y="${off + r * pitch}" width="${px}" height="${px}" rx="0.4" fill="${fill}"/>`).join('');
+    const variants = [
+      ['light', 'url(#t)', '#FFFFFF', '#EEF1F4', INK, 'rgb(19 33 43 / 0.10)'],
+      ['dark', 'url(#t)', '#1B2D3A', '#0E1A23', '#FFFFFF', 'rgb(255 255 255 / 0.10)'],
+    ];
+    for (const [name, fill, top, bottom, mark, edge] of variants) {
+      const defs = `<linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient>`;
+      writeSvg(
+        `svg/tile-mark-${name}.svg`,
+        svg({
+          w: S, h: S, title: 'Boltget', defs,
+          body: [
+            `  <rect width="${S}" height="${S}" rx="${rx}" fill="${fill}"/>`,
+            `  <rect x="0.5" y="0.5" width="${S - 1}" height="${S - 1}" rx="${rx - 0.5}" fill="none" stroke="${edge}"/>`,
+            `  ${cells(mark)}`,
+          ].join('\n'),
+        }),
+      );
+    }
+  }
 }
 
 /* ------------------------------------------------------------------------ */
