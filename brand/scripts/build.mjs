@@ -559,19 +559,32 @@ function buildLogos() {
     }),
   );
 
-  // Favicon: the 16 px tile on light browser chrome; on dark chrome the bare
-  // arrow, larger, in 2 px chunks.
-  writeSvg(
-    'web/favicon.svg',
-    svg({
-      w: 16, h: 16, title: 'Boltget',
-      style: '.d{display:none}@media (prefers-color-scheme:dark){.l{display:none}.d{display:inline}}',
-      body: [
-        `  <g class="l"><rect width="16" height="16" rx="3" fill="${INK}"/><rect x="0.5" y="0.5" width="15" height="15" rx="2.5" fill="none" stroke="#fff" stroke-opacity="${HAIRLINE}"/>${bandRects(STEPPED[16])}</g>`,
-        `  <g class="d">${bandRects(BARE16)}</g>`,
-      ].join('\n'),
-    }),
-  );
+  // Favicon: the bare pixel arrow, every cell its own square, drawn for the
+  // 32 device pixels a tab icon gets on a 2x screen (3 px pitch, 2 px cells,
+  // 1 px gaps). Ink on light browser chrome; the row ramp on dark chrome.
+  {
+    const pitch = 3, px = 2, off = 3;
+    const cells = (fill) => CELLS.map(({ r, c }) => `<rect x="${off + c * pitch}" y="${off + r * pitch}" width="${px}" height="${px}" fill="${fill(r)}"/>`).join('');
+    // Below 24 px (a 1x tab) the gaps would blur, so the SVG switches to the
+    // 16 px stepped arrow in 2 px chunks, drawn at double size.
+    const small = (fill) => BARE16.map(([x0, x1, y0, y1]) => `<rect x="${x0 * 2}" y="${y0 * 2}" width="${(x1 - x0) * 2}" height="${(y1 - y0) * 2}" fill="${fill}"/>`).join('');
+    writeSvg(
+      'web/favicon.svg',
+      svg({
+        w: 32, h: 32, title: 'Boltget',
+        style:
+          '.d,.s{display:none}@media (prefers-color-scheme:dark){.l{display:none}.d{display:inline}}' +
+          '@media (max-width:24px){.l,.d{display:none}.s.k{display:inline}}' +
+          '@media (max-width:24px) and (prefers-color-scheme:dark){.s.k{display:none}.s.w{display:inline}}',
+        body: [
+          `  <g class="l">${cells(() => INK)}</g>`,
+          `  <g class="d">${cells((r) => ROW_COLORS[r])}</g>`,
+          `  <g class="s k">${small(INK)}</g>`,
+          `  <g class="s w">${small(ROW_COLORS[3])}</g>`,
+        ].join('\n'),
+      }),
+    );
+  }
   svgs['favicon-dark'] = svg({ w: 16, h: 16, title: 'x', body: bandRects(BARE16) });
 
   // Wordmark + lockups
@@ -637,8 +650,8 @@ function buildLogos() {
   /*
    * The website header's lockup, pixel-snapped for the screen: 28 CSS px tall,
    * the arrow 9 cells on a 3 px pitch from the top-left. At 1x the cells are
-   * gapless 3 px squares; the @2x file keeps the gaps as 1 device pixel
-   * (2.5 px cells, 0.5 px gaps), for <img srcset>. Caps of the wordmark are 4u
+   * 2 px squares with 1 px gaps, so the arrow still reads as pixels; the @2x
+   * file uses 2.5 px cells (5 device pixels, 1 px gaps), for <img srcset>. Caps of the wordmark are 4u
    * (12 px), centred on the arrow, 2.5u after it.
    */
   {
@@ -651,7 +664,7 @@ function buildLogos() {
     const w = wordmarkText(size, arrowH + 2.5 * pitch - t.bbox.x1, baseline);
     const W = Math.ceil(w.bbox.x2);
     for (const [variant, fill, rowFill] of [['on-light', INK, () => INK], ['on-dark', C.onDark, (r) => ROW_COLORS[r]]]) {
-      for (const [suffix, px] of [['', 3], ['@2x', 2.5]]) {
+      for (const [suffix, px] of [['', 2], ['@2x', 2.5]]) {
         const rects = CELLS.map(({ r, c }) => `<rect x="${c * pitch}" y="${r * pitch}" width="${px}" height="${px}" fill="${rowFill(r)}"/>`).join('');
         writeSvg(
           `svg/lockup-header-${variant}${suffix}.svg`,
