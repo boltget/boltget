@@ -3,8 +3,10 @@
 //!
 //! - **Tray icon.** The still mark while idle; the pixel arrow's motion while
 //!   bytes are flowing (it freezes when everything is paused or stalled, and
-//!   never moves when Windows' animation effects are off). Left click opens
-//!   the window; right click opens the native menu.
+//!   never moves when Windows' animation effects are off). One colour, white
+//!   on a dark taskbar and near-black on a light one, following Windows'
+//!   colour mode as it changes. Left click opens the window; right click
+//!   opens the native menu.
 //! - **Tooltip.** `3 active · 48.2 MiB/s · about 2 min left`, at most once a
 //!   second so the digits do not churn.
 //! - **Taskbar button.** The batch's progress (see `bridge/activity.rs`):
@@ -157,7 +159,8 @@ pub(crate) fn install(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let size = platform::small_icon_size();
-    let still = mark::render(size, None);
+    let taskbar = mark::Taskbar::from_light(platform::taskbar_is_light());
+    let still = mark::render(size, None, taskbar);
     let tray = TrayIconBuilder::with_id("main")
         .icon(Image::new_owned(still.clone(), size, size))
         .tooltip(catalog::t("tray.tooltip"))
@@ -177,8 +180,55 @@ pub(crate) fn install(app: &AppHandle) -> tauri::Result<()> {
         .build(app)?;
 
     app.manage(Limits(limits));
-    tauri::async_runtime::spawn(run(app.clone(), tray, size, still));
+    // The taskbar's colour mode: the watcher only says that something under
+    // the key changed; the loop reads the value again.
+    let (themes, theme_changes) = tokio::sync::mpsc::unbounded_channel();
+    platform::watch_taskbar_theme(move || {
+        let _ = themes.send(());
+    });
+    let icon = Icon {
+        size,
+        taskbar,
+        still,
+        frames: None,
+    };
+    tauri::async_runtime::spawn(run(app.clone(), tray, icon, theme_changes));
     Ok(())
+}
+
+/// The tray icon's pictures for the current taskbar colour.
+struct Icon {
+    size: u32,
+    taskbar: mark::Taskbar,
+    still: Vec<u8>,
+    /// The motion's frames, rendered the first time they are needed.
+    frames: Option<Vec<Vec<u8>>>,
+}
+
+impl Icon {
+    fn still(&self) -> Image<'static> {
+        Image::new_owned(self.still.clone(), self.size, self.size)
+    }
+
+    /// Re-renders for `taskbar`; false when nothing changed.
+    fn set_taskbar(&mut self, taskbar: mark::Taskbar) -> bool {
+        if taskbar == self.taskbar {
+            return false;
+        }
+        self.taskbar = taskbar;
+        self.still = mark::render(self.size, None, taskbar);
+        self.frames = None;
+        true
+    }
+
+    fn frame(&mut self, index: usize) -> Image<'static> {
+        let (size, taskbar) = (self.size, self.taskbar);
+        let frames = self
+            .frames
+            .get_or_insert_with(|| mark::frames(size, taskbar));
+        let rgba = frames[index % frames.len()].clone();
+        Image::new_owned(rgba, size, size)
+    }
 }
 
 #[expect(
@@ -227,12 +277,16 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
 }
 
 /// Keeps the icon, tooltip, limit checks and taskbar button current.
-async fn run(app: AppHandle, tray: TrayIcon, size: u32, still: Vec<u8>) {
+async fn run(
+    app: AppHandle,
+    tray: TrayIcon,
+    mut icon: Icon,
+    mut theme_changes: tokio::sync::mpsc::UnboundedReceiver<()>,
+) {
     let bridge = app.state::<Bridge>();
     let limits = app.state::<Limits>();
     let mut limit_check = tokio::time::interval(LIMIT_EVERY);
     let mut activity = bridge.activity();
-    let mut frames: Option<Vec<Vec<u8>>> = None;
     let mut frame = 0usize;
     let mut animating = false;
     let mut ticker = tokio::time::interval(mark::FRAME);
@@ -265,7 +319,7 @@ async fn run(app: AppHandle, tray: TrayIcon, size: u32, still: Vec<u8>) {
                 if animate != animating {
                     animating = animate;
                     if !animating {
-                        let _ = tray.set_icon(Some(Image::new_owned(still.clone(), size, size)));
+                        let _ = tray.set_icon(Some(icon.still()));
                     }
                 }
             }
@@ -278,10 +332,15 @@ async fn run(app: AppHandle, tray: TrayIcon, size: u32, still: Vec<u8>) {
                     }
                 }
             }
+            Some(()) = theme_changes.recv() => {
+                let taskbar = mark::Taskbar::from_light(platform::taskbar_is_light());
+                if icon.set_taskbar(taskbar) && !animating {
+                    let _ = tray.set_icon(Some(icon.still()));
+                }
+            }
             _ = ticker.tick(), if animating => {
-                let frames = frames.get_or_insert_with(|| mark::frames(size));
-                frame = (frame + 1) % frames.len();
-                let _ = tray.set_icon(Some(Image::new_owned(frames[frame].clone(), size, size)));
+                frame = frame.wrapping_add(1);
+                let _ = tray.set_icon(Some(icon.frame(frame)));
             }
         }
     }

@@ -13,8 +13,9 @@
 //! - **WebView2:** no browser context menu, status bubble, pinch zoom or swipe
 //!   navigation; no browser accelerator keys (reload, find, print, devtools)
 //!   in release builds.
-//! - **The tray:** the system's small icon size, and whether Windows shows
-//!   animations (the tray mark stays still when it does not).
+//! - **The tray:** the system's small icon size, whether Windows shows
+//!   animations (the tray mark stays still when it does not), and whether the
+//!   taskbar is light (the mark's colour), read and watched in the registry.
 //!
 //! All of this runs on the main (UI) thread, which owns the windows.
 //!
@@ -597,27 +598,84 @@ pub(crate) fn system_proxy() -> SystemProxy {
 /// settings change, for as long as the app runs. A burst of changes is read
 /// once, half a second after it starts.
 pub(crate) fn watch_system_proxy(changed: impl Fn() + Send + 'static) {
+    watch_key(
+        "boltget-proxy-watch",
+        INTERNET_SETTINGS,
+        "the Windows proxy settings",
+        changed,
+    );
+}
+
+/// Where Windows keeps the current user's light and dark mode choices.
+const PERSONALIZE: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+
+/// Whether the taskbar (and the tray on it) is light: Settings >
+/// Personalization > Colors, "Choose your default Windows mode". Only read,
+/// never written. Windows 10 before 1903 has no such value: dark.
+pub(crate) fn taskbar_is_light() -> bool {
+    use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+    let mut value = 0u32;
+    let mut bytes = 4u32;
+    // SAFETY: `value` has room for the `bytes` (4) bytes of a REG_DWORD,
+    // which is all RRF_RT_REG_DWORD lets RegGetValueW write.
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            PERSONALIZE,
+            w!("SystemUsesLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&raw mut value).cast()),
+            Some(&raw mut bytes),
+        )
+    };
+    read.is_ok() && value != 0
+}
+
+/// Calls `changed` (on a thread of its own) after the light or dark mode
+/// choices change, for as long as the app runs.
+pub(crate) fn watch_taskbar_theme(changed: impl Fn() + Send + 'static) {
+    watch_key(
+        "boltget-theme-watch",
+        PERSONALIZE,
+        "the Windows colour mode",
+        changed,
+    );
+}
+
+/// Calls `changed` on a thread named `thread` after anything under the
+/// current user's `subkey` changes, for as long as the app runs. A burst of
+/// changes is reported once, half a second after it starts. `what` names
+/// the settings in warnings.
+fn watch_key(
+    thread: &str,
+    subkey: PCWSTR,
+    what: &'static str,
+    changed: impl Fn() + Send + 'static,
+) {
     use windows::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, REG_NOTIFY_CHANGE_LAST_SET, RegCloseKey,
         RegNotifyChangeKeyValue, RegOpenKeyExW,
     };
+    // PCWSTR is not Send; the `w!` names it points at are static.
+    let subkey = subkey.0 as usize;
     let spawned = std::thread::Builder::new()
-        .name("boltget-proxy-watch".into())
+        .name(thread.into())
         .spawn(move || {
             let mut key = HKEY::default();
-            // SAFETY: opening a key of the current user with a static name;
-            // `key` is a valid out pointer.
+            // SAFETY: opening a key of the current user with a static,
+            // NUL-terminated name; `key` is a valid out pointer.
             let opened = unsafe {
                 RegOpenKeyExW(
                     HKEY_CURRENT_USER,
-                    INTERNET_SETTINGS,
+                    PCWSTR(subkey as *const u16),
                     None,
                     KEY_NOTIFY,
                     &raw mut key,
                 )
             };
             if opened.is_err() {
-                tracing::warn!(error = ?opened, "cannot watch the Windows proxy settings");
+                tracing::warn!(error = ?opened, "cannot watch {what}");
                 return;
             }
             loop {
@@ -627,7 +685,7 @@ pub(crate) fn watch_system_proxy(changed: impl Fn() + Send + 'static) {
                     RegNotifyChangeKeyValue(key, true, REG_NOTIFY_CHANGE_LAST_SET, None, false)
                 };
                 if waited.is_err() {
-                    tracing::warn!(error = ?waited, "stopped watching the Windows proxy settings");
+                    tracing::warn!(error = ?waited, "stopped watching {what}");
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(500));
@@ -637,7 +695,7 @@ pub(crate) fn watch_system_proxy(changed: impl Fn() + Send + 'static) {
             let _ = unsafe { RegCloseKey(key) };
         });
     if let Err(error) = spawned {
-        tracing::warn!(%error, "cannot watch the Windows proxy settings");
+        tracing::warn!(%error, "cannot watch {what}");
     }
 }
 

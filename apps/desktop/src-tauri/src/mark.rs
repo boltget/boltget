@@ -1,15 +1,11 @@
-//! The tray's mark, drawn from the brand geometry (brand/BRAND.md): the
-//! pixel-snapped small icons (`svg/icon-16.svg` at 16 and 32 px,
-//! `svg/icon-24.svg` at 24 and 48 px), and the signature motion, the arrow's
-//! rows lighting up top to bottom (BRAND.md §6: a 2.6 s loop, 0.12 s stagger
-//! per row, opacity 0.15 → 1 → 1 → 0.15 at 0, 12, 85 and 100%, linear).
+//! The tray's mark (brand/BRAND.md, "The tray"): the bare arrow, gapless
+//! and in one colour like the system's own tray icons, white on a dark
+//! taskbar and near-black on a light one. Its rows carry the signature
+//! motion, lighting up top to bottom (BRAND.md §6: a 2.6 s loop, 0.12 s
+//! stagger per row, opacity 0.15 → 1 → 1 → 0.15 at 0, 12, 85 and 100%,
+//! linear). The taskbar button and the window keep the coloured app icon.
 //!
-//! Frames are rendered once, as RGBA, with 4 × 4 samples per pixel for the
-//! tile's rounded corners.
-#![expect(
-    clippy::many_single_char_names,
-    reason = "geometry reads best as x, y, t"
-)]
+//! Every cell is a whole number of pixels, so frames need no antialiasing.
 
 use std::time::Duration;
 
@@ -21,64 +17,80 @@ pub(crate) const FRAME: Duration = Duration::from_millis(100);
 
 const STAGGER_S: f64 = 0.12;
 const REST: f64 = 0.15;
-const TILE: [f64; 3] = [11.0, 11.0, 15.0];
-const STOPS: [(f64, [f64; 3]); 3] = [
-    (0.0, [167.0, 243.0, 208.0]),
-    (0.5, [52.0, 211.0, 153.0]),
-    (1.0, [5.0, 150.0, 105.0]),
-];
 
-/// A small-size design: its grid, tile corner, gradient line and the
-/// arrow's rows as `(y0, y1, x0, x1, canonical row)`.
-struct Design {
-    grid: f64,
-    radius: f64,
-    gradient: (f64, f64),
-    rows: &'static [(f64, f64, f64, f64, u8)],
+/// The taskbar the icon sits on, which decides its colour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Taskbar {
+    Dark,
+    Light,
 }
 
-/// `svg/icon-16.svg`: one pixel per row; the shaft's five rows share the
-/// canonical shaft's four.
-static SMALL: Design = Design {
-    grid: 16.0,
-    radius: 3.5,
-    gradient: (3.0, 13.0),
-    rows: &[
-        (3.0, 4.0, 6.0, 10.0, 0),
-        (4.0, 5.0, 6.0, 10.0, 0),
-        (5.0, 6.0, 6.0, 10.0, 1),
-        (6.0, 7.0, 6.0, 10.0, 2),
-        (7.0, 8.0, 6.0, 10.0, 3),
-        (8.0, 9.0, 3.0, 13.0, 4),
-        (9.0, 10.0, 4.0, 12.0, 5),
-        (10.0, 11.0, 5.0, 11.0, 6),
-        (11.0, 12.0, 6.0, 10.0, 7),
-        (12.0, 13.0, 7.0, 9.0, 8),
-    ],
-};
+impl Taskbar {
+    /// The taskbar Windows draws: light when `SystemUsesLightTheme` is set.
+    pub(crate) fn from_light(light: bool) -> Self {
+        if light { Self::Light } else { Self::Dark }
+    }
 
-/// `svg/icon-24.svg`: 2 px chunks.
-static MEDIUM: Design = Design {
-    grid: 24.0,
-    radius: 5.0,
-    gradient: (5.0, 19.0),
-    rows: &[
-        (5.0, 7.0, 9.0, 15.0, 0),
-        (7.0, 9.0, 9.0, 15.0, 1),
-        (9.0, 11.0, 9.0, 15.0, 2),
-        (11.0, 13.0, 5.0, 19.0, 4),
-        (13.0, 15.0, 7.0, 17.0, 5),
-        (15.0, 17.0, 9.0, 15.0, 7),
-        (17.0, 19.0, 11.0, 13.0, 8),
-    ],
-};
+    /// The arrow's colour: white on dark, `#1B1B1B` on light.
+    fn ink(self) -> [u8; 3] {
+        match self {
+            Self::Dark => [0xFF, 0xFF, 0xFF],
+            Self::Light => [0x1B, 0x1B, 0x1B],
+        }
+    }
+}
 
-/// The design BRAND.md prescribes for an icon of `size` pixels.
-fn design(size: u32) -> &'static Design {
-    if size.is_multiple_of(24) || (size > 20 && !size.is_multiple_of(16)) {
-        &MEDIUM
-    } else {
-        &SMALL
+/// A row of the arrow: first and last column, and the canonical row whose
+/// timing it follows.
+type Row = (u32, u32, u8);
+
+/// The canonical 9 × 9 arrow.
+const FULL: [Row; 9] = [
+    (3, 5, 0),
+    (3, 5, 1),
+    (3, 5, 2),
+    (3, 5, 3),
+    (0, 8, 4),
+    (1, 7, 5),
+    (2, 6, 6),
+    (3, 5, 7),
+    (4, 4, 8),
+];
+
+/// A 7 × 7 arrow for sizes where the full grid would come out too small
+/// (the favicon's arrow on dark browser chrome at 16 px).
+const COMPACT: [Row; 7] = [
+    (2, 4, 0),
+    (2, 4, 1),
+    (2, 4, 3),
+    (0, 6, 4),
+    (1, 5, 5),
+    (2, 4, 6),
+    (3, 3, 8),
+];
+
+/// How the arrow sits in a square of some size: which shape, its cell size
+/// in pixels and its top-left corner.
+struct Layout {
+    rows: &'static [Row],
+    cell: u32,
+    origin: u32,
+}
+
+/// The largest whole-pixel arrow that leaves at least a pixel free on each
+/// side; the full grid when both shapes come out the same size.
+fn layout(size: u32) -> Layout {
+    let fit = |rows: &'static [Row]| {
+        let n = rows.len() as u32;
+        let cell = (size.saturating_sub(2) / n).max(1);
+        (rows, cell, n * cell)
+    };
+    let (full, compact) = (fit(&FULL), fit(&COMPACT));
+    let (rows, cell, extent) = if compact.2 > full.2 { compact } else { full };
+    Layout {
+        rows,
+        cell,
+        origin: size.saturating_sub(extent) / 2,
     }
 }
 
@@ -95,77 +107,38 @@ fn opacity(row: u8, t: f64) -> f64 {
     }
 }
 
-fn gradient(d: &Design, x: f64, y: f64) -> [f64; 3] {
-    let (a, b) = d.gradient;
-    // Along the diagonal from (a, a) to (b, b).
-    let t = (((x - a) + (y - a)) / (2.0 * (b - a))).clamp(0.0, 1.0);
-    let [(t0, c0), (t1, c1), (t2, c2)] = STOPS;
-    let (from, to, f) = if t <= t1 {
-        (c0, c1, (t - t0) / (t1 - t0))
-    } else {
-        (c1, c2, (t - t1) / (t2 - t1))
-    };
-    [0, 1, 2].map(|i| from[i] + (to[i] - from[i]) * f)
-}
-
-fn in_tile(d: &Design, x: f64, y: f64) -> bool {
-    let r = d.radius;
-    let (g, cx, cy) = (d.grid, x.clamp(r, d.grid - r), y.clamp(r, d.grid - r));
-    (0.0..=g).contains(&x) && (0.0..=g).contains(&y) && (x - cx).powi(2) + (y - cy).powi(2) <= r * r
-}
-
-/// The icon at `size` × `size` pixels, RGBA. `t`: seconds into the loop, or
-/// `None` for the still mark, every row lit.
-pub(crate) fn render(size: u32, t: Option<f64>) -> Vec<u8> {
-    const SAMPLES: u32 = 4;
-    let d = design(size);
-    let scale = d.grid / f64::from(size);
+/// The arrow at `size` × `size` pixels, RGBA, for a `taskbar`. `t`: seconds
+/// into the loop, or `None` for the still mark, every row lit.
+pub(crate) fn render(size: u32, t: Option<f64>, taskbar: Taskbar) -> Vec<u8> {
+    let Layout { rows, cell, origin } = layout(size);
+    let ink = taskbar.ink();
     let mut out = Vec::with_capacity((size * size * 4) as usize);
-    for py in 0..size {
-        for px in 0..size {
-            let (mut cover, mut rgb) = (0.0, [0.0; 3]);
-            for sy in 0..SAMPLES {
-                for sx in 0..SAMPLES {
-                    let x = (f64::from(px) + (f64::from(sx) + 0.5) / f64::from(SAMPLES)) * scale;
-                    let y = (f64::from(py) + (f64::from(sy) + 0.5) / f64::from(SAMPLES)) * scale;
-                    if !in_tile(d, x, y) {
-                        continue;
-                    }
-                    cover += 1.0;
-                    let lit = d
-                        .rows
-                        .iter()
-                        .find(|&&(y0, y1, x0, x1, _)| y >= y0 && y < y1 && x >= x0 && x < x1)
-                        .map(|&(.., row)| t.map_or(1.0, |t| opacity(row, t)));
-                    let color = match lit {
-                        Some(a) => {
-                            let g = gradient(d, x, y);
-                            [0, 1, 2].map(|i| TILE[i] * (1.0 - a) + g[i] * a)
-                        }
-                        None => TILE,
-                    };
-                    for i in 0..3 {
-                        rgb[i] += color[i];
-                    }
+    for y in 0..size {
+        for x in 0..size {
+            let lit = y
+                .checked_sub(origin)
+                .map(|dy| dy / cell)
+                .and_then(|r| rows.get(r as usize))
+                .zip(x.checked_sub(origin).map(|dx| dx / cell))
+                .filter(|&(&(first, last, _), col)| (first..=last).contains(&col))
+                .map(|(&(.., row), _)| t.map_or(1.0, |t| opacity(row, t)));
+            match lit {
+                Some(a) => {
+                    out.extend(ink);
+                    out.push((a * 255.0).round() as u8);
                 }
+                None => out.extend([0, 0, 0, 0]),
             }
-            let n = f64::from(SAMPLES * SAMPLES);
-            if cover > 0.0 {
-                out.extend(rgb.map(|c| (c / cover).round() as u8));
-            } else {
-                out.extend([0, 0, 0]);
-            }
-            out.push((cover / n * 255.0).round() as u8);
         }
     }
     out
 }
 
 /// Every frame of one loop, [`FRAME`] apart.
-pub(crate) fn frames(size: u32) -> Vec<Vec<u8>> {
+pub(crate) fn frames(size: u32, taskbar: Taskbar) -> Vec<Vec<u8>> {
     let count = (LOOP.as_millis() / FRAME.as_millis()) as u32;
     (0..count)
-        .map(|i| render(size, Some(f64::from(i) * FRAME.as_secs_f64())))
+        .map(|i| render(size, Some(f64::from(i) * FRAME.as_secs_f64()), taskbar))
         .collect()
 }
 
@@ -179,50 +152,60 @@ mod tests {
     }
 
     #[test]
-    fn the_still_mark_is_the_16_px_icon() {
-        let img = render(16, None);
-        assert_eq!(img.len(), 16 * 16 * 4);
-        // The rounded corner is transparent, the tile ink.
-        assert_eq!(pixel(&img, 16, 0, 0)[3], 0);
-        assert_eq!(pixel(&img, 16, 1, 8), [11, 11, 15, 255]);
-        // The arrow: mint at the top of the shaft, deeper green at its tip.
-        let top = pixel(&img, 16, 7, 3);
-        let tip = pixel(&img, 16, 8, 12);
-        assert!(top[1] > 200 && top[3] == 255, "{top:?}");
-        assert!(tip[1] > 150 && tip[0] < 60, "{tip:?}");
+    fn the_still_mark_is_one_colour_per_taskbar() {
+        let dark = render(16, None, Taskbar::Dark);
+        assert_eq!(dark.len(), 16 * 16 * 4);
+        // Transparent around the arrow; the 16 px arrow is the compact one
+        // in 2 px cells: shaft x 5..11 from y 1, head 1..15 at y 7..9.
+        assert_eq!(pixel(&dark, 16, 0, 0), [0, 0, 0, 0]);
+        assert_eq!(pixel(&dark, 16, 4, 2), [0, 0, 0, 0]);
+        assert_eq!(pixel(&dark, 16, 5, 1), [255, 255, 255, 255]);
+        assert_eq!(pixel(&dark, 16, 1, 7), [255, 255, 255, 255]);
+        assert_eq!(pixel(&dark, 16, 7, 14), [255, 255, 255, 255]);
+        let light = render(16, None, Taskbar::Light);
+        assert_eq!(pixel(&light, 16, 5, 1), [0x1B, 0x1B, 0x1B, 255]);
+        assert_eq!(Taskbar::from_light(true), Taskbar::Light);
     }
 
     #[test]
     fn rows_light_up_top_to_bottom() {
         // Rows rise one after another; each holds until the next loop, so
         // just before the tip's turn the top is lit and the tip is dim.
-        let early = render(16, Some(0.9));
-        let top = pixel(&early, 16, 7, 3);
-        let tip = pixel(&early, 16, 8, 12);
-        assert!(top[1] > tip[1], "top {top:?} tip {tip:?}");
+        let early = render(16, Some(0.9), Taskbar::Dark);
+        let top = pixel(&early, 16, 7, 1);
+        let tip = pixel(&early, 16, 7, 14);
+        assert!(top[3] > tip[3], "top {top:?} tip {tip:?}");
         // Mid-loop every row is lit, like the still mark.
-        assert_eq!(render(16, Some(1.5)), render(16, None));
+        assert_eq!(
+            render(16, Some(1.5), Taskbar::Dark),
+            render(16, None, Taskbar::Dark)
+        );
         // Rows never fade out entirely.
         assert!((opacity(0, 2.599) - REST).abs() < 0.01);
         assert!(opacity(8, 0.0) >= REST);
+        assert!(tip[3] >= (REST * 255.0) as u8);
     }
 
     #[test]
-    fn sizes_use_the_brand_designs() {
-        assert_eq!(design(16).grid as u32, 16);
-        assert_eq!(design(32).grid as u32, 16);
-        assert_eq!(design(20).grid as u32, 16);
-        assert_eq!(design(24).grid as u32, 24);
-        assert_eq!(design(48).grid as u32, 24);
-        let img = render(24, None);
-        // The 24 px arrow's head is 14 px wide at y = 11..13.
-        assert!(pixel(&img, 24, 5, 12)[1] > 100);
-        assert_eq!(pixel(&img, 24, 4, 12), [11, 11, 15, 255]);
+    fn each_size_gets_the_largest_whole_pixel_arrow() {
+        for (size, cells, cell) in [
+            (16, 7, 2),
+            (20, 9, 2),
+            (24, 7, 3),
+            (28, 7, 3),
+            (32, 7, 4),
+            (40, 9, 4),
+            (48, 9, 5),
+        ] {
+            let l = layout(size);
+            assert_eq!((l.rows.len(), l.cell), (cells, cell), "{size} px");
+            assert!(l.origin >= 1 && l.origin + cells as u32 * cell < size);
+        }
     }
 
     #[test]
     fn one_loop_of_frames() {
-        let frames = frames(16);
+        let frames = frames(16, Taskbar::Light);
         assert_eq!(frames.len(), 26);
         assert_ne!(frames[0], frames[5]);
     }

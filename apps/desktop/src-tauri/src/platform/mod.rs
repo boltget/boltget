@@ -12,7 +12,8 @@ mod windows;
 pub(crate) use self::windows::{
     ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
     set_caption_layout, set_chrome, set_low_memory, shut_down, sleep, small_icon_size,
-    system_proxy, update_caption_layout, watch_clipboard, watch_system_proxy,
+    system_proxy, taskbar_is_light, update_caption_layout, watch_clipboard, watch_system_proxy,
+    watch_taskbar_theme,
 };
 
 #[cfg(not(windows))]
@@ -32,6 +33,16 @@ mod other {
     }
     pub(crate) fn animations_enabled() -> bool {
         true
+    }
+
+    /// No taskbar colour is read yet: the tray mark is white, as on a
+    /// dark panel.
+    pub(crate) fn taskbar_is_light() -> bool {
+        false
+    }
+
+    pub(crate) fn watch_taskbar_theme(changed: impl Fn() + Send + 'static) {
+        drop(changed);
     }
 
     /// No system proxy is read yet: direct.
@@ -80,5 +91,6 @@ mod other {
 pub(crate) use self::other::{
     ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
     set_caption_layout, set_chrome, set_low_memory, shut_down, sleep, small_icon_size,
-    system_proxy, update_caption_layout, watch_clipboard, watch_system_proxy,
+    system_proxy, taskbar_is_light, update_caption_layout, watch_clipboard, watch_system_proxy,
+    watch_taskbar_theme,
 };
