@@ -431,9 +431,11 @@ Web snippet:
 <meta property="og:image" content="https://boltget.app/og-image.png">
 ```
 
-`favicon.svg` follows the browser's colour scheme. On light chrome it shows
-the 16 px tile. On dark chrome it drops the tile and shows a larger bare arrow
-in 2 px chunks, in the three bands. `apple-touch-icon.png` (180) and the
+`favicon.svg` is the bare mark in one colour, like the site's closing arrow:
+ink (`#13212B`) on light browser chrome, white on dark. From 25 px up every
+cell is its own square; at tab size (16 to 24 px) it switches to the stepped
+arrow in 2 px chunks, which fills the tab. `favicon.ico` keeps the app tile
+for places that ignore SVG. `apple-touch-icon.png` (180) and the
 avatars are full bleed; `icon-maskable-512.png` is full bleed with the arrow
 inside the central 80% (the build checks it).
 

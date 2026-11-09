@@ -473,7 +473,9 @@ function steppedSvg(size) {
   const body = [
     `  <rect width="${size}" height="${size}" rx="${rx}" fill="${INK}"/>`,
     `  <rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" rx="${rx - 0.5}" fill="none" stroke="#fff" stroke-opacity="${HAIRLINE}"/>`,
-    `  ${bandRects(STEPPED[size])}`,
+    // crispEdges keeps the arrow on whole device pixels when a page places
+    // the icon at a half-pixel offset.
+    `  <g shape-rendering="crispEdges">${bandRects(STEPPED[size])}</g>`,
   ].join('\n');
   return svg({ w: size, h: size, title: `Boltget (${size} px)`, body });
 }
@@ -559,27 +561,23 @@ function buildLogos() {
     }),
   );
 
-  // Favicon: the app tile, so it stays vivid on light and dark browser chrome.
-  // From 25 px up (a 2x tab gets 32 device pixels) every cell is its own
-  // square: 2.5 px pitch, 2 px cells, in the white-to-sky row ramp. Below
-  // that the gaps would blur, so the SVG switches to the 16 px stepped glyph,
-  // drawn at double size.
+  // Favicon: the bare mark in one colour, like the site's big closing arrow:
+  // ink on light browser chrome, white on dark. From 25 px up (a 2x tab gets
+  // 32 device pixels) every cell is its own square; below that the gaps
+  // would blur, so it switches to the 16 px stepped arrow, which fills the
+  // tab like other sites' favicons.
   {
-    const pitch = 2.5, px = 2, off = (32 - (8 * pitch + px)) / 2;
-    const tile = `<rect width="32" height="32" rx="7" fill="${INK}"/><rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#fff" stroke-opacity="${HAIRLINE}"/>`;
-    const cells = CELLS.map(({ r, c }) => `<rect x="${off + c * pitch}" y="${off + r * pitch}" width="${px}" height="${px}" fill="${ROW_COLORS[r]}"/>`).join('');
-    // At tab size (16 px) the arrow has to fill the tile like other sites'
-    // favicons: the bare 14 px stepped arrow on the tile, in saturated bands,
-    // with a stronger edge so the tile holds on dark bookmark bars.
-    const FAV_BAND = { s: '#FFFFFF', h: '#7CC8FA', t: '#2E95E6' };
-    const smallTile = `<rect width="32" height="32" rx="6" fill="${INK}"/><rect x="1" y="1" width="30" height="30" rx="5" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="2"/>`;
-    const small = BARE16.map(([x0, x1, y0, y1, b]) => `<rect x="${x0 * 2}" y="${y0 * 2}" width="${(x1 - x0) * 2}" height="${(y1 - y0) * 2}" fill="${FAV_BAND[b]}"/>`).join('');
+    const pitch = 3.25, px = 2.75, off = (32 - (8 * pitch + px)) / 2;
+    const cells = CELLS.map(({ r, c }) => `<rect x="${off + c * pitch}" y="${off + r * pitch}" width="${px}" height="${px}"/>`).join('');
+    const small = BARE16.map(([x0, x1, y0, y1]) => `<rect x="${x0 * 2}" y="${y0 * 2}" width="${(x1 - x0) * 2}" height="${(y1 - y0) * 2}"/>`).join('');
     writeSvg(
       'web/favicon.svg',
       svg({
         w: 32, h: 32, title: 'Boltget',
-        style: '.s{display:none}@media (max-width:24px){.b{display:none}.s{display:inline}}',
-        body: [`  <g class="b">${tile}${cells}</g>`, `  <g class="s">${smallTile}${small}</g>`].join('\n'),
+        style:
+          `g{fill:${INK}}@media (prefers-color-scheme:dark){g{fill:#fff}}` +
+          '.s{display:none}@media (max-width:24px){.b{display:none}.s{display:inline}}',
+        body: [`  <g class="b">${cells}</g>`, `  <g class="s" shape-rendering="crispEdges">${small}</g>`].join('\n'),
       }),
     );
   }

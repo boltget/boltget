@@ -2,5 +2,5 @@
   <title>Boltget (20 px)</title>
   <rect width="20" height="20" rx="4" fill="#13212B"/>
   <rect x="0.5" y="0.5" width="19" height="19" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.09"/>
-  <rect x="8" y="3" width="4" height="7" fill="#FFFFFF"/><rect x="4" y="10" width="12" height="1" fill="#B5DFFB"/><rect x="5" y="11" width="10" height="1" fill="#B5DFFB"/><rect x="6" y="12" width="8" height="1" fill="#B5DFFB"/><rect x="7" y="13" width="6" height="1" fill="#B5DFFB"/><rect x="8" y="14" width="4" height="1" fill="#2E95E6"/><rect x="9" y="15" width="2" height="1" fill="#2E95E6"/>
+  <g shape-rendering="crispEdges"><rect x="8" y="3" width="4" height="7" fill="#FFFFFF"/><rect x="4" y="10" width="12" height="1" fill="#B5DFFB"/><rect x="5" y="11" width="10" height="1" fill="#B5DFFB"/><rect x="6" y="12" width="8" height="1" fill="#B5DFFB"/><rect x="7" y="13" width="6" height="1" fill="#B5DFFB"/><rect x="8" y="14" width="4" height="1" fill="#2E95E6"/><rect x="9" y="15" width="2" height="1" fill="#2E95E6"/></g>
 </svg>

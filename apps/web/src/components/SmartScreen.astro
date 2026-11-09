@@ -7,8 +7,10 @@
 // anyway appear, it clicks Run anyway and the setup window opens. With `step`
 // it is a still of that step (the reduced-motion pair). Always decorative: the
 // sentence beside it carries the meaning.
-import icon from "../../../../brand/svg/icon-30.svg";
-import icon2x from "../../../../brand/svg/icon-60.svg";
+import icon from "../../../../brand/svg/icon-32.svg";
+import icon125 from "../../../../brand/svg/icon-40.svg";
+import icon150 from "../../../../brand/svg/icon-48.svg";
+import icon2x from "../../../../brand/svg/icon-64.svg";
 import { t } from "../i18n";
 
 interface Props {
@@ -34,7 +36,7 @@ const { step } = Astro.props;
       <span class="btn dont">{t("download.smartscreen.dont")}</span>
     </div>
     <div class="setup">
-      <img src={icon.src} srcset={`${icon.src} 1x, ${icon2x.src} 2x`} width="30" height="30" alt="" />
+      <img src={icon.src} srcset={`${icon.src} 1x, ${icon125.src} 1.25x, ${icon150.src} 1.5x, ${icon2x.src} 2x`} width="32" height="32" alt="" />
       <p>{t("download.smartscreen.setup")}</p>
       <span class="bar"><span class="fill"></span></span>
     </div>
