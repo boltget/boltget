@@ -143,7 +143,7 @@ The full reports, with sources, are kept outside the repository. This document r
     - Press adds another 4% step, never a scale.
     - Selection is an accent tint with a 2 px indicator on the left.
 25. **The app's type scale.** Text is 13 px (rows and controls), 12 px (secondary text, weight 500 on dark) and 15 px (pane titles). Larger sizes are reserved for empty states and settings headers. Weights are 400 and 500, with 600 only for titles. Live numbers use Geist with tabular figures; Geist Mono is used for URLs, hashes, headers and the log.
-26. **Corner radii:** controls 4 px, floating surfaces 8 px, the window 8 px (the system's rounded corners). Anything that *is* a chunk (progress fill, file map, the mark) stays square, at radius 0.
+26. **Corner radii:** controls 4 px, floating surfaces 8 px, the window 8 px (the system's rounded corners). Anything that *is* a chunk (progress fill, file map, the mark) stays square, at radius 0. (The app icon's own pixels carry a slight corner at large sizes; that is the icon, not UI.)
 27. **Motion.**
     - Small changes take 100 to 150 ms; panes and sheets take 200 to 250 ms.
     - Elements enter on `cubic-bezier(0, 0, 0, 1)` and leave in about two thirds of the entering duration on `cubic-bezier(0.33, 0, 0.67, 1)`.
@@ -177,7 +177,7 @@ The full reports, with sources, are kept outside the repository. This document r
 34. **The light theme is designed first.** Three directions were prototyped on 2026-10-31 with the same layout and live data: Ink (the brand's near-black), Daylight (light, like the website and its hero card) and Mica (Windows 11 tinted chrome). The owner chose **Daylight**:
     - The app looks like the website's hero card, so the first screenshot matches the marketing.
     - Windows ships in light mode by default.
-    - The tokens come from `brand/tokens/tokens.css`, light theme. The chrome (title bar and sidebar) is `#F6F6F7`, the content area white, hairlines `rgb(9 9 11 / 8%)`, and the accent `#047857` with white text. Progress fills use the light gradient (`#34D399` → `#047857`).
+    - The tokens come from `brand/tokens/tokens.css`, light theme. The chrome (title bar and sidebar) is `#F6F6F7`, the content area white, hairlines `rgb(9 9 11 / 8%)`, and the accent `#047857` with white text. Progress fills use the light emerald gradient (`#34D399` → `#047857`), the brand's progress gradient, not the mark's.
     - Dark (Ink) remains a full theme. The app follows the system setting and is reviewed in both themes. Light is the reference for screenshots, and it is designed and polished first.
     - Mica is not used in v0.2.
 
@@ -189,8 +189,8 @@ The first step of v0.2 (2026-11-01) built the shell that later steps fill in: ti
 - **Ink's surfaces.** In dark, the content is the brand's `#0B0B0F` and the chrome one step lighter (`#141418`), the inverse of Daylight's grey chrome around white content. Secondary 12 px text is weight 500 in dark (#25).
 - **The colours are generated.** Every app colour is a semantic token (`--color-chrome`, `--color-hairline`, `--color-accent-tint`, …) defined once, for both themes, in `packages/ui/scripts/generate.mjs` from the brand tokens; see [TECH-STACK.md, ADR-004](TECH-STACK.md#adr-004-svelte-5-typescript-and-vite-for-the-ui). Daylight's chrome comes out at exactly `#F6F6F7`. The close button's hover red is the brand's error red (`#DC2626`), not Windows' own `#C42B1C`, so no colour is hard-coded.
 - **Launch.** The window is created hidden, its background set from Rust to the theme's content colour while it is still hidden, and the page inlines the same colour in `index.html`. The page applies the theme, waits for the bundled fonts and one frame, then asks Rust to show the window. If the page never asks, Rust shows it after 3 s. Size, position and the maximized state are restored while it is hidden.
-- **The title bar's icon** is the pixel-snapped app icon (`icon-16.svg` at 1x and 2x, `icon-24.svg` at 1.5x), since the mark without a tile has a 24 px minimum.
-- **The empty state's mark** is drawn at 108 px, where the canonical squares land on whole pixels at 100% scale. It waits, dim, until the window is visible, then plays once.
+- **The title bar's icon** is the pixel-snapped app icon, the native design for each display scale (`icon-16.svg` at 1x, `icon-20.svg` at 1.25x, `icon-24.svg` at 1.5x, `icon-32.svg` at 2x, `icon-40.svg` at 2.5x), since the mark without a tile has a 24 px minimum.
+- **The empty state's mark** is drawn at 108 px, where the canonical squares land on whole pixels at 100% scale: solid ink (`#13212B`) on the light theme, the app icon's white-to-sky ramp on dark (tokens `--color-mark-0..3`). It waits, dim, until the window is visible, then plays once.
 - **The icon rail** is 52 px wide; labels become tooltips.
 - **WebView2:** no browser context menu, status bubble, pinch zoom or swipe navigation in any build; no browser accelerator keys (reload, find, print, devtools) in release builds; overlay scrollbars (`fluentOverlay`).
 - **Reviewing themes.** Debug builds accept `BOLTGET_DEV_THEME=light|dark` and flip the theme with `Ctrl+Shift+L`; the Theme setting itself arrives with the settings window.
@@ -210,7 +210,7 @@ The second step of v0.2 (2026-11-01) connected the shell to the engine; the IPC 
 The third step of v0.2 (2026-11-01) built the main list (#3, #4) and the details pane (#10 to #12). Decisions it took where this brief was open, and where it deviates:
 
 **The list**
-- **Rows** are as specified: 40 px comfortable (name with the state or the primary action at the right; a 4 px square progress bar and one muted status line below) and 32 px compact (`Ctrl+Shift+D`, one line, the fill alone as a 2 px underline with no track, so a column of rows does not read as ruled lines). The fill is the mark's gradient while a download runs and neutral grey once it stops.
+- **Rows** are as specified: 40 px comfortable (name with the state or the primary action at the right; a 4 px square progress bar and one muted status line below) and 32 px compact (`Ctrl+Shift+D`, one line, the fill alone as a 2 px underline with no track, so a column of rows does not read as ruled lines). The fill is the emerald progress gradient (`--gradient-progress`) while a download runs and neutral grey once it stops.
 - **Units are binary everywhere**, speeds included (`48.2 MiB/s`, where #3's example said `MB/s`), so a row never mixes two unit systems. Numbers that change live keep their trailing zeros (`0.40 / 5.97 GiB`) so their width does not jump; settled sizes drop them (`7 MiB`). Digits repaint on one shared 2 Hz beat.
 - **Groups.** Failed, corrupt and expired-link downloads sit at the top of "Queued and paused" rather than in a group of their own. Section headers do not stick. Every view is grouped the same way; a sort other than Grouped gives one flat list (Name, Size, Date added).
 - **"Rows never move on their own"** is implemented as: sections are held while the pointer moves over the list, it scrolls, or a key is pressed in it, and for 2.5 s after the last of these (0.3 s after the pointer leaves). A pointer resting on the list without moving does not count as using it, so history still settles while the user looks elsewhere. Adding or removing a download does move rows: the user did it.
@@ -259,7 +259,7 @@ The fourth step of v0.2 (2026-11-04) built the add sheet (#6 to #8) and polished
 The fifth step of v0.2 (2026-11-04) built #13 to #16 and the app's life around its window. Decisions it took where this brief was open, and where it deviates:
 
 **The tray (#13)**
-- **The icon** is the app icon (the dark tile), so it reads on light and dark taskbars. It is drawn in Rust from the brand geometry (`apps/desktop/src-tauri/src/mark.rs`): the pixel-snapped 16 px design at 16, 20 and 32 px, the 24 px design at 24 and 48 px, at the size Windows asks for small icons.
+- **The icon** is the bare arrow in one colour, like the system's own tray icons (BRAND.md, "The tray"): white on a dark taskbar, `#1B1B1B` on a light one. The colour follows Windows' colour mode (`SystemUsesLightTheme` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, read and watched, never written) and changes with it while the app runs. It is drawn in Rust (`apps/desktop/src-tauri/src/mark.rs`) at the size Windows asks for small icons, gapless on whole pixels: the 9 × 9 arrow, or a 7 × 7 one where that comes out larger (2 px cells at 16 px). Other platforms keep the white mark for now. The taskbar button and the window keep the coloured app icon.
 - **The motion** is the brand's (BRAND.md §6): the arrow's rows light up top to bottom on a 2.6 s loop with a 0.12 s stagger, shown at 10 frames a second. It runs only while bytes are flowing (some download running at a speed above zero); it stops on the still mark when everything is paused, stalled or done. There is no setting of its own: it never moves when Windows' "Animation effects" are off, the system's reduced-motion switch.
 - **Left click** opens or focuses the window. **The menu** is native: Open Boltget, Add from clipboard (opens the window and the add sheet with the clipboard's links; nothing starts on its own), Pause all, Resume all (paused downloads; failed ones wait for the user, as in the window), Speed limit ▸ (No limit, 1, 5, 10, 25 and 50 MiB/s, checked to match the global limit, which the window or the CLI may change), Open downloads folder, Quit Boltget.
 - **The tooltip** is `3 active · 48.2 MiB/s · about 2 min left` (binary units, as everywhere), only `3 active` while nothing flows yet, and `Boltget` when idle. Its numbers change at most once a second.
@@ -365,7 +365,7 @@ The research found nine places where the existing documents disagreed or did not
 
 | Topic | Before | Decision |
 |---|---|---|
-| Primary button | DESIGN-PRINCIPLES allowed the gradient; BRAND forbade it on buttons | Solid emerald button. The gradient stays on the mark and the active progress fill |
+| Primary button | DESIGN-PRINCIPLES allowed the gradient; BRAND forbade it on buttons | Solid emerald button. The emerald gradient stays on the active progress fill |
 | Numbers | BRAND: all numbers in Geist Mono | Geist with tabular figures in lists; Mono for URLs, hashes, headers, the log |
 | Type scale | BRAND's 15 px body (a website scale) | The app scale above (13/12/15); BRAND keeps its scale for the web |
 | Focus ring colour | DESIGN-PRINCIPLES suggested the OS accent | Always emerald; system colours only in high contrast (`forced-colors`) |

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="brand/icon.svg" width="120" height="120" alt="Boltget icon: a pixel down-arrow in a mint-to-emerald gradient on near-black">
+  <img src="brand/icon.svg" width="120" height="120" alt="Boltget icon: a pixel down-arrow in a white-to-sky-blue ramp on an ink tile">
 </p>
 
 <h1 align="center">Boltget</h1>
