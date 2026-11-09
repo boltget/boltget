@@ -1,6 +1,6 @@
 <!--
-  The Boltget mark, the canonical geometry of brand/svg/mark.svg, coloured
-  with the theme's mark gradient. With `arrive`, the rows light up once, top to
+  The Boltget mark, the geometry of brand/svg/mark.svg: solid ink on the
+  light theme, the app icon's white-to-sky ramp on dark (BRAND.md, The mark). With `arrive`, the rows light up once, top to
   bottom, in the brand rhythm (BRAND.md, Motion: linear, 0.12 s stagger, the
   0.31 s rise) and stay lit; `paused` holds them dim until the moment it
   should play (when the window appears). With reduced motion it is static.
@@ -53,10 +53,11 @@
   aria-hidden={label ? undefined : "true"}
 >
   <defs>
-    <linearGradient id="{id}-g" gradientUnits="userSpaceOnUse" x1="36" y1="36" x2="144" y2="144">
+    <linearGradient id="{id}-g" gradientUnits="userSpaceOnUse" x1="0" y1="36" x2="0" y2="144">
       <stop class="s0" offset="0" />
-      <stop class="s1" offset="0.5" />
-      <stop class="s2" offset="1" />
+      <stop class="s1" offset="0.42" />
+      <stop class="s2" offset="0.7" />
+      <stop class="s3" offset="1" />
     </linearGradient>
   </defs>
   {#each rows as d, row (row)}
@@ -76,6 +77,9 @@
   }
   .s2 {
     stop-color: var(--color-mark-2);
+  }
+  .s3 {
+    stop-color: var(--color-mark-3);
   }
   .arrive path {
     opacity: var(--motion-arrive-rest);
