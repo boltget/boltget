@@ -4,7 +4,8 @@
 // compact floating white bar, sticky at the top. Logo left; plain text links,
 // GitHub and the black Download pill right. It keeps its place across page
 // loads through a named view transition.
-import lockup from "../../../../brand/svg/lockup-horizontal-on-light.svg";
+import lockup from "../../../../brand/svg/lockup-header-on-light.svg";
+import lockup2x from "../../../../brand/svg/lockup-header-on-light@2x.svg";
 import Icon from "./Icon.astro";
 import { t } from "../i18n";
 
@@ -14,14 +15,15 @@ const links = [
   { href: "/docs/", label: t("nav.docs"), match: "/docs", wide: false },
   { href: "/changelog/", label: t("nav.changelog"), match: "/changelog", wide: true },
 ];
-const height = 24;
-const width = Math.round((lockup.width / lockup.height) * height);
+// The header lockup is drawn for its own size (28 px, the arrow on a 3 px
+// pitch): gapless at 1x, 1-device-pixel gaps at 2x.
+const { width, height } = lockup;
 ---
 
 <header class="header" data-header>
   <div class="bar">
     <a class="brand" href="/" aria-label={t("nav.home")}>
-      <img src={lockup.src} width={width} height={height} alt="" />
+      <img src={lockup.src} srcset={`${lockup.src} 1x, ${lockup2x.src} 2x`} width={width} height={height} alt="" />
     </a>
     <nav aria-label={t("nav.label")}>
       <ul>
@@ -153,10 +155,6 @@ const width = Math.round((lockup.width / lockup.height) * height);
   @media (max-width: 26rem) {
     .scrolled .bar {
       padding-left: 0.875rem;
-    }
-    .brand img {
-      width: auto;
-      height: 20px;
     }
     .github-label {
       display: none;

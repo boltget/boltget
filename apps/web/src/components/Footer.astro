@@ -3,7 +3,8 @@
 // and quiet (docs/WEBSITE.md, Character). The logo with one line, three short
 // link columns, and the copyright. The source link here is the page's only
 // mention of the project being open source.
-import lockup from "../../../../brand/svg/lockup-horizontal-on-light.svg";
+import lockup from "../../../../brand/svg/lockup-header-on-light.svg";
+import lockup2x from "../../../../brand/svg/lockup-header-on-light@2x.svg";
 import { t } from "../i18n";
 
 const groups = [
@@ -32,14 +33,13 @@ const groups = [
     ],
   },
 ];
-const height = 22;
-const width = Math.round((lockup.width / lockup.height) * height);
+const { width, height } = lockup;
 ---
 
 <footer class="footer">
   <div class="wrap"><div class="grid">
     <div class="about">
-      <img src={lockup.src} width={width} height={height} alt={t("site.name")} />
+      <img src={lockup.src} srcset={`${lockup.src} 1x, ${lockup2x.src} 2x`} width={width} height={height} alt={t("site.name")} />
       <p>{t("footer.tagline")}</p>
     </div>
     <nav aria-label={t("footer.nav")}>

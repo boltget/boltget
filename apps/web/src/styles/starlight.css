@@ -48,7 +48,8 @@
   --sl-color-text-accent: #047857;
 }
 
+/* The header lockup is pixel-snapped at its own 28 px height. */
 .site-title img {
-  height: 1.5rem;
+  height: 28px;
   width: auto;
 }

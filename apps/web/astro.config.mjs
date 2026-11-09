@@ -22,8 +22,8 @@ export default defineConfig({
       title: "Boltget docs",
       description: "How to install and use Boltget, the download manager built for speed.",
       logo: {
-        dark: "../../brand/svg/lockup-horizontal-on-dark.svg",
-        light: "../../brand/svg/lockup-horizontal-on-light.svg",
+        dark: "../../brand/svg/lockup-header-on-dark.svg",
+        light: "../../brand/svg/lockup-header-on-light.svg",
         alt: "Boltget",
         replacesTitle: true,
       },
