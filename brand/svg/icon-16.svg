@@ -1,12 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
   <title>Boltget (16 px)</title>
-  <defs>
-    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="3" y1="3" x2="13" y2="13">
-      <stop offset="0" stop-color="#A7F3D0"/>
-      <stop offset="0.5" stop-color="#34D399"/>
-      <stop offset="1" stop-color="#059669"/>
-    </linearGradient>
-  </defs>
-  <rect width="16" height="16" rx="3.5" fill="#0B0B0F"/>
-  <path fill="url(#g)" d="M10 3L10 8L13 8L13 9L12 9L12 10L11 10L11 11L10 11L10 12L9 12L9 13L7 13L7 12L6 12L6 11L5 11L5 10L4 10L4 9L3 9L3 8L6 8L6 3Z"/>
+  <rect width="16" height="16" rx="3" fill="#13212B"/>
+  <rect x="0.5" y="0.5" width="15" height="15" rx="2.5" fill="none" stroke="#fff" stroke-opacity="0.09"/>
+  <rect x="6" y="3" width="4" height="5" fill="#FFFFFF"/><rect x="3" y="8" width="10" height="1" fill="#B5DFFB"/><rect x="4" y="9" width="8" height="1" fill="#B5DFFB"/><rect x="5" y="10" width="6" height="1" fill="#B5DFFB"/><rect x="6" y="11" width="4" height="1" fill="#2E95E6"/><rect x="7" y="12" width="2" height="1" fill="#2E95E6"/>
 </svg>

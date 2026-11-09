@@ -28,9 +28,13 @@
   --color-warning: light-dark(var(--status-warning-light), var(--status-warning-dark));
   --color-error: light-dark(var(--status-error-light), var(--status-error-dark));
   --color-info: light-dark(var(--status-info-light), var(--status-info-dark));
-  --color-mark-0: light-dark(var(--mark-light-0), var(--mark-dark-0));
-  --color-mark-1: light-dark(var(--mark-light-1), var(--mark-dark-1));
-  --color-mark-2: light-dark(var(--mark-light-2), var(--mark-dark-2));
+  --color-mark-0: light-dark(var(--mark-ink), var(--mark-ramp-0));
+  --color-mark-1: light-dark(var(--mark-ink), var(--mark-ramp-1));
+  --color-mark-2: light-dark(var(--mark-ink), var(--mark-ramp-2));
+  --color-mark-3: light-dark(var(--mark-ink), var(--mark-ramp-3));
+  --color-progress-0: light-dark(var(--progress-light-0), var(--progress-dark-0));
+  --color-progress-1: light-dark(var(--progress-light-1), var(--progress-dark-1));
+  --color-progress-2: light-dark(var(--progress-light-2), var(--progress-dark-2));
   --color-progress-track: light-dark(color-mix(in srgb, var(--neutral-950) 7%, transparent), color-mix(in srgb, var(--neutral-0) 8%, transparent));
   --color-progress-idle: light-dark(color-mix(in srgb, var(--neutral-400) 40%, var(--neutral-500)), color-mix(in srgb, var(--neutral-600) 30%, var(--neutral-500)));
   --color-map-empty: light-dark(color-mix(in srgb, var(--emerald-900) 7%, transparent), color-mix(in srgb, var(--neutral-0) 7%, transparent));

@@ -42,8 +42,10 @@ for (const [name, byTheme] of Object.entries(brand.semantic)) {
   primitives.set(`status.${name}.light`, byTheme.light);
   primitives.set(`status.${name}.dark`, byTheme.dark);
 }
-brand.gradient.markLight.forEach(([, hex], i) => primitives.set(`mark.light.${i}`, hex));
-brand.gradient.mark.forEach(([, hex], i) => primitives.set(`mark.dark.${i}`, hex));
+brand.gradient.progressLight.forEach(([, hex], i) => primitives.set(`progress.light.${i}`, hex));
+brand.gradient.progress.forEach(([, hex], i) => primitives.set(`progress.dark.${i}`, hex));
+primitives.set("mark.ink", brand.mark.ink);
+brand.mark.ramp.forEach(([, hex], i) => primitives.set(`mark.ramp.${i}`, hex));
 
 const cssVar = (path) => `--${path.replaceAll(".", "-")}`;
 
@@ -100,12 +102,18 @@ const semantic = {
   warning: ["status.warning.light", "status.warning.dark"],
   error: ["status.error.light", "status.error.dark"],
   info: ["status.info.light", "status.info.dark"],
-  // The mark's gradient, one step darker on light (BRAND.md, Gradient).
-  "mark-0": ["mark.light.0", "mark.dark.0"],
-  "mark-1": ["mark.light.1", "mark.dark.1"],
-  "mark-2": ["mark.light.2", "mark.dark.2"],
-  // Progress (#23, #26): a quiet track; the fill is the mark's gradient while
-  // a download runs, neutral grey once it stops.
+  // The bare mark (BRAND.md, The mark): solid ink on light, the white-to-sky
+  // ramp of the app icon on dark. Stops at the ramp's offsets.
+  "mark-0": ["mark.ink", "mark.ramp.0"],
+  "mark-1": ["mark.ink", "mark.ramp.1"],
+  "mark-2": ["mark.ink", "mark.ramp.2"],
+  "mark-3": ["mark.ink", "mark.ramp.3"],
+  // Progress (#23, #26): a quiet track; the fill is an emerald gradient,
+  // one step darker on light, while a download runs, neutral grey once it
+  // stops.
+  "progress-0": ["progress.light.0", "progress.dark.0"],
+  "progress-1": ["progress.light.1", "progress.dark.1"],
+  "progress-2": ["progress.light.2", "progress.dark.2"],
   "progress-track": [alpha("neutral.950", 0.07), alpha("neutral.0", 0.08)],
   // At least 3:1 against the content and the track (WCAG 1.4.11).
   "progress-idle": [mix("neutral.400", "neutral.500", 0.4), mix("neutral.600", "neutral.500", 0.3)],

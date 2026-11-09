@@ -54,12 +54,12 @@
   --ease-data: linear;
   /* Data-driven motion spans one engine tick (ARCHITECTURE.md, 250 ms). */
   --duration-tick: 250ms;
-  /* The active progress fill: the mark's gradient (BRAND.md, Gradient). */
+  /* The active progress fill: emerald (BRAND.md, Progress gradient). */
   --gradient-progress: linear-gradient(
     90deg,
-    var(--color-mark-0),
-    var(--color-mark-1) 55%,
-    var(--color-mark-2)
+    var(--color-progress-0),
+    var(--color-progress-1) 55%,
+    var(--color-progress-2)
   );
 
   /* Shell dimensions. */

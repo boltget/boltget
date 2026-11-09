@@ -32,8 +32,14 @@
   --atmosphere-mint: #A7F3D0;
   --atmosphere-mist: #ECFDF5;
   --atmosphere-paper: #FFFFFF;
-  --gradient-mark: linear-gradient(135deg, #A7F3D0 0%, #34D399 50%, #059669 100%);
-  --gradient-mark-light: linear-gradient(135deg, #34D399 0%, #10B981 50%, #047857 100%);
+  --mark-ink: #13212B;
+  --mark-tile-0: #1B2D3A;
+  --mark-tile-1: #13212B;
+  --mark-tile-2: #0E1A23;
+  --gradient-mark: linear-gradient(180deg, #FFFFFF 0%, #E1F2FD 42%, #93D0F9 70%, #2E95E6 100%);
+  --gradient-tile: linear-gradient(120deg, #1B2D3A, #13212B, #0E1A23);
+  --gradient-progress: linear-gradient(90deg, #A7F3D0 0%, #34D399 50%, #059669 100%);
+  --gradient-progress-light: linear-gradient(90deg, #34D399 0%, #10B981 50%, #047857 100%);
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --motion-arrive-duration: 2.6s;
