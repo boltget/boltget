@@ -568,13 +568,18 @@ function buildLogos() {
     const pitch = 2.5, px = 2, off = (32 - (8 * pitch + px)) / 2;
     const tile = `<rect width="32" height="32" rx="7" fill="${INK}"/><rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#fff" stroke-opacity="${HAIRLINE}"/>`;
     const cells = CELLS.map(({ r, c }) => `<rect x="${off + c * pitch}" y="${off + r * pitch}" width="${px}" height="${px}" fill="${ROW_COLORS[r]}"/>`).join('');
-    const small = STEPPED[16].map(([x0, x1, y0, y1, b]) => `<rect x="${x0 * 2}" y="${y0 * 2}" width="${(x1 - x0) * 2}" height="${(y1 - y0) * 2}" fill="${BAND[b]}"/>`).join('');
+    // At tab size (16 px) the arrow has to fill the tile like other sites'
+    // favicons: the bare 14 px stepped arrow on the tile, in saturated bands,
+    // with a stronger edge so the tile holds on dark bookmark bars.
+    const FAV_BAND = { s: '#FFFFFF', h: '#7CC8FA', t: '#2E95E6' };
+    const smallTile = `<rect width="32" height="32" rx="6" fill="${INK}"/><rect x="1" y="1" width="30" height="30" rx="5" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="2"/>`;
+    const small = BARE16.map(([x0, x1, y0, y1, b]) => `<rect x="${x0 * 2}" y="${y0 * 2}" width="${(x1 - x0) * 2}" height="${(y1 - y0) * 2}" fill="${FAV_BAND[b]}"/>`).join('');
     writeSvg(
       'web/favicon.svg',
       svg({
         w: 32, h: 32, title: 'Boltget',
         style: '.s{display:none}@media (max-width:24px){.b{display:none}.s{display:inline}}',
-        body: [`  ${tile}`, `  <g class="b">${cells}</g>`, `  <g class="s">${small}</g>`].join('\n'),
+        body: [`  <g class="b">${tile}${cells}</g>`, `  <g class="s">${smallTile}${small}</g>`].join('\n'),
       }),
     );
   }
