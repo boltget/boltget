@@ -87,3 +87,6 @@ strip = "symbols"
 [profile.dev.package."*"]
 # Dependencies (hashing, TLS) are painfully slow unoptimised; tests stream tens of MiB.
 opt-level = 2
+# No debug info for dependencies: it was most of target/debug's size (tens of
+# GiB with Tauri), and backtraces through our own code stay complete.
+debug = false
