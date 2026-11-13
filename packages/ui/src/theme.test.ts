@@ -38,9 +38,9 @@ describe("applyTheme", () => {
 });
 
 describe("theme colours", () => {
-  it("come from the brand tokens (Daylight content white, Ink content near-black)", () => {
-    expect(themeColor("light", "content")).toBe(brand.neutral["0"]);
-    expect(themeColor("dark", "content")).toBe(brand.neutral["950"]);
+  it("come from the brand tokens (Daylight content white, Ink content ink)", () => {
+    expect(themeColor("light", "content")).toBe(brand.white);
+    expect(themeColor("dark", "content")).toBe(brand.ink);
     expect(themeColor("light", "accent")).toBe(brand.theme.light.accent);
     expect(themeColor("dark", "accent")).toBe(brand.theme.dark.accent);
   });

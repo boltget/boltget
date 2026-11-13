@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- New app icon and brand mark: the pixel arrow now runs from white to sky blue on an ink tile, with hand-tuned small sizes for every size Windows asks for. The tray icon is the bare arrow in one colour, white on a dark taskbar and near-black on a light one, and follows Windows' colour mode as it changes. The website, its favicons and link previews use the new mark.
+- The brand is now black and white. The app icon is a white pixel arrow on a black tile, with a white twin for dark taskbars and dark tabs, and both keep every pixel and gap crisp down to 16 px. Green and blue are gone; colour now only marks a download that is paused or has failed. The favicon is the bare arrow, black on light browsers and white on dark ones, and the link previews show the new icon in a grey sky.
+- New app icon and brand mark, with hand-tuned small sizes for every size Windows asks for. The tray icon is the bare arrow in one colour, white on a dark taskbar and near-black on a light one, and follows Windows' colour mode as it changes. The website, its favicons and link previews use the new mark.
 - Rebuilt the website around a light framed layout, self-hosted typography and an interactive demonstration of the Windows app. Download now starts with the installer and first-run instructions; benchmarks show one measured comparison with the method folded away.
 - Updated the install guide and privacy page for the desktop preview. Changelog and privacy have section navigation and a reading layout that adapts to smaller screens.
 - Retired the website design lab and the separate IDM comparison page; existing comparison links lead to benchmarks.

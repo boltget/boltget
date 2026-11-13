@@ -25,17 +25,29 @@ again. That "chunks arriving" sequence is the brand signature. Use it wherever
 the mark moves.
 
 **Simple, but it should make you look twice.** The brand holds back on purpose:
-one shape, one ramp, one typeface. Its impact comes from precision (an exact
+one shape, two colours, one typeface. Its impact comes from precision (an exact
 grid, even gaps, pixels snapped to the screen at every size), not from effects.
 
-*November 2026: the mark moved from the emerald gradient on near-black to the
-white-to-sky ramp on an ink tile ("variant B, calm continuous ramp", chosen
-from four explored directions). Emerald stays in the app as the colour of
-progress, focus and success.*
+*November 2026: the brand went monochrome. The app icon became **Onyx**, a
+black tile with a white arrow, with a white twin (**Paper**) for dark
+contexts; the palette became ink, paper, white and a graphite scale. There is
+no green or blue anywhere: colour only says that a download is paused or has
+failed. (It replaced the white-to-sky ramp on an ink tile, which had replaced
+the emerald gradient.)*
 
 ## 2. The mark
 
 ### The app icon
+
+The icon has **two modes**, the same drawing inverted:
+
+| Mode | Look | Use on | Files |
+|---|---|---|---|
+| **Onyx** (primary) | Black tile lit from the top left, white arrow | Light contexts, and everywhere by default: the executable, installers, stores, the website, a light taskbar | `icon.svg`, `svg/icon-N.svg`, `png/icon-N.png`, `ico/app.ico`, `web/*`, `social/avatar*` |
+| **Paper** (the twin) | White tile, black arrow | Dark contexts: a dark taskbar, dark browser tabs, the app's dark theme | `icon-on-dark.svg`, `svg/icon-on-dark-N.svg`, `png/icon-on-dark-N.png`, `ico/app-on-dark.ico` |
+
+Use Onyx unless the icon sits on a dark surface you know about. Never put
+Paper on a light background or Onyx on a black one without its edge.
 
 ![Construction drawing](svg/construction.svg)
 
@@ -43,26 +55,26 @@ progress, focus and success.*
 |---|---|
 | Artboard | 1024 × 1024 |
 | Tile | smooth-corner squircle (corner radius 208, smoothing 0.6), inset 40, so 944 wide |
-| Tile fill | 120° gradient `#1B2D3A` → `#13212B` → `#0E1A23`, a faint sky light (`#38BDF8` at ≤ 10%) behind the arrow, a white top rim (16% fading out over 40% of the tile), a darker bottom rim, and a 1 px outer edge (black at 25%) |
 | Grid | 9 × 9 cells, pitch 58, centred (origin 255) |
 | Pixel | 50 × 50 with a 6 corner, so an 8 gap between pixels |
 | Rows | 0–3: cols 3–5 (shaft) · 4: cols 0–8 · 5: cols 1–7 · 6: cols 2–6 · 7: cols 3–5 · 8: col 4 |
-| Fill | one continuous vertical ramp across the arrow: `#FFFFFF` 0% → `#E1F2FD` 42% → `#93D0F9` 70% → `#2E95E6` 100% (the tip is the deepest) |
-| Depth | each pixel: white 12% at its top fading out by 45%, a deep blue foot (`#0B2235` 10%), a 2 px light top edge (white 30%), and a soft contact shadow (blur 5, 8 down, `#03080C` 55%). No glow |
+| Onyx tile | 120° gradient `#2C2D31` → `#151618` → `#0A0A0B` (ink), a soft white light from above the top left (16%), a white top rim (32% fading out over 45% of the tile), a faint white bottom rim (8%) and a 1 px outer edge (black at 30%) |
+| Onyx arrow | each pixel white, `#FFFFFF` → `#E4E5E8` from top to foot, a 2.5 px shaded foot (`#9A9DA3` at 35%) and a soft contact shadow (blur 6, 9 down, black 60%) |
+| Paper tile | vertical gradient `#FFFFFF` → `#F3F4F5` (55%) → `#E1E3E6`, a white sheen at the top left, a shaded foot (black up to 10%) and a 1 px outer edge (black at 14%) |
+| Paper arrow | each pixel `#26282B` → `#121315` (35%) → `#08090A`, a 2.5 px lit top edge (white 14%) and a soft contact shadow (blur 6, 8 down, `#3A3D44` 30%) |
 
 The arrow covers 514 of the 944 tile (54%). At every size below 1024 the
 build snaps the grid to whole device pixels: an integer pitch and gap,
-centred, with the effects scaled along.
+centred, with the effects scaled along. No glow, no hue.
 
 ### The bare mark
 
 Without a tile (lockups, the website, the app's empty state) the mark keeps
 square pixels on a 180 artboard: grid origin (36, 36), pitch **u = 12**, pixel
-10 × 10 at +1 in its cell (a 2 gap). It is a single colour on light
-backgrounds, **ink `#13212B`**, and the sky ramp on dark backgrounds.
+10 × 10 at +1 in its cell (a 2 gap). It is a single colour: **ink `#0A0A0B`**
+on light backgrounds, **white** on dark.
 
 The geometry is defined once, in `scripts/build.mjs` (`ROWS`, `MASTER`, `GRID`).
-
 ### The grid unit, u
 
 **u = 1/15 of the bare mark's artboard** (12 at 180 px). Measure clear space,
@@ -77,16 +89,26 @@ Nothing goes inside clear space: no text, no edges, no other logos.
 
 ### Small sizes
 
-Below 256 px the gaps fall between device pixels and blur, so every size
-Windows asks for has its own native design:
+Below 180 px the gaps fall between device pixels and blur, so every size
+Windows asks for has its own native design, in both modes. Small sizes use a
+**resolution-reduced arrow**: the same arrow on a 5 × 5, 7 × 7 or 9 × 9 grid
+(`GRIDS` in the build), with whole-pixel cells and **real 1 px gaps**, so the
+chunks stay visible down to 16 px. The smaller the icon, the more of the tile
+the arrow fills.
 
-| Size | Design | Files |
-|---|---|---|
-| 16, 20, 24, 30, 32, 36, 40 | Gapless stepped glyph, drawn pixel by pixel, on a flat ink tile with a **1 px white hairline at 9%** on its edge (it keeps the tile visible on dark taskbars such as `#1C1C1E`). Three colour bands: shaft white, head `#B5DFFB`, tip `#2E95E6` | `svg/icon-{16…40}.svg` |
-| 48 | The squircle tile with its gradient and top rim; the arrow gapless in 3 px cells, one flat colour per row (the ramp sampled at each row) | `svg/icon-48.svg` |
-| 60, 64, 72, 80 | The same with 1 px gaps (4 or 5 px pitch) and a 1 px rim | `svg/icon-{60…80}.svg` |
-| 96, 128 | Pitch-snapped 1 px gaps (6 and 8 px pitch), 1 px corners | `svg/icon-96.svg`, `svg/icon-128.svg` |
-| 180 and up | The master, snapped (`png/icon-256.png` and up, the web icons) | `icon.svg` |
+| Size | Arrow (grid · cell + gap) | Tile | Files |
+|---|---|---|---|
+| 16, 20 | 5 × 5 · 2 + 1 | Flat rounded tile (radius 3 or 4) with a 1 px edge: white at 14% on Onyx (it keeps the tile visible on a dark taskbar such as `#1C1C1E`), black at 22% on Paper. Onyx adds a 1 px lit top line | `svg/icon-{16,20}.svg` |
+| 24 | 7 × 7 · 2 + 1 | The same | `svg/icon-24.svg` |
+| 30, 32, 36, 40 | 9 × 9 · 2 + 1 | The same | `svg/icon-{30…40}.svg` |
+| 48 | 9 × 9 · 3 + 1 | The squircle tile with its gradient and rim | `svg/icon-48.svg` |
+| 60, 64, 72 | 9 × 9 · 4 + 1 | The same | `svg/icon-{60…72}.svg` |
+| 80, 96 | 9 × 9 · 5 + 1 | The same; from 96 the cells have a 1 px corner | `svg/icon-80.svg`, `svg/icon-96.svg` |
+| 128 | 9 × 9 · 7 + 1 | The same | `svg/icon-128.svg` |
+| 180 and up | The master, snapped (`png/icon-256.png` and up, the web icons) | | `icon.svg` |
+
+Each file has its Paper twin at `svg/icon-on-dark-N.svg`. Where a grid's width
+comes out odd, its centre column is 1 px wider so the arrow centres.
 
 Minimum sizes:
 
@@ -97,22 +119,26 @@ Minimum sizes:
 ### The tray
 
 The Windows tray shows the **bare arrow in one colour**, as the system's own
-tray icons do: white on a dark taskbar, `#1B1B1B` on a light one, following
-Windows' colour mode (`SystemUsesLightTheme`) as it changes. It is gapless on
-whole pixels: the 9 × 9 arrow, or a 7 × 7 one where that comes out larger
-(16 px: 2 px cells, 14 px wide). Its rows carry the motion (§6). The taskbar
-button and the window keep the coloured app icon. The app draws it
+tray icons do: white on a dark taskbar, ink on a light one, following
+Windows' colour mode (`SystemUsesLightTheme`) as it changes. The kit draws it
+with the same resolution-reduced arrows on whole pixels, filling the square:
+16 px 5 × 5 (2 + 1), 20 and 24 px 7 × 7 (2 + 1), 32 px 9 × 9 (2 + 1). Files:
+`svg/tray-ink-N.svg` and `svg/tray-white-N.svg`, the PNGs, and
+`ico/tray-ink.ico` / `ico/tray-white.ico` (16, 20, 24, 32). Its rows carry the
+motion (§6). The taskbar button and the window keep the app icon, Onyx or
+Paper by the same colour mode. The app currently draws its own tray glyph
 (`apps/desktop/src-tauri/src/mark.rs`).
 
 ### Variants
 
 | Variant | File | Use on |
 |---|---|---|
-| App icon (primary) | `icon.svg` | Everywhere by default |
-| Mark, ramp | `svg/mark.svg` | Dark backgrounds, no tile |
+| App icon, Onyx (primary) | `icon.svg` | Everywhere by default |
+| App icon, Paper | `icon-on-dark.svg` | Dark taskbars, dark tabs, dark UI |
+| Mark, white | `svg/mark.svg`, `svg/mark-white.svg` | Dark backgrounds and photos, no tile |
 | Mark, ink | `svg/mark-ink.svg` | Light backgrounds, no tile: the website, light UI |
-| Mark, white | `svg/mark-white.svg` | Photos, coloured backgrounds, one-colour print on dark |
 | Mark, black | `svg/mark-black.svg` | One-colour print on light, fax-grade reproduction |
+| Tile marks | `svg/tile-mark-light.svg`, `svg/tile-mark-dark.svg` | Flat illustrations of the icon (the website's installer window): Paper and Onyx without their lighting |
 
 ## 3. Wordmark and lockups
 
@@ -124,7 +150,7 @@ rather than two. Always use the supplied files. Never retype the wordmark.
 
 - **Horizontal lockup:** the wordmark's cap height is 4u, 2.5u after the arrow. The caps are centred on the arrow's vertical centre.
 - **Stacked lockup:** the wordmark's cap height is 3u, 2.5u below the arrow, centred on the arrow's axis.
-- The wordmark is a single colour: `#FAFAFA` on dark, ink `#13212B` on light, the same ink as the mark.
+- The wordmark is a single colour: white on dark, ink `#0A0A0B` on light, the same as the mark.
 
 | File | Use |
 |---|---|
@@ -134,158 +160,133 @@ rather than two. Always use the supplied files. Never retype the wordmark.
 | `svg/lockup-stacked-on-dark.svg` / `-on-light.svg` | Square-ish spaces: splash screens, posters, stickers |
 | `png/lockup-*.png` | The same lockups as 240 px-tall PNGs for slides and documents |
 
-The lockups use the mark without a tile: ink on light, the ramp on dark. On a
-busy or photographic background, use the white mark and white wordmark.
+The lockups use the mark without a tile: ink on light, white on dark.
 
 ## 4. Color
 
+Black and white carry the brand; graphite carries structure. **Colour appears
+only for state**: a download that is paused or has failed. There is no brand
+hue, no green and no blue.
+
 ### Core palette
 
-| Role | Hex | Notes |
-|---|---|---|
-| Ink | `#13212B` | The app icon's tile, the mark and wordmark on light backgrounds |
-| Tile ramp | `#1B2D3A` → `#13212B` → `#0E1A23` | The tile's 120° gradient |
-| Sky ramp | `#FFFFFF` → `#E1F2FD` → `#93D0F9` → `#2E95E6` | The arrow, top to tip. Belongs to the mark |
-| Emerald | `#34D399` | The app's colour for progress, focus, selection and success |
-| Near-black | `#0B0B0F` | The app's dark canvas and the website's text (`neutral-950`) |
-| Paper | `#F4F4F5` | Light surfaces |
-| White | `#FFFFFF` | Text on dark only when `#FAFAFA` is not available |
+| Role | Token | Hex | Notes |
+|---|---|---|---|
+| Ink | `ink` | `#0A0A0B` | The mark, wordmark and text on light; the Onyx tile's deep end; the app's accent on light |
+| Paper | `paper` | `#F5F5F3` | Warm off-white for the website and print |
+| White | `white` | `#FFFFFF` | The mark and text on dark; the Paper tile; the app's accent on dark |
 
-Emerald is used sparingly: one accent per screen, progress. If everything is
-green, nothing is. Tokens: `--mark-ink`, `--mark-tile-*`, `--gradient-mark`
-(the sky ramp) and `--gradient-tile` in `tokens/tokens.css`; `mark` in
-`tokens/tokens.json`.
+Tokens: `--ink`, `--paper`, `--white`, `--mark-ink`, `--gradient-tile` (Onyx)
+and `--gradient-tile-paper` in `tokens/tokens.css`; `ink`, `paper`, `white`
+and `mark` in `tokens/tokens.json`.
 
-### Emerald scale
+### Graphite scale
+
+A cool, nearly neutral grey between paper and ink.
 
 | Token | Hex | | Token | Hex |
 |---|---|---|---|---|
-| `emerald-50` | `#ECFDF5` | | `emerald-500` | `#10B981` |
-| `emerald-100` | `#D1FAE5` | | `emerald-600` | `#059669` |
-| `emerald-200` | `#A7F3D0` | | `emerald-700` | `#047857` |
-| `emerald-300` | `#6EE7B7` | | `emerald-800` | `#065F46` |
-| `emerald-400` | `#34D399` | | `emerald-900` | `#064E3B` |
-| | | | `emerald-950` | `#022C22` |
+| `graphite-50` | `#F7F7F8` | | `graphite-600` | `#5F6267` |
+| `graphite-100` | `#EEEFF0` | | `graphite-700` | `#46484C` |
+| `graphite-200` | `#DEDFE1` | | `graphite-800` | `#2E3033` |
+| `graphite-300` | `#C4C6C9` | | `graphite-900` | `#1C1D1F` |
+| `graphite-400` | `#A0A3A8` | | `graphite-950` | `#111213` |
+| `graphite-500` | `#7D8086` | | | |
 
-### Neutral scale
+### State colours
 
-A cool zinc grey that runs down into the brand ink. `850` is an extra step for
-raised surfaces in dark UI.
-
-| Token | Hex | | Token | Hex |
-|---|---|---|---|---|
-| `neutral-0` | `#FFFFFF` | | `neutral-600` | `#52525B` |
-| `neutral-50` | `#FAFAFA` | | `neutral-700` | `#3F3F46` |
-| `neutral-100` | `#F4F4F5` | | `neutral-800` | `#27272A` |
-| `neutral-200` | `#E4E4E7` | | `neutral-850` | `#1C1C21` |
-| `neutral-300` | `#D4D4D8` | | `neutral-900` | `#141418` |
-| `neutral-400` | `#A1A1AA` | | `neutral-950` | `#0B0B0F` |
-| `neutral-500` | `#71717A` | | | |
-
-### Semantic colours
-
-Muted, and at the same lightness as the emerald accent, so that no status shouts
-louder than the brand. Warning is deliberately orange, not yellow.
+The only colour in the system, used on small glyphs, progress fills and short
+status text, never on buttons, links or the mark.
 
 | Meaning | Dark theme | Light theme | Typical use |
 |---|---|---|---|
-| Success | `#34D399` | `#047857` | Download complete, checksum verified |
-| Warning | `#FB923C` | `#C2410C` | Slow mirror, resumable error, disk nearly full |
+| Paused | `#F5A524` | `#B45309` | Paused, waiting to resume, slow mirror, disk nearly full |
 | Error | `#F87171` | `#DC2626` | Failed, server refused, file corrupted |
-| Info | `#7DD3FC` | `#0369A1` | Queued, waiting, tips |
+
+Done is the accent (ink or white), queued and other information graphite.
 
 ### Themes
 
-Dark is the default theme. Light is fully supported.
+Dark is the default theme. Light is fully supported. **The accent is ink on
+light and white on dark**: the primary button is a solid ink pill on light
+and a white one on dark, focus rings and selection use the same colour.
 
 | Token | Dark | Light |
 |---|---|---|
-| `--bg` | `#0B0B0F` | `#FFFFFF` |
-| `--surface` | `#141418` | `#FAFAFA` |
-| `--raised` | `#1C1C21` | `#F4F4F5` |
-| `--border` | `#27272A` | `#E4E4E7` |
-| `--border-strong` | `#3F3F46` | `#D4D4D8` |
-| `--text` | `#FAFAFA` | `#0B0B0F` |
-| `--text-muted` | `#A1A1AA` | `#52525B` |
-| `--text-subtle` | `#71717A` | `#71717A` |
-| `--accent` | `#34D399` | `#047857` |
-| `--accent-hover` | `#6EE7B7` | `#065F46` |
-| `--on-accent` | `#022C22` | `#FFFFFF` |
-| `--accent-subtle` | `#34D399` at 10% | `#059669` at 10% |
+| `--bg` | `#0A0A0B` | `#FFFFFF` |
+| `--surface` | `#111213` | `#F7F7F8` |
+| `--raised` | `#1C1D1F` | `#EEEFF0` |
+| `--border` | `#2E3033` | `#DEDFE1` |
+| `--border-strong` | `#46484C` | `#C4C6C9` |
+| `--text` | `#F7F7F8` | `#0A0A0B` |
+| `--text-muted` | `#A0A3A8` | `#46484C` |
+| `--text-subtle` | `#7D8086` | `#5F6267` |
+| `--accent` | `#FFFFFF` | `#0A0A0B` |
+| `--accent-hover` | `#DEDFE1` | `#2E3033` |
+| `--on-accent` | `#0A0A0B` | `#FFFFFF` |
+| `--accent-subtle` | white at 10% | ink at 8% |
+| `--paused` | `#F5A524` | `#B45309` |
+| `--error` | `#F87171` | `#DC2626` |
 
-On light backgrounds the accent is `emerald-700`, because `#34D399` on white
-fails WCAG contrast for text. On dark backgrounds, `#34D399` on `#0B0B0F` is about
-10:1. Ready-made tokens: `tokens/tokens.css` (CSS custom properties, with
-`[data-theme="light"]`) and `tokens/tokens.json`.
+Ready-made tokens: `tokens/tokens.css` (CSS custom properties, with
+`[data-theme="light"]`) and `tokens/tokens.json`. The desktop app derives its
+own semantic colours from `tokens/tokens.json` in
+`packages/ui/scripts/generate.mjs`.
 
 ### Gradients
 
-**The mark's ramp** runs top to bottom across the whole arrow (see the app
-icon). It belongs to the mark: do not use it on buttons, text or backgrounds.
+**The Onyx tile** runs at 120°, lit from the top left. It belongs to the icon:
+do not use it on buttons or backgrounds.
 
-**Progress** uses emerald, along the bar:
+**Progress** rises from graphite to the accent at the head of the bar:
 
 | | 0% | 50% | 100% |
 |---|---|---|---|
-| On dark | `#A7F3D0` emerald-200 | `#34D399` emerald-400 | `#059669` emerald-600 |
-| On light | `#34D399` emerald-400 | `#10B981` emerald-500 | `#047857` emerald-700 |
+| On dark | `#7D8086` graphite-500 | `#C4C6C9` graphite-300 | `#FFFFFF` white |
+| On light | `#7D8086` graphite-500 | `#46484C` graphite-700 | `#0A0A0B` ink |
 
-In CSS: `--gradient-progress` and `--gradient-progress-light`. A file map
-drawn as a field of square pixels (the website's "block map", the app's
-details pane) colours its squares along the emerald ramp, at most 14% opacity
-once settled, briefly brighter while a square is being written.
+In CSS: `--gradient-progress` and `--gradient-progress-light`. A paused bar is
+the paused colour, a failed one the error colour. A file map drawn as a field
+of square pixels (the website's "block map", the app's details pane) colours
+its squares along the graphite ramp, with the square being written in the
+accent.
 
 ### Atmosphere (website)
 
-*Extension, October 2026, for the website redesign (docs/WEBSITE.md, Home page).
-Adopted with direction A ("Daylight"). The ramp is generated as `--atmosphere-*`
-tokens by `scripts/build.mjs`.*
+*November 2026: the "pearl sky".* The website's mood is a grey cloud sky
+washed toward paper (`apps/web/src/assets/sky.webp`, from
+`source/sky-master.webp`). Its `--atmosphere-*` tokens, top to bottom:
 
-The website may use one atmospheric field at the top of a page: a slow, soft
-gradient that reads as weather, not decoration. Its ramp, top to bottom:
-
-| Stop | Hex | | Stop | Hex |
-|---|---|---|---|---|
-| Deep | `#031E18` | | Teal light | `#34D3AF` |
-| Emerald deep | `#023428` | | Mint | `#A7F3D0` (emerald-200) |
-| Emerald | `#046C52` | | Mist | `#ECFDF5` (emerald-50) |
-| Teal | `#0D9488` | | Paper | `#FFFFFF` |
+| Stop | Hex |
+|---|---|
+| Haze | `#C4C6C9` (graphite-300) |
+| Pearl | `#DEDFE1` (graphite-200) |
+| Mist | `#EEEFF0` (graphite-100) |
+| Paper | `#F5F5F3` |
+| White | `#FFFFFF` |
 
 Rules:
 
-- Towards the bottom, the field breaks into **square chunks with even gaps**
-  that thin out into the page (the chunk grid of the social art, in colour).
-  The chunks are square and never rounded. They may carry the soft light
-  described under *Pixels on the web*, never a neon glow.
-- Teal is allowed **only** inside the atmosphere and as a data series colour
-  (file maps, connection colours). It is never an accent, link or button colour.
-- Text on the field is white and sits on the darker stops.
-- The mark keeps its own colours (ink on paper, the ramp on dark); it is never recoloured to the atmosphere.
-- **Paper** (white page, ink text, `emerald-700` accent) is a first-class
-  marketing theme alongside the dark default. The website uses it; one
-  *night* band (`#031E18`, the Deep stop) may break up a long page.
-- The same field, calmer and without chunks, may fill the footer under a
-  wavy top edge. Text on it is white or mint (`#A7F3D0`) and the ramp is held
-  on the darker stops.
+- Text on the sky is ink. The primary call to action is a solid ink pill.
+- The mark keeps its own colours (ink on light, white on dark); it is never
+  tinted to the sky.
+- No hue is added to the sky, its clouds or its chunks.
 
 ### Pixels on the web
 
-*October 2026.* How squares (the mark's pixels, the hero's chunks, file maps
-and progress bars) are rendered on the website, so they read as material
-rather than flat swatches:
+How squares (the mark's pixels, the hero's chunks, file maps and progress
+bars) are rendered on the website, so they read as material rather than flat
+swatches:
 
-- **One continuous gradient across the whole field.** Each square is a window
-  onto a gradient that spans the whole map, bar or mark, never a flat fill per
-  square. File maps run emerald-400 → emerald-500 → emerald-600 → teal →
-  emerald-700 (on night: emerald-200 → teal); the mark uses its own colours
-  (ink, light to deep, on paper; the sky ramp on dark).
+- **One continuous ramp across the whole field.** File maps run along the
+  graphite scale toward the accent; the mark stays one colour.
 - **Inner light and depth.** A filled square may carry a faint white light on
-  its top ~40% (at most 25% opacity) and a hairline of deep emerald at its
-  bottom edge (at most 18%). A large mark may sit on a very soft drop shadow
-  in its own ink (at most 16% opacity, blur ≥ 24 px). No outer glow on the mark.
+  its top ~40% (at most 25% opacity) and a hairline of ink at its bottom edge
+  (at most 18%). A large mark may sit on a very soft drop shadow in ink (at
+  most 16% opacity, blur ≥ 24 px). No outer glow on the mark.
 - **Arrival.** A square eases in (≈ 0.45 s, ease-out) and carries a brief
   light that fades in about half a second. The square being written may have
-  a soft 2 px halo (emerald at ≈ 22%, or mint on night).
+  a soft 2 px halo in the accent at ≈ 22%.
 - **Organic dissolve.** Where squares thin out into the page, their opacity
   varies per square and eases around the threshold, so the edge is uneven,
   not a stair-step. Empty squares on paper vary slightly in tone.
@@ -315,7 +316,7 @@ Suggested scale for the web and print. Headlines get tighter tracking as they gr
 | H3 | 20 / 28 | 500 | −0.01 em |
 | Body | 15 / 24 | 400 | 0 |
 | Small | 13 / 20 | 400 | 0 |
-| Label (mono, uppercase) | 12–15 / 16 | 400 | +0.12–0.14 em, in emerald-400 on dark |
+| Label (mono, uppercase) | 12–15 / 16 | 400 | +0.12–0.14 em, in graphite-400 on dark, graphite-600 on light |
 | Data (mono) | 13 / 20 | 400 | 0 |
 
 Use the mono uppercase label sparingly: one per view, above a headline, as on the
@@ -351,17 +352,17 @@ Rules:
 - Keep the gaps even and the grid exact; snap pixels to the screen.
 - Give the mark room.
 - Use the native small-size icons at 128 px and below.
-- Use ink on light and the ramp on dark. Use one colour (ink, white, black) when the ramp can't print.
+- Use ink on light and white on dark. Use the Paper icon on dark surfaces.
 
 **Don't**
 
 - **Don't round the bare mark's pixels.** Only the app icon's own pixels carry their slight corner (6 of 50) at large sizes.
-- **Don't use yellow,** for the mark, accents or warnings. (Rejected direction; warnings use orange.)
+- **Don't add a brand hue.** No green, no blue, no yellow, for the mark, accents or buttons. Colour is for paused and failed only.
 - **Don't replace the arrow with a letter "B" monogram.** (Rejected direction.)
 - Don't add glow, neon, outlines or other effects to the mark. The app icon's depth (rims, per-pixel light, contact shadow) is part of the icon and stays as drawn. (App UI that floats, such as menus and dialogs, uses the elevation tokens in [APP-DESIGN.md](../docs/APP-DESIGN.md#visual-system).)
 - Don't rotate the arrow. It always points down.
-- Don't recolour the ramp, reverse it, or put other hues in it. Don't draw the mark in emerald.
-- Don't rearrange, add or remove pixels. Only the official small-size files are gapless.
+- Don't put grey or a gradient in the bare mark, and don't put the Paper icon on a light background.
+- Don't rearrange, add or remove pixels. Only the official small-size files use the reduced 5 × 5 and 7 × 7 grids.
 - Don't stretch, skew or crop the mark.
 - Don't retype "Boltget", change its weight, or colour its letters differently. Write it with one capital: Boltget, never BoltGet (the camel-case spelling was retired on 2026-11-01).
 - Don't put the mark on a busy photo without the white one-colour version.
@@ -389,7 +390,9 @@ calm. It's confident because it's specific, not because it's loud.
 Tagline: **Every byte, at full speed.**
 Descriptor: **A download manager built for speed.** Long form (GitHub About,
 store listings): "A download manager built for speed. Dynamic segmentation,
-crash-proof resume and seamless browser capture, for Windows."
+crash-proof resume and seamless browser capture." Subline on social images:
+**The fast, resumable download manager.** Social copy does not name one
+platform: Boltget ships for Windows first, then macOS and Linux.
 Social label (mono, uppercase): **DOWNLOAD MANAGER**
 
 | Context | Write | Avoid |
@@ -410,16 +413,33 @@ Social label (mono, uppercase): **DOWNLOAD MANAGER**
 | `social/og-image.png` | 1200 × 630 | Open Graph / link previews |
 | `social/github-social.png` | 1280 × 640 | GitHub → Settings → Social preview |
 | `social/x-header.png` | 1500 × 500 | X / Twitter header. Text stays in the centre band and clear of the avatar in the lower left |
-| `social/avatar-400.png`, `avatar-512.png` | 400², 512² | Org and social avatars. Full bleed, so it survives circle and rounded crops |
+| `social/avatar-400.png`, `avatar-512.png` | 400², 512² | Org and social avatars: Onyx, full bleed, so it survives circle and rounded crops |
 
-The Open Graph and GitHub cards sit on the website's sky
-(`apps/web/src/assets/sky.webp`, converted with sharp at build time): the app
-icon and wordmark top left, the headline "Every byte," in Geist and "at full
-speed." in Source Serif 4 italic, the serif subline "The download manager for
-Windows.", and the app window in its light theme bleeding off the right and
-bottom. The window is the real app at its minimum width (the sidebar as an
-icon rail), drawn at 1.5× with the website demo's downloads, so its smallest
-text is 18 px. Every text is outlined; the build is deterministic.
+The Open Graph and GitHub cards are built from the source art
+`source/og-art.png` (see *Source art*): the headline "Every byte," and "at full
+speed.", the subline "The fast, resumable download manager.", a large Onyx
+icon in the clouds and the icon and wordmark top left. The build covers the
+art's small icon with the real one (the small-size Onyx design, 9 × 9 arrow,
+drawn at its exact size on a soft patch of the art's own ground), because
+generated art cannot hold the grid at 50 px. The GitHub card is the same art
+scaled to cover 1280 × 640.
+
+The X header is built from the pearl sky (`apps/web/src/assets/sky.webp`): the
+headline on one line in Geist and Source Serif 4 italic and the serif
+subline, all in ink. Every text is outlined; the build is deterministic.
+
+### Source art
+
+`source/` holds inputs the build reads but does not generate:
+
+| File | What it is |
+|---|---|
+| `source/og-art.png` | The Open Graph card, 1200 × 630, AI-generated (Codex, gpt-6-astra) and approved by the maintainers |
+| `source/sky-master.webp` | The master of the pearl sky photograph, 2880 × 1600, AI-generated the same way; `apps/web/src/assets/sky.webp` is made from it |
+
+Treat them as source inputs: replace them deliberately (and rebuild), never
+edit them by hand to fix a detail the build should draw. Anything the brand
+defines exactly (the icon, the mark) is drawn by the build on top.
 
 Web snippet:
 
@@ -431,36 +451,44 @@ Web snippet:
 <meta property="og:image" content="https://boltget.app/og-image.png">
 ```
 
-`favicon.svg` is the bare mark in one colour, like the site's closing arrow:
-ink (`#13212B`) on light browser chrome, white on dark. From 25 px up every
-cell is its own square; at tab size (16 to 24 px) it switches to the stepped
-arrow in 2 px chunks, which fills the tab. `favicon.ico` keeps the app tile
-for places that ignore SVG. `apple-touch-icon.png` (180) and the
-avatars are full bleed; `icon-maskable-512.png` is full bleed with the arrow
-inside the central 80% (the build checks it).
+`favicon.svg` is the bare mark in one colour: ink (`#0A0A0B`) on light browser
+chrome, white on dark (`prefers-color-scheme`). At 32 device pixels it is the
+9 × 9 arrow (2 + 1 px cells); at tab size (16 to 24 px) it switches to the
+5 × 5 arrow. `favicon.ico` (16/32/48) is the Onyx tile for places that ignore
+SVG. `apple-touch-icon.png` (180) and the avatars are full bleed;
+`icon-maskable-512.png` is full bleed with the arrow inside the central 80%
+(the build checks it).
 
 ## 10. File index
 
 | Path | What it is | Use for |
 |---|---|---|
-| `icon.svg` | **Canonical** app icon, the 1024 master | Sizes ≥ 180 px |
-| `icon-animated.svg` | The master with the row-by-row motion (SMIL) | Splash, hero, loading |
-| `svg/icon-{16…128}.svg` | Native small sizes (§2) | Exactly their size |
-| `svg/icon-square.svg`, `svg/icon-maskable.svg` | Full bleed | Apple touch icon, avatars, maskable icons |
-| `svg/mark.svg` | Arrow only, the ramp | Dark backgrounds |
+| `icon.svg` | **Canonical** app icon, Onyx, the 1024 master | Sizes ≥ 180 px |
+| `icon-on-dark.svg` | The Paper twin, the 1024 master | Dark contexts, sizes ≥ 180 px |
+| `icon-animated.svg` | Onyx with the row-by-row motion (SMIL) | Splash, hero, loading |
+| `svg/icon-{16…128}.svg` | Native small sizes, Onyx (§2) | Exactly their size |
+| `svg/icon-on-dark-{16…128}.svg` | Native small sizes, Paper | Exactly their size, on dark |
+| `svg/icon-square.svg`, `svg/icon-maskable.svg` | Onyx, full bleed | Apple touch icon, avatars, maskable icons |
+| `svg/tray-ink-{16,20,24,32}.svg`, `svg/tray-white-…` | Bare tray glyphs | The tray on a light / dark taskbar |
+| `svg/mark.svg`, `svg/mark-white.svg` | Arrow only, white | Dark backgrounds |
 | `svg/mark-ink.svg` | Arrow only, ink | Light backgrounds |
-| `svg/mark-white.svg` / `mark-black.svg` | One-colour arrows | Print, overlays, single-ink use |
-| `svg/mark-animated.svg` | Arrow only, the ramp, CSS animation, honours reduced motion | Web loaders on dark |
+| `svg/mark-black.svg` | Arrow only, pure black | Print, single-ink use |
+| `svg/mark-animated.svg` | Arrow only, ink or white by `prefers-color-scheme`, CSS animation, honours reduced motion | Web loaders |
+| `svg/tile-mark-light.svg` / `-dark.svg` | Flat tile marks | Illustrations |
 | `svg/wordmark-on-dark.svg` / `-on-light.svg` | Outlined wordmark | Next to an existing mark |
 | `svg/lockup-horizontal-on-dark.svg` / `-on-light.svg` | Mark + wordmark, side by side | README, documents |
 | `svg/lockup-header-on-*.svg` (+ `@2x`) | Pixel-snapped 28 px lockup | Website header, footer, docs |
 | `svg/lockup-stacked-on-dark.svg` / `-on-light.svg` | Mark above wordmark | Splash, posters |
 | `svg/construction.svg` | Construction drawing | This document, contributors |
-| `png/icon-{16…1024}.png` | App icon PNGs, each size native | Installers, stores, Linux `hicolor` |
+| `png/icon-{16…1024}.png` | Onyx PNGs, each size native | Installers, stores, Linux `hicolor` |
+| `png/icon-on-dark-{16…1024}.png` | Paper PNGs, each size native | Dark contexts |
+| `png/tray-ink-N.png`, `png/tray-white-N.png` | Tray glyph PNGs | The tray |
 | `png/lockup-*.png` | Lockups, 240 px tall | Slides, docs |
-| `ico/app.ico` | Windows icon: 16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96 (BMP) and 256 (PNG) | Windows executable and installer |
-| `web/favicon.ico` | 16/32/48 | Legacy favicon |
-| `web/favicon.svg` | Scheme-aware SVG favicon | Modern browsers |
+| `ico/app.ico` | Windows icon, Onyx: 16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96 (BMP) and 256 (PNG) | Windows executable and installer |
+| `ico/app-on-dark.ico` | The same set, Paper | A dark taskbar |
+| `ico/tray-ink.ico`, `ico/tray-white.ico` | Tray glyphs, 16/20/24/32 | The tray on a light / dark taskbar |
+| `web/favicon.ico` | Onyx, 16/32/48 | Legacy favicon |
+| `web/favicon.svg` | Scheme-aware bare mark | Modern browsers |
 | `web/apple-touch-icon.png` | 180 × 180, full bleed | iOS home screen |
 | `web/icon-192.png`, `web/icon-512.png` | Rounded tile, transparent corners | PWA `any` icons |
 | `web/icon-maskable-512.png` | Full bleed | PWA `maskable` icon |
@@ -471,8 +499,9 @@ inside the central 80% (the build checks it).
 | `social/avatar-400.png`, `avatar-512.png`, `avatar.svg` | Avatars | GitHub org, social profiles |
 | `tokens/tokens.css`, `tokens/tokens.json` | Colour, gradient, font and motion tokens | App and website |
 | `fonts/*.woff2`, `fonts/OFL.txt` | Geist and Geist Mono (OFL) | Web, `preview.html` |
+| `source/og-art.png`, `source/sky-master.webp` | Source art (not generated) | Input to the build |
 | `preview.html` | Every asset on one page | Review |
-| `scripts/build.mjs` | Generator for everything above | Rebuilding |
+| `scripts/build.mjs` | Generator for everything above except `source/` | Rebuilding |
 
 ## Rebuilding
 
@@ -482,13 +511,14 @@ pnpm install
 pnpm build        # node scripts/build.mjs
 ```
 
-The build wipes and regenerates `icon.svg`, `icon-animated.svg`, `svg/`,
-`png/`, `ico/`, `web/`, `social/`, `tokens/`, `fonts/` and `preview.html`. It
-fails if the Open Graph text would run into the app window or the maskable
-arrow would leave its safe zone. `@resvg/resvg-js` renders the images,
-`opentype.js` outlines Geist, `fontkitten` outlines Source Serif 4 (the
-website's woff2), `sharp` reads the sky and compresses the social PNGs, and
-the ICO encoder is built in. After changing colours, run
-`pnpm --filter @boltget/ui generate` so the app's tokens follow. The
-generated files are committed, so nobody needs to run the build just to use
-the assets.
+The build wipes and regenerates `icon.svg`, `icon-on-dark.svg`,
+`icon-animated.svg`, `svg/`, `png/`, `ico/`, `web/`, `social/`, `tokens/`,
+`fonts/` and `preview.html`; it never writes to `source/`. It fails if the
+maskable arrow would leave its safe zone. `@resvg/resvg-js` renders the
+images, `opentype.js` outlines Geist, `fontkitten` outlines Source Serif 4
+(the website's woff2), `sharp` reads the source art and the sky and
+compresses the social PNGs, and the ICO encoder is built in. After changing
+colours, run `pnpm --filter @boltget/ui generate` so the app's tokens follow;
+after changing the web icons, `pnpm --filter @boltget/web brand` copies them
+into the site. The generated files are committed, so nobody needs to run the
+build just to use the assets.

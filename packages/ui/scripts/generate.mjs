@@ -31,13 +31,10 @@ const HEADER =
 // ---------------------------------------------------------------------------
 // Brand primitives
 
-/** @type {Map<string, string>} token path (e.g. "neutral.950") to #RRGGBB */
+/** @type {Map<string, string>} token path (e.g. "graphite.950") to #RRGGBB */
 const primitives = new Map();
-for (const scale of ["neutral", "emerald"]) {
-  for (const [step, hex] of Object.entries(brand[scale])) {
-    primitives.set(`${scale}.${step}`, hex);
-  }
-}
+for (const name of ["ink", "paper", "white"]) primitives.set(name, brand[name]);
+for (const [step, hex] of Object.entries(brand.graphite)) primitives.set(`graphite.${step}`, hex);
 for (const [name, byTheme] of Object.entries(brand.semantic)) {
   primitives.set(`status.${name}.light`, byTheme.light);
   primitives.set(`status.${name}.dark`, byTheme.dark);
@@ -45,7 +42,7 @@ for (const [name, byTheme] of Object.entries(brand.semantic)) {
 brand.gradient.progressLight.forEach(([, hex], i) => primitives.set(`progress.light.${i}`, hex));
 brand.gradient.progress.forEach(([, hex], i) => primitives.set(`progress.dark.${i}`, hex));
 primitives.set("mark.ink", brand.mark.ink);
-brand.mark.ramp.forEach(([, hex], i) => primitives.set(`mark.ramp.${i}`, hex));
+primitives.set("mark.white", brand.mark.white);
 
 const cssVar = (path) => `--${path.replaceAll(".", "-")}`;
 
@@ -61,87 +58,86 @@ const mix = (a, b, p) => ({ kind: "mix", a, b, p });
 /** @type {Record<string, [unknown, unknown]>} */
 const semantic = {
   // Surfaces. Daylight: grey chrome (#F6F6F7), white content. Ink: the content
-  // is the brand's near-black, the chrome one step lighter.
-  chrome: [mix("neutral.100", "neutral.50", 2 / 3), "neutral.900"],
-  content: ["neutral.0", "neutral.950"],
-  field: ["neutral.0", "neutral.950"],
-  raised: ["neutral.0", "neutral.850"],
+  // is the brand's ink, the chrome one graphite step lighter.
+  chrome: [mix("graphite.100", "graphite.50", 1 / 9), "graphite.950"],
+  content: ["white", "ink"],
+  field: ["white", "ink"],
+  raised: ["white", "graphite.900"],
   // Hairlines: the only structure (APP-DESIGN #22).
-  hairline: [alpha("neutral.950", 0.08), alpha("neutral.0", 0.08)],
-  "hairline-strong": [alpha("neutral.950", 0.14), alpha("neutral.0", 0.14)],
-  "window-border": ["neutral.300", "neutral.800"],
+  hairline: [alpha("ink", 0.08), alpha("white", 0.08)],
+  "hairline-strong": [alpha("ink", 0.14), alpha("white", 0.14)],
+  "window-border": ["graphite.300", "graphite.800"],
   // The boundary that identifies a control (a field's bottom edge, an empty
   // checkbox): 3:1 against its surface (WCAG 1.4.11), like Fluent's strong
   // control stroke.
-  "control-stroke": [mix("neutral.400", "neutral.500", 0.4), "neutral.500"],
+  "control-stroke": ["graphite.500", "graphite.500"],
   // Text.
-  text: ["neutral.950", "neutral.50"],
-  "text-muted": ["neutral.600", "neutral.400"],
+  text: ["ink", "graphite.50"],
+  "text-muted": ["graphite.700", "graphite.400"],
   // Subtle text still meets 4.5:1 on every surface and its hover, in both
-  // themes (docs/ACCESSIBILITY.md, "Contrast"); plain neutral.500 did not.
-  "text-subtle": [mix("neutral.500", "neutral.600", 0.75), mix("neutral.500", "neutral.400", 0.4)],
-  // Emerald means "alive": primary button, focus, selection, progress (#23).
-  accent: ["emerald.700", "emerald.400"],
-  "accent-hover": ["emerald.800", "emerald.300"],
-  "accent-press": ["emerald.900", "emerald.200"],
-  "on-accent": ["neutral.0", "emerald.950"],
-  "accent-tint": [alpha("emerald.600", 0.1), alpha("emerald.400", 0.12)],
-  focus: ["emerald.700", "emerald.400"],
+  // themes (docs/ACCESSIBILITY.md, "Contrast").
+  "text-subtle": ["graphite.600", mix("graphite.500", "graphite.400", 0.4)],
+  // The accent is ink on light and white on dark (BRAND.md, Color): primary
+  // button, focus, selection, progress. No hue.
+  accent: ["ink", "white"],
+  "accent-hover": ["graphite.800", "graphite.200"],
+  "accent-press": ["graphite.700", "graphite.300"],
+  "on-accent": ["white", "ink"],
+  "accent-tint": [alpha("ink", 0.06), alpha("white", 0.1)],
+  focus: ["ink", "white"],
   // Hover is a 4% overlay, press one more 4% step (#24).
-  "overlay-hover": [alpha("neutral.950", 0.04), alpha("neutral.0", 0.04)],
-  "overlay-press": [alpha("neutral.950", 0.08), alpha("neutral.0", 0.08)],
+  "overlay-hover": [alpha("ink", 0.04), alpha("white", 0.04)],
+  "overlay-press": [alpha("ink", 0.08), alpha("white", 0.08)],
   // The close caption button turns red on hover, as everywhere on Windows.
   "caption-close": ["status.error.light", "status.error.light"],
   "caption-close-press": [
-    mix("status.error.light", "neutral.950", 0.85),
-    mix("status.error.light", "neutral.950", 0.85),
+    mix("status.error.light", "ink", 0.85),
+    mix("status.error.light", "ink", 0.85),
   ],
-  "on-caption-close": ["neutral.0", "neutral.0"],
-  // Status: small glyphs and fills only, text stays neutral (#23).
-  success: ["status.success.light", "status.success.dark"],
-  warning: ["status.warning.light", "status.warning.dark"],
+  "on-caption-close": ["white", "white"],
+  // Status: small glyphs and fills only, text stays neutral (#23). Colour
+  // only says paused (warning) or failed (error); done is the accent, info
+  // is graphite.
+  success: ["ink", "white"],
+  warning: ["status.paused.light", "status.paused.dark"],
   error: ["status.error.light", "status.error.dark"],
-  info: ["status.info.light", "status.info.dark"],
-  // The bare mark (BRAND.md, The mark): solid ink on light, the white-to-sky
-  // ramp of the app icon on dark. Stops at the ramp's offsets.
-  "mark-0": ["mark.ink", "mark.ramp.0"],
-  "mark-1": ["mark.ink", "mark.ramp.1"],
-  "mark-2": ["mark.ink", "mark.ramp.2"],
-  "mark-3": ["mark.ink", "mark.ramp.3"],
-  // Progress (#23, #26): a quiet track; the fill is an emerald gradient,
-  // one step darker on light, while a download runs, neutral grey once it
-  // stops.
+  info: ["graphite.600", "graphite.400"],
+  // The bare mark (BRAND.md, The mark): solid ink on light, solid white on
+  // dark. Four stops kept so the mark can carry a gradient again.
+  "mark-0": ["mark.ink", "mark.white"],
+  "mark-1": ["mark.ink", "mark.white"],
+  "mark-2": ["mark.ink", "mark.white"],
+  "mark-3": ["mark.ink", "mark.white"],
+  // Progress (#23, #26): a quiet track; the fill rises from graphite to the
+  // accent at its head while a download runs, neutral grey once it stops.
   "progress-0": ["progress.light.0", "progress.dark.0"],
   "progress-1": ["progress.light.1", "progress.dark.1"],
   "progress-2": ["progress.light.2", "progress.dark.2"],
-  "progress-track": [alpha("neutral.950", 0.07), alpha("neutral.0", 0.08)],
+  "progress-track": [alpha("ink", 0.07), alpha("white", 0.08)],
   // At least 3:1 against the content and the track (WCAG 1.4.11).
-  "progress-idle": [mix("neutral.400", "neutral.500", 0.4), mix("neutral.600", "neutral.500", 0.3)],
-  // The details pane's file map (BRAND.md, "Pixels on the web"): a pale,
-  // faintly green ground, squares along the emerald ramp, and the square a
-  // connection is writing in deep ink (mint on dark).
-  "map-empty": [alpha("emerald.900", 0.07), alpha("neutral.0", 0.07)],
-  "map-0": ["emerald.400", "emerald.200"],
-  "map-1": ["emerald.500", "emerald.300"],
-  "map-2": ["emerald.600", "emerald.400"],
-  "map-3": ["emerald.700", "emerald.500"],
-  "map-head": ["emerald.950", "emerald.100"],
-  "map-light": ["neutral.0", "neutral.0"],
-  "map-depth": ["emerald.950", "neutral.950"],
+  "progress-idle": ["graphite.500", mix("graphite.600", "graphite.500", 0.3)],
+  // The details pane's file map (BRAND.md, "Pixels on the web"): a pale
+  // ground, squares along a graphite ramp toward the accent, and the square a
+  // connection is writing in the accent itself.
+  "map-empty": [alpha("ink", 0.06), alpha("white", 0.07)],
+  "map-0": ["graphite.300", "graphite.700"],
+  "map-1": ["graphite.400", "graphite.600"],
+  "map-2": ["graphite.500", "graphite.500"],
+  "map-3": ["graphite.700", "graphite.300"],
+  "map-head": ["ink", "white"],
+  "map-light": ["white", "white"],
+  "map-depth": ["ink", "ink"],
   // Small tooltips drawn by the page (the file map's byte ranges).
-  tooltip: ["neutral.900", "neutral.100"],
-  "on-tooltip": ["neutral.50", "neutral.950"],
+  tooltip: ["graphite.900", "graphite.100"],
+  "on-tooltip": ["graphite.50", "ink"],
   // The one destructive button (deleting files from disk) and the scrim
   // behind the dialog that confirms it.
   danger: ["status.error.light", "status.error.light"],
-  "danger-hover": [
-    mix("status.error.light", "neutral.950", 0.88),
-    mix("status.error.light", "neutral.950", 0.88),
-  ],
-  "on-danger": ["neutral.0", "neutral.0"],
-  scrim: [alpha("neutral.950", 0.24), alpha("neutral.950", 0.56)],
+  "danger-hover": [mix("status.error.light", "ink", 0.88), mix("status.error.light", "ink", 0.88)],
+  "on-danger": ["white", "white"],
+  scrim: [alpha("ink", 0.24), alpha("ink", 0.56)],
   // Shadow colour for floating surfaces (elevation tokens in scale.css).
-  shadow: [alpha("neutral.950", 0.12), alpha("neutral.950", 0.48)],
+  shadow: [alpha("ink", 0.12), alpha("ink", 0.48)],
 };
 
 function toCss(value) {
