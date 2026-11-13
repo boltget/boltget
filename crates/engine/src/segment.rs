@@ -1387,8 +1387,8 @@ mod tests {
                 apply(&mut t, &mut m, &Op::Flush);
                 prop_assert!(t.is_durable());
                 prop_assert!(crashes >= 1);
-                for o in 0..total as usize {
-                    prop_assert_eq!(m.data[o], byte_at(o as u64), "byte {} wrong after resume", o);
+                for (o, &byte) in m.data[..total as usize].iter().enumerate() {
+                    prop_assert_eq!(byte, byte_at(o as u64), "byte {} wrong after resume", o);
                 }
             }
 
