@@ -319,7 +319,7 @@
     "heading": "Download Boltget",
     "version": "{version}",
     "versionPreview": "{version} preview {n}",
-    "lede": "The desktop app for Windows, now in preview.",
+    "lede": "The desktop app, now in preview on Windows. macOS and Linux are on the way.",
     "primary": "Download for Windows",
     "size": "{value} MiB",
     "primaryFallback": "Download from GitHub",

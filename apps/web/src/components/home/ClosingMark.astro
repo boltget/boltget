@@ -2,7 +2,7 @@
 // Closing call to action on Home: the pixel arrow, large, plays the brand's
 // row-by-row signature once when it scrolls into view, then a light passes
 // across it (brand/BRAND.md, Pixels on the web). On the white page the mark
-// is ink (the app icon's tile tones, light to deep, across the whole mark);
+// is ink (the Onyx tile's tones, light to deep, across the whole mark);
 // each pixel has a faint inner light; the mark sits on a very soft ink
 // shadow. Without JavaScript or under reduced motion it is simply lit.
 import Icon from "../Icon.astro";
@@ -23,16 +23,16 @@ const path = cells.map((c) => `M${c.x} ${c.y}h${PX}v${PX}h-${PX}z`).join("");
   <svg class="mark" viewBox="0 0 108 108" width="216" height="216" role="img" aria-label={t("home.cta.mark")}>
     <defs>
       <linearGradient id="cta-g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="108" y2="108">
-        <stop offset="0" stop-color="#1B2D3A" />
-        <stop offset="0.5" stop-color="#13212B" />
-        <stop offset="1" stop-color="#0E1A23" />
+        <stop offset="0" stop-color="#2C2D31" />
+        <stop offset="0.5" stop-color="#151618" />
+        <stop offset="1" stop-color="#0A0A0B" />
       </linearGradient>
       <linearGradient id="cta-in" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#fff" stop-opacity="0.16" />
         <stop offset="0.42" stop-color="#fff" stop-opacity="0.03" />
         <stop offset="0.88" stop-color="#fff" stop-opacity="0" />
-        <stop offset="0.9" stop-color="#05090C" stop-opacity="0.3" />
-        <stop offset="1" stop-color="#05090C" stop-opacity="0.3" />
+        <stop offset="0.9" stop-color="#000" stop-opacity="0.3" />
+        <stop offset="1" stop-color="#000" stop-opacity="0.3" />
       </linearGradient>
       <linearGradient id="cta-sweep" gradientUnits="userSpaceOnUse" x1="-40" y1="0" x2="0" y2="40">
         <stop offset="0" stop-color="#fff" stop-opacity="0" />
@@ -87,7 +87,7 @@ const path = cells.map((c) => `M${c.x} ${c.y}h${PX}v${PX}h-${PX}z`).join("");
     width: clamp(9rem, 18vw, 13.5rem);
     height: auto;
     overflow: visible;
-    filter: drop-shadow(0 18px 28px rgb(19 33 43 / 0.16)) drop-shadow(0 2px 3px rgb(19 33 43 / 0.12));
+    filter: drop-shadow(0 18px 28px rgb(10 10 11 / 0.16)) drop-shadow(0 2px 3px rgb(10 10 11 / 0.12));
   }
   .sweep {
     opacity: 0;

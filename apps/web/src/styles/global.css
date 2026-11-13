@@ -18,12 +18,12 @@
   /* The frame: white gutters around one rounded panel. */
   --frame-gap: clamp(1rem, 1.6vw, 1.5rem);
   --frame-radius: 24px;
-  --frame: #f5f7f6;
-  --hairline-shadow: 0 0 0 1px rgb(17 17 17 / 0.045);
+  --frame: var(--graphite-50);
+  --hairline-shadow: 0 0 0 1px rgb(10 10 11 / 0.045);
   /* Ink and its quieter steps. */
-  --ink-78: rgb(11 11 15 / 0.78);
-  --hairline: #e7eae9;
-  --soft: #f5f7f6;
+  --ink-78: rgb(10 10 11 / 0.78);
+  --hairline: var(--graphite-200);
+  --soft: var(--graphite-50);
   /* Type scale (docs/WEBSITE.md, Character). */
   --type-display: clamp(2.6rem, 5.2vw, 4rem);
   --type-section: clamp(2.1rem, 4vw, 3.25rem);
@@ -61,7 +61,7 @@
 }
 
 html {
-  background: #fff;
+  background: var(--white);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 100%;
@@ -74,7 +74,7 @@ html {
 
 body {
   margin: 0;
-  background: #fff;
+  background: var(--white);
   font-size: 1rem;
 }
 
@@ -242,32 +242,32 @@ pre {
 
 .button-primary {
   background: var(--ink);
-  color: #fff;
+  color: var(--white);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.16),
-    0 1px 2px rgb(11 11 15 / 0.2),
-    0 6px 16px -6px rgb(11 11 15 / 0.45);
+    0 1px 2px rgb(10 10 11 / 0.2),
+    0 6px 16px -6px rgb(10 10 11 / 0.45);
 }
 
 .button-primary:hover {
-  background: #2a2a30;
-  color: #fff;
+  background: var(--graphite-800);
+  color: var(--white);
 }
 
 .button-secondary {
-  background: #fff;
+  background: var(--white);
   color: var(--ink);
   box-shadow:
-    0 0 0 1px rgb(11 11 15 / 0.08),
-    0 1px 2px rgb(11 11 15 / 0.06);
+    0 0 0 1px rgb(10 10 11 / 0.08),
+    0 1px 2px rgb(10 10 11 / 0.06);
 }
 
 .button-secondary:hover {
-  background: #fff;
+  background: var(--white);
   color: var(--ink);
   box-shadow:
-    0 0 0 1px rgb(11 11 15 / 0.16),
-    0 2px 6px rgb(11 11 15 / 0.08);
+    0 0 0 1px rgb(10 10 11 / 0.16),
+    0 2px 6px rgb(10 10 11 / 0.08);
 }
 
 /* A section's lede: serif, ink at 78%; key phrases take the section's tint. */

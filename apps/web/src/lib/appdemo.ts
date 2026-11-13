@@ -122,12 +122,12 @@ export function grid(width = 320, rows = 8, target = 9, gap = 2): Grid {
   return { cols, rows, cell, gap, left: Math.floor((width - used) / 2), width, height: rows * cell + (rows - 1) * gap };
 }
 
-/** The app's map colours (light theme): emerald-400 to -700, the head in emerald-950. */
+/** The app's map colours (light theme): along the graphite scale toward ink (graphite-400 to -800), the head in ink. */
 export const MAP_RAMP: readonly (readonly [number, number, number])[] = [
-  [52, 211, 153],
-  [16, 185, 129],
-  [5, 150, 105],
-  [4, 120, 87],
+  [160, 163, 168],
+  [125, 128, 134],
+  [70, 72, 76],
+  [46, 48, 51],
 ];
 
 export function ramp(u: number): [number, number, number] {

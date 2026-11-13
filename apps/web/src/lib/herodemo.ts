@@ -403,8 +403,8 @@ class MapCanvas {
       const x = g.left + col * (g.cell + g.gap);
       const y = row * (g.cell + g.gap);
       const v = hash(i);
-      ctx.globalAlpha = 0.07 * (0.7 + 0.6 * v);
-      ctx.fillStyle = "#064E3B";
+      ctx.globalAlpha = 0.05 * (0.7 + 0.6 * v);
+      ctx.fillStyle = "#0A0A0B";
       ctx.fillRect(x, y, g.cell, g.cell);
       const f = fill[i] ?? 0;
       if (f <= 0) {
@@ -433,15 +433,15 @@ class MapCanvas {
         ctx.globalAlpha = alpha * 0.16;
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(x, y, g.cell, band);
-        ctx.fillStyle = "#022C22";
+        ctx.fillStyle = "#0A0A0B";
         ctx.fillRect(x, y + g.cell - depth, g.cell, depth);
       }
       if (!complete && head[i]) {
         ctx.globalAlpha = 0.24;
-        ctx.fillStyle = "#10B981";
+        ctx.fillStyle = "#0A0A0B";
         ctx.fillRect(x - g.gap / 2, y - g.gap / 2, g.cell + g.gap, g.cell + g.gap);
         ctx.globalAlpha = 1;
-        ctx.fillStyle = "#022C22";
+        ctx.fillStyle = "#0A0A0B";
         ctx.fillRect(x, y, g.cell, g.cell);
       }
     }

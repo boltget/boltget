@@ -31,7 +31,7 @@ export default defineConfig({
       head: [
         { tag: "link", attrs: { rel: "icon", href: "/favicon.ico", sizes: "48x48" } },
         { tag: "link", attrs: { rel: "apple-touch-icon", href: "/apple-touch-icon.png" } },
-        { tag: "meta", attrs: { name: "theme-color", content: "#0B0B0F" } },
+        { tag: "meta", attrs: { name: "theme-color", content: "#0A0A0B" } },
         { tag: "meta", attrs: { property: "og:image", content: "https://boltget.app/og-image.png" } },
         { tag: "meta", attrs: { name: "twitter:card", content: "summary_large_image" } },
       ],

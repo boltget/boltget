@@ -56,7 +56,7 @@ import { t } from "../../i18n";
     margin: 0;
     padding: clamp(1.25rem, 6vw, 5rem) clamp(1rem, 6vw, 5rem);
     border-radius: 24px;
-    background: linear-gradient(180deg, var(--tint-wash) 0%, color-mix(in srgb, var(--tint-wash) 35%, #fff) 50%, #fff 100%);
+    background: linear-gradient(180deg, var(--tint-wash) 0%, color-mix(in srgb, var(--tint-wash) 35%, var(--white)) 50%, var(--white) 100%);
     box-shadow: var(--hairline-shadow);
   }
   .panel {
@@ -65,11 +65,11 @@ import { t } from "../../i18n";
     margin-inline: auto;
     padding: 0.5rem;
     border-radius: 16px;
-    background: #fff;
+    background: var(--white);
     box-shadow:
-      0 0 0 1px rgb(17 17 17 / 0.06),
-      0 2px 4px rgb(17 17 17 / 0.03),
-      0 24px 48px -24px rgb(3 60 100 / 0.22);
+      0 0 0 1px rgb(10 10 11 / 0.06),
+      0 2px 4px rgb(10 10 11 / 0.03),
+      0 24px 48px -24px rgb(10 10 11 / 0.2);
   }
   .row {
     display: grid;
@@ -80,11 +80,11 @@ import { t } from "../../i18n";
     border-radius: 10px;
   }
   .live {
-    background: #ecf8f2;
-    box-shadow: inset 3px 0 0 #059669;
+    background: var(--graphite-100);
+    box-shadow: inset 3px 0 0 var(--ink);
   }
   .type {
-    color: #52525b;
+    color: var(--graphite-700);
     display: grid;
   }
   .text {
@@ -118,14 +118,14 @@ import { t } from "../../i18n";
     width: clamp(6rem, 22vw, 11rem);
     height: 4px;
     border-radius: 2px;
-    background: #e4e7e6;
+    background: var(--graphite-200);
   }
   .fill {
     position: absolute;
     inset: 0 auto 0 0;
     width: 76%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #34d399, #059669);
+    background: var(--gradient-progress-light);
   }
   .mark {
     position: absolute;
@@ -134,7 +134,7 @@ import { t } from "../../i18n";
     left: var(--stop);
     width: 2px;
     border-radius: 1px;
-    background: #0b0b0f;
+    background: var(--ink);
     opacity: 0.55;
   }
   .state {
@@ -157,10 +157,14 @@ import { t } from "../../i18n";
   }
   .s-resume,
   .s-run {
-    color: #047857;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .s-pause {
+    color: var(--paused);
   }
   .quiet .name {
-    color: #3f3f46;
+    color: var(--graphite-700);
   }
   .cut {
     position: absolute;
@@ -173,7 +177,7 @@ import { t } from "../../i18n";
     padding: 0.3rem 0.7rem;
     border-radius: 999px;
     background: var(--ink);
-    color: #fff;
+    color: var(--white);
     font-size: 0.75rem;
     font-weight: 500;
     transform: translateX(-50%);
@@ -299,22 +303,22 @@ import { t } from "../../i18n";
     0%,
     32.5% {
       opacity: 1;
-      background-color: #ecf8f2;
+      background-color: var(--graphite-100);
     }
     33.5% {
       opacity: 0.35;
     }
     36% {
       opacity: 1;
-      background-color: #f4f4f5;
+      background-color: var(--graphite-50);
     }
     52% {
-      background-color: #f4f4f5;
+      background-color: var(--graphite-50);
     }
     55%,
     100% {
       opacity: 1;
-      background-color: #ecf8f2;
+      background-color: var(--graphite-100);
     }
   }
   @media (max-width: 34rem) {

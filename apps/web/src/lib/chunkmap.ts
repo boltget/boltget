@@ -25,13 +25,13 @@ export interface MapLayout {
   top?: number;
 }
 
-/** The field's gradient, mint to deep emerald through teal (data-series colours). */
+/** The field's gradient: along the graphite scale toward ink (brand tokens). */
 const RAMP: readonly (readonly [number, number, number])[] = [
-  [52, 211, 153], // emerald-400
-  [16, 185, 129], // emerald-500
-  [5, 150, 105], // emerald-600
-  [13, 148, 136], // atmosphere teal
-  [4, 120, 87], // emerald-700
+  [160, 163, 168], // graphite-400
+  [125, 128, 134], // graphite-500
+  [95, 98, 103], // graphite-600
+  [70, 72, 76], // graphite-700
+  [46, 48, 51], // graphite-800
 ];
 
 function ramp(u: number): [number, number, number] {
@@ -150,7 +150,7 @@ export class ChunkMap {
 
         // Empty: a pale, slightly uneven ground.
         ctx.globalAlpha = 0.62 + 0.38 * h;
-        ctx.fillStyle = "#E9EFEC";
+        ctx.fillStyle = "#EEEFF0"; // graphite-100
         ctx.fillRect(x, y, cell, cell);
 
         if (c.f <= 0) continue;
@@ -165,9 +165,9 @@ export class ChunkMap {
           alpha = 0.35 + 0.65 * easeOut(age / 0.45);
           // A brief light as the square lands, fading over ~0.5 s.
           const flash = Math.exp(-age / 0.32) * 0.55;
-          r += (236 - r) * flash;
-          g += (253 - g) * flash;
-          b += (245 - b) * flash;
+          r += (255 - r) * flash;
+          g += (255 - g) * flash;
+          b += (255 - b) * flash;
         } else {
           alpha = 0.16 + 0.34 * c.f;
         }
@@ -180,16 +180,16 @@ export class ChunkMap {
           ctx.fillStyle = "#FFFFFF";
           ctx.fillRect(x, y, cell, band);
           ctx.globalAlpha = alpha * 0.14;
-          ctx.fillStyle = "#022C22";
+          ctx.fillStyle = "#0A0A0B";
           ctx.fillRect(x, y + cell - Math.max(1, cell * 0.08), cell, Math.max(1, cell * 0.08));
         }
         if (heads && c.head && !sim.finished) {
           // The square a connection is writing: deep ink with a soft halo.
           ctx.globalAlpha = 0.22;
-          ctx.fillStyle = "#10B981";
+          ctx.fillStyle = "#0A0A0B";
           ctx.fillRect(x - gap * 0.5, y - gap * 0.5, cell + gap, cell + gap);
           ctx.globalAlpha = 1;
-          ctx.fillStyle = "#06261E";
+          ctx.fillStyle = "#0A0A0B";
           ctx.fillRect(x, y, cell, cell);
         }
       }

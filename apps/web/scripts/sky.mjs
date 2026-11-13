@@ -1,3 +1,7 @@
+// Superseded (November 2026): the hero now uses the pearl sky made from
+// brand/source/sky-master.webp (brand/BRAND.md, Atmosphere). Running this would
+// overwrite it with the old blue sky; kept for reference only.
+//
 // Renders the Home hero's "Daylight" sky: a soft morning sky with clouds,
 // slightly mint at the horizon (docs/WEBSITE.md, Home as built). No stock
 // photography: the clouds are seeded fBm value noise with a little domain

@@ -67,6 +67,21 @@ export interface RowModel {
   restIcon?: "pause" | "check";
 }
 
+/** The finished-file tile: an ink square with a check built from pixels, like the mark. */
+export function doneTile(size = 16): string {
+  const px = [
+    [3, 7],
+    [5, 9],
+    [7, 11],
+    [9, 9],
+    [11, 7],
+    [13, 5],
+  ]
+    .map(([x, y]) => `<rect class="px" x="${x}" y="${y}" width="2" height="2"/>`)
+    .join("");
+  return `<svg viewBox="0 0 18 18" width="${size}" height="${size}" aria-hidden="true"><rect class="tile" width="18" height="18" rx="4"/>${px}</svg>`;
+}
+
 /** One list row (apps/desktop/src/lib/list/Row.svelte, comfortable density). */
 export function rowHtml(r: RowModel, selected = false): string {
   const bar =
@@ -75,7 +90,7 @@ export function rowHtml(r: RowModel, selected = false): string {
       : `<span class="bar${r.state === "downloading" ? " live" : ""}"><span class="fill" style="transform:scaleX(${r.fraction.toFixed(4)})"></span></span>`;
   const sign = r.restIcon ? `<span class="sign ${r.restIcon}">${icon(r.restIcon, 14)}</span>` : "";
   const action = r.state === "completed" ? "open" : "pause";
-  return `<div class="row${selected ? " selected" : ""}" data-row="${esc(r.id)}" data-state="${r.state}"><span class="type">${icon(categoryIcon(r.name))}</span><div class="text"><span class="name">${esc(r.name)}</span><span class="line2">${bar}<span class="status">${esc(r.status)}</span></span></div><span class="end"><span class="rest">${sign}${esc(r.rest)}</span><span class="acts"><span class="ib">${icon(action)}</span><span class="ib">${icon("more")}</span></span></span></div>`;
+  return `<div class="row${selected ? " selected" : ""}" data-row="${esc(r.id)}" data-state="${r.state}">${r.state === "completed" ? `<span class="type done">${doneTile()}</span>` : `<span class="type">${icon(categoryIcon(r.name))}</span>`}<div class="text"><span class="name">${esc(r.name)}</span><span class="line2">${bar}<span class="status">${esc(r.status)}</span></span></div><span class="end"><span class="rest">${sign}${esc(r.rest)}</span><span class="acts"><span class="ib">${icon(action)}</span><span class="ib">${icon("more")}</span></span></span></div>`;
 }
 
 export interface Stat {
@@ -118,14 +133,14 @@ export function mapSvg(sim: DownloadSim, g: Grid, settled = false): string {
     const x = g.left + col * (g.cell + g.gap);
     const y = row * (g.cell + g.gap);
     const v = hash(i);
-    out += `<rect x="${x}" y="${y}" width="${g.cell}" height="${g.cell}" fill="#064E3B" fill-opacity="${(0.07 * (0.7 + 0.6 * v)).toFixed(3)}"/>`;
+    out += `<rect x="${x}" y="${y}" width="${g.cell}" height="${g.cell}" fill="#0A0A0B" fill-opacity="${(0.05 * (0.7 + 0.6 * v)).toFixed(3)}"/>`;
     const fv = f[i] ?? 0;
     if (fv <= 0) continue;
     const [r, gg, b] = ramp(rampPosition(col, row, g.cols, g.rows));
     const alpha = settled ? 0.42 + 0.1 * v : fv >= 1 ? 1 : 0.16 + 0.34 * fv;
     out += `<rect x="${x}" y="${y}" width="${g.cell}" height="${g.cell}" fill="rgb(${r | 0},${gg | 0},${b | 0})" fill-opacity="${alpha.toFixed(3)}"/>`;
     if (head[i]) {
-      out += `<rect x="${x - 1}" y="${y - 1}" width="${g.cell + 2}" height="${g.cell + 2}" fill="#10B981" fill-opacity="0.24"/><rect x="${x}" y="${y}" width="${g.cell}" height="${g.cell}" fill="#022C22"/>`;
+      out += `<rect x="${x - 1}" y="${y - 1}" width="${g.cell + 2}" height="${g.cell + 2}" fill="#0A0A0B" fill-opacity="0.22"/><rect x="${x}" y="${y}" width="${g.cell}" height="${g.cell}" fill="#0A0A0B"/>`;
     }
   }
   return `<svg class="still" viewBox="0 0 ${g.width} ${g.height}" width="${g.width}" height="${g.height}" aria-hidden="true">${out}</svg>`;

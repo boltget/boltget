@@ -1,9 +1,11 @@
 ---
-// "Available on": the platform glyphs under a download button (docs/WEBSITE.md,
-// Home as built). Windows in ink (a link to /download, or plain where the page
-// is the download page); macOS and Linux greyed, focusable, with a CSS-only
-// "Coming soon" tooltip on hover and focus.
-import Icon from "./Icon.astro";
+// "Available on": the platform logos under a download button (docs/WEBSITE.md,
+// Home as built). The logos keep their own colours, the one exception to the
+// site's monochrome rule. Windows in full colour (a link to /download, or plain
+// where the page is the download page); macOS and Linux grey and faded at rest,
+// focusable, regaining some colour with a CSS-only "Coming soon" tooltip on
+// hover and focus.
+import PlatformLogo from "./PlatformLogo.astro";
 import { t } from "../i18n";
 
 interface Props {
@@ -19,16 +21,16 @@ const { windowsHref, class: className } = Astro.props;
   {
     windowsHref ? (
       <a class="os" href={windowsHref} aria-label={t("platforms.windowsLink")}>
-        <Icon name="windows" size={12} />
+        <PlatformLogo name="windows" size={15} />
       </a>
     ) : (
       <span class="os" role="img" aria-label={t("platforms.windows")}>
-        <Icon name="windows" size={12} />
+        <PlatformLogo name="windows" size={15} />
       </span>
     )
   }
-  <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("platforms.macosSoon")} data-tip={t("platforms.soon")}><Icon name="apple" size={15} /></span>
-  <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("platforms.linuxSoon")} data-tip={t("platforms.soon")}><Icon name="linux" size={15} /></span>
+  <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("platforms.macosSoon")} data-tip={t("platforms.soon")}><PlatformLogo name="apple" size={18} /></span>
+  <span class="os off" tabindex="0" role="img" aria-disabled="true" aria-label={t("platforms.linuxSoon")} data-tip={t("platforms.soon")}><PlatformLogo name="linux" size={19} /></span>
 </p>
 
 <style>
@@ -38,7 +40,7 @@ const { windowsHref, class: className } = Astro.props;
     justify-content: center;
     gap: 0.35rem;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--graphite-600);
   }
   .lead {
     margin-right: 0.2rem;
@@ -47,24 +49,31 @@ const { windowsHref, class: className } = Astro.props;
     position: relative;
     display: inline-grid;
     place-items: center;
-    width: 1.625rem;
-    height: 1.625rem;
-    border-radius: 7px;
-    color: var(--ink);
+    width: 1.875rem;
+    height: 1.875rem;
+    border-radius: 8px;
+    transition: background-color 0.16s linear;
+  }
+  .os :global(svg) {
     transition:
-      color 0.16s linear,
-      background-color 0.16s linear;
+      filter 0.16s linear,
+      opacity 0.16s linear;
   }
   a.os:hover {
     background: rgb(255 255 255 / 0.7);
   }
   .off {
-    color: #b4bac1;
     cursor: default;
   }
-  .off:hover,
-  .off:focus-visible {
-    color: #8a929b;
+  /* Not yet available: grey and faded, so it never reads as a link. */
+  .off :global(svg) {
+    filter: grayscale(1);
+    opacity: 0.45;
+  }
+  .off:hover :global(svg),
+  .off:focus-visible :global(svg) {
+    filter: grayscale(0.35);
+    opacity: 0.85;
   }
   .off::after {
     content: attr(data-tip);
@@ -74,7 +83,7 @@ const { windowsHref, class: className } = Astro.props;
     padding: 0.25rem 0.5rem;
     border-radius: 6px;
     background: var(--ink);
-    color: #fff;
+    color: var(--white);
     font-size: 0.6875rem;
     font-weight: 500;
     line-height: 1.2;
