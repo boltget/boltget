@@ -67,19 +67,24 @@ export interface RowModel {
   restIcon?: "pause" | "check";
 }
 
-/** The finished-file tile: an ink square with a check built from pixels, like the mark. */
+// The hero window is scaled to fit (`.win`, about 0.86 at 1440 px), so these
+// small glyphs never land on whole pixels: pixel grids with 1 px gaps (the
+// brand's 16 px icon, a check made of pixels) blur into mush. They are drawn
+// as vectors that survive any scale instead.
+
+/**
+ * The title bar's app icon: the Onyx tile with the 9 x 9 arrow as one
+ * stepped silhouette (the mark's outline without the gaps between cells).
+ */
+export function appMark(size = 18): string {
+  const arrow =
+    "M3 0H6V4H9V5H8V6H7V7H6V8H5V9H4V8H3V7H2V6H1V5H0V4H3Z";
+  return `<svg viewBox="0 0 18 18" width="${size}" height="${size}" aria-hidden="true"><defs><linearGradient id="hero-onyx" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#2E3033"/><stop offset="1" stop-color="#0A0A0B"/></linearGradient></defs><rect width="18" height="18" rx="4.5" fill="url(#hero-onyx)"/><path d="${arrow}" fill="#fff" transform="translate(3.5 3.5) scale(1.2222)"/></svg>`;
+}
+
+/** The finished-file tile: an ink square with a check. */
 export function doneTile(size = 16): string {
-  const px = [
-    [3, 7],
-    [5, 9],
-    [7, 11],
-    [9, 9],
-    [11, 7],
-    [13, 5],
-  ]
-    .map(([x, y]) => `<rect class="px" x="${x}" y="${y}" width="2" height="2"/>`)
-    .join("");
-  return `<svg viewBox="0 0 18 18" width="${size}" height="${size}" aria-hidden="true"><rect class="tile" width="18" height="18" rx="4"/>${px}</svg>`;
+  return `<svg viewBox="0 0 18 18" width="${size}" height="${size}" aria-hidden="true"><rect class="tile" width="18" height="18" rx="4"/><path class="ck" d="M5.2 9.4 7.9 12 12.9 6.4"/></svg>`;
 }
 
 /** One list row (apps/desktop/src/lib/list/Row.svelte, comfortable density). */

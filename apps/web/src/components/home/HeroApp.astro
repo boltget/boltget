@@ -9,11 +9,10 @@
 // seeded simulation (lib/sim.ts), and plays one once by itself after the
 // entrance. The window is laid out at 1280 x 780 and scaled to fit, so on a
 // phone it stays faithful instead of reflowing.
-import icon16 from "../../../../../brand/svg/icon-16.svg";
 import { t } from "../../i18n";
 import en from "../../i18n/en.json";
 import { BUNNY, BUNNY_AT, Fmt, grid, samplesOf, simFor, workers } from "../../lib/appdemo";
-import { icon, mapSvg, paneHtml, rowHtml, runningStats, runningStatus, type RowModel } from "../../lib/appmarkup";
+import { appMark, icon, mapSvg, paneHtml, rowHtml, runningStats, runningStatus, type RowModel } from "../../lib/appmarkup";
 
 const ui = en.home.app.ui;
 const fmt = new Fmt(ui);
@@ -133,7 +132,7 @@ const data = JSON.stringify({ ui, chips });
     <div class="screen">
       <div class="win" aria-hidden="true" inert>
         <div class="tb">
-          <div class="tb-brand"><img src={icon16.src} width="16" height="16" alt="" /><span>{ui.name}</span></div>
+          <div class="tb-brand"><Fragment set:html={appMark()} /><span>{ui.name}</span></div>
           <div class="tb-search">
             <Fragment set:html={icon("search")} /><span class="ph">{ui.search}</span>
             <span class="keys"><span class="key">{ui.ctrl}</span><span class="key">{ui.f}</span></span>
@@ -433,7 +432,7 @@ const data = JSON.stringify({ ui, chips });
     font-weight: 600;
     letter-spacing: -0.005em;
   }
-  .hero-app .tb-brand img {
+  .hero-app .tb-brand svg {
     display: block;
   }
   .hero-app .tb-search {
@@ -669,8 +668,12 @@ const data = JSON.stringify({ ui, chips });
   .hero-app .type.done .tile {
     fill: currentColor;
   }
-  .hero-app .type.done .px {
-    fill: var(--c-content);
+  .hero-app .type.done .ck {
+    fill: none;
+    stroke: var(--c-content);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .hero-app .text {
     display: flex;
