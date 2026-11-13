@@ -1,5 +1,5 @@
 <!--
-  A one-line text field: 28 px high, a hairline that turns emerald on focus
+  A one-line text field: 28 px high, a hairline that turns to the accent on focus
   and red when the value has a problem (`invalid`; the problem itself is
   text under the field, tied with aria-describedby). `unit` is a muted word
   after the field, such as "MiB/s"; `mono` is for paths and addresses.

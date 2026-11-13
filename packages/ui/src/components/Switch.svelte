@@ -1,6 +1,6 @@
 <!--
   An on/off switch in the Windows 11 manner: a 40 × 20 px track with a knob
-  that slides across, solid emerald when on. The native checkbox stays
+  that slides across, solid accent (ink on light, white on dark) when on. The native checkbox stays
   underneath with `role="switch"` (keyboard, screen readers); only its look
   changes. Settings apply when it flips, so there is no Save.
 -->

@@ -195,11 +195,16 @@ fn prepare_main_window(window: &WebviewWindow) {
     let _ = window.set_background_color(Some(theme::content(theme)));
 
     platform::install(window, theme == tauri::Theme::Dark);
+    // The taskbar button's icon: Onyx or its white twin by the taskbar's
+    // colour mode (the tray follows its changes, `tray::run`).
+    platform::set_app_icon(window, platform::taskbar_is_light());
 
     let events = window.clone();
     window.on_window_event(move |event| match event {
-        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+        WindowEvent::Resized(_) => platform::update_caption_layout(&events),
+        WindowEvent::ScaleFactorChanged { .. } => {
             platform::update_caption_layout(&events);
+            platform::set_app_icon(&events, platform::taskbar_is_light());
         }
         // The window closes to the tray (APP-DESIGN #15), unless the user
         // turned that off; quitting is in the tray's menu.

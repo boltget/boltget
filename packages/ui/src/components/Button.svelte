@@ -1,6 +1,6 @@
 <!--
   A text button. One primary per view (DESIGN-PRINCIPLES.md, Restraint):
-  solid emerald, never the gradient. Hover is an instant overlay that fades
+  solid accent (ink on light, white on dark), never a gradient. Hover is an instant overlay that fades
   out in 100 ms; press is one more overlay step, never a scale (APP-DESIGN #24).
 -->
 <script lang="ts">
@@ -83,7 +83,7 @@
     background: var(--color-accent);
     color: var(--color-on-accent);
   }
-  /* On emerald a dark overlay reads as hover in both themes. */
+  /* The accent has its own hover and press steps, not the overlay. */
   .primary:hover:not(:disabled) {
     background: var(--color-accent-hover);
   }

@@ -10,7 +10,7 @@
 mod windows;
 #[cfg(windows)]
 pub(crate) use self::windows::{
-    ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
+    ClipboardWatch, animations_enabled, autostart_enabled, install, set_app_icon, set_autostart,
     set_caption_layout, set_chrome, set_low_memory, shut_down, sleep, small_icon_size,
     system_proxy, taskbar_is_light, update_caption_layout, watch_clipboard, watch_system_proxy,
     watch_taskbar_theme,
@@ -28,6 +28,8 @@ mod other {
     pub(crate) fn set_caption_layout(_window: &WebviewWindow, _maximize: CaptionRect) {}
     pub(crate) fn update_caption_layout(_window: &WebviewWindow) {}
     pub(crate) fn set_low_memory(_window: &WebviewWindow, _low: bool) {}
+    /// The window keeps the icon Tauri gives it (Onyx).
+    pub(crate) fn set_app_icon(_window: &WebviewWindow, _light: bool) {}
     pub(crate) fn small_icon_size() -> u32 {
         32
     }
@@ -89,7 +91,7 @@ mod other {
 }
 #[cfg(not(windows))]
 pub(crate) use self::other::{
-    ClipboardWatch, animations_enabled, autostart_enabled, install, set_autostart,
+    ClipboardWatch, animations_enabled, autostart_enabled, install, set_app_icon, set_autostart,
     set_caption_layout, set_chrome, set_low_memory, shut_down, sleep, small_icon_size,
     system_proxy, taskbar_is_light, update_caption_layout, watch_clipboard, watch_system_proxy,
     watch_taskbar_theme,

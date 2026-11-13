@@ -3,15 +3,16 @@
 //!
 //! - **Tray icon.** The still mark while idle; the pixel arrow's motion while
 //!   bytes are flowing (it freezes when everything is paused or stalled, and
-//!   never moves when Windows' animation effects are off). One colour, white
-//!   on a dark taskbar and near-black on a light one, following Windows'
-//!   colour mode as it changes. Left click opens the window; right click
-//!   opens the native menu.
+//!   never moves when Windows' animation effects are off). The brand's tray
+//!   glyph in one colour, white on a dark taskbar and ink on a light one,
+//!   following Windows' colour mode as it changes; the window's icon (the
+//!   taskbar button, Alt+Tab) follows it too, Onyx or its white twin. Left
+//!   click opens the window; right click opens the native menu.
 //! - **Tooltip.** `3 active · 48.2 MiB/s · about 2 min left`, at most once a
 //!   second so the digits do not churn.
 //! - **Taskbar button.** The batch's progress (see `bridge/activity.rs`):
-//!   green while downloading, yellow when paused, red when something needs
-//!   attention.
+//!   Windows' own colours: normal while downloading, paused, and error when
+//!   something needs attention.
 
 use std::time::{Duration, Instant};
 
@@ -160,9 +161,9 @@ pub(crate) fn install(app: &AppHandle) -> tauri::Result<()> {
 
     let size = platform::small_icon_size();
     let taskbar = mark::Taskbar::from_light(platform::taskbar_is_light());
-    let still = mark::render(size, None, taskbar);
+    let (still, side) = mark::still(size, taskbar);
     let tray = TrayIconBuilder::with_id("main")
-        .icon(Image::new_owned(still.clone(), size, size))
+        .icon(Image::new_owned(still.clone(), side, side))
         .tooltip(catalog::t("tray.tooltip"))
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -188,6 +189,7 @@ pub(crate) fn install(app: &AppHandle) -> tauri::Result<()> {
     });
     let icon = Icon {
         size,
+        side,
         taskbar,
         still,
         frames: None,
@@ -198,7 +200,10 @@ pub(crate) fn install(app: &AppHandle) -> tauri::Result<()> {
 
 /// The tray icon's pictures for the current taskbar colour.
 struct Icon {
+    /// The small icon size Windows asked for.
     size: u32,
+    /// The glyph's side in pixels.
+    side: u32,
     taskbar: mark::Taskbar,
     still: Vec<u8>,
     /// The motion's frames, rendered the first time they are needed.
@@ -207,7 +212,7 @@ struct Icon {
 
 impl Icon {
     fn still(&self) -> Image<'static> {
-        Image::new_owned(self.still.clone(), self.size, self.size)
+        Image::new_owned(self.still.clone(), self.side, self.side)
     }
 
     /// Re-renders for `taskbar`; false when nothing changed.
@@ -216,7 +221,7 @@ impl Icon {
             return false;
         }
         self.taskbar = taskbar;
-        self.still = mark::render(self.size, None, taskbar);
+        (self.still, self.side) = mark::still(self.size, taskbar);
         self.frames = None;
         true
     }
@@ -227,7 +232,7 @@ impl Icon {
             .frames
             .get_or_insert_with(|| mark::frames(size, taskbar));
         let rgba = frames[index % frames.len()].clone();
-        Image::new_owned(rgba, size, size)
+        Image::new_owned(rgba, self.side, self.side)
     }
 }
 
@@ -333,9 +338,14 @@ async fn run(
                 }
             }
             Some(()) = theme_changes.recv() => {
-                let taskbar = mark::Taskbar::from_light(platform::taskbar_is_light());
-                if icon.set_taskbar(taskbar) && !animating {
-                    let _ = tray.set_icon(Some(icon.still()));
+                let light = platform::taskbar_is_light();
+                if icon.set_taskbar(mark::Taskbar::from_light(light)) {
+                    if !animating {
+                        let _ = tray.set_icon(Some(icon.still()));
+                    }
+                    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+                        platform::set_app_icon(&w, light);
+                    }
                 }
             }
             _ = ticker.tick(), if animating => {

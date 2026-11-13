@@ -16,6 +16,8 @@
 //! - **The tray:** the system's small icon size, whether Windows shows
 //!   animations (the tray mark stays still when it does not), and whether the
 //!   taskbar is light (the mark's colour), read and watched in the registry.
+//! - **The window's icon:** the app icon's native design per size and DPI,
+//!   Onyx on a light taskbar and its white twin on a dark one.
 //!
 //! All of this runs on the main (UI) thread, which owns the windows.
 //!
@@ -51,19 +53,20 @@ use windows::Win32::Graphics::Dwm::{
     DWMWCP_ROUND, DWMWINDOWATTRIBUTE, DwmSetWindowAttribute,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, FindWindowExW, GWLP_USERDATA, GetClientRect,
-    GetParent, GetSystemMetrics, GetWindowLongPtrW, HTMAXBUTTON, HWND_TOP, IDC_ARROW, IsZoomed,
-    LoadCursorW, PostMessageW, RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SM_CXSMICON,
+    CREATESTRUCTW, CreateIconFromResourceEx, CreateWindowExW, DefWindowProcW, FindWindowExW,
+    GWLP_USERDATA, GetClientRect, GetParent, GetSystemMetrics, GetWindowLongPtrW, HICON,
+    HTMAXBUTTON, HWND_TOP, ICON_BIG, ICON_SMALL, IDC_ARROW, IsZoomed, LR_DEFAULTCOLOR, LoadCursorW,
+    PostMessageW, RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SM_CXICON, SM_CXSMICON,
     SPI_GETCLIENTAREAANIMATION, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetWindowLongPtrW, SetWindowPos, SystemParametersInfoW,
-    WINDOW_EX_STYLE, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
-    WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SYSCOMMAND, WNDCLASSEXW,
-    WS_CHILD, WS_CLIPSIBLINGS,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageW, SetWindowLongPtrW, SetWindowPos,
+    SystemParametersInfoW, WINDOW_EX_STYLE, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST,
+    WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE,
+    WM_SETICON, WM_SYSCOMMAND, WNDCLASSEXW, WS_CHILD, WS_CLIPSIBLINGS,
 };
 use windows::core::{Interface, PCWSTR, w};
 
@@ -515,6 +518,146 @@ pub(crate) fn small_icon_size() -> u32 {
     // SAFETY: GetSystemMetrics has no preconditions.
     let size = unsafe { GetSystemMetrics(SM_CXSMICON) };
     u32::try_from(size).ok().filter(|&s| s >= 16).unwrap_or(16)
+}
+
+/// The app icon's native designs (brand/BRAND.md, "Small sizes"), PNG
+/// bytes by size: Onyx, then its white twin for a dark taskbar.
+const APP_ICONS: [(i32, &[u8], &[u8]); 14] = [
+    (
+        16,
+        include_bytes!("../../../../../brand/png/icon-16.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-16.png"),
+    ),
+    (
+        20,
+        include_bytes!("../../../../../brand/png/icon-20.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-20.png"),
+    ),
+    (
+        24,
+        include_bytes!("../../../../../brand/png/icon-24.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-24.png"),
+    ),
+    (
+        30,
+        include_bytes!("../../../../../brand/png/icon-30.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-30.png"),
+    ),
+    (
+        32,
+        include_bytes!("../../../../../brand/png/icon-32.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-32.png"),
+    ),
+    (
+        36,
+        include_bytes!("../../../../../brand/png/icon-36.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-36.png"),
+    ),
+    (
+        40,
+        include_bytes!("../../../../../brand/png/icon-40.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-40.png"),
+    ),
+    (
+        48,
+        include_bytes!("../../../../../brand/png/icon-48.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-48.png"),
+    ),
+    (
+        60,
+        include_bytes!("../../../../../brand/png/icon-60.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-60.png"),
+    ),
+    (
+        64,
+        include_bytes!("../../../../../brand/png/icon-64.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-64.png"),
+    ),
+    (
+        72,
+        include_bytes!("../../../../../brand/png/icon-72.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-72.png"),
+    ),
+    (
+        80,
+        include_bytes!("../../../../../brand/png/icon-80.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-80.png"),
+    ),
+    (
+        96,
+        include_bytes!("../../../../../brand/png/icon-96.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-96.png"),
+    ),
+    (
+        128,
+        include_bytes!("../../../../../brand/png/icon-128.png"),
+        include_bytes!("../../../../../brand/png/icon-on-dark-128.png"),
+    ),
+];
+
+/// Icons made so far, by mode and size, as integers so the cache is `Send`.
+/// They live as long as the app: a handful at most, one per mode and size.
+static APP_ICON_CACHE: Mutex<Vec<((bool, i32), isize)>> = Mutex::new(Vec::new());
+
+/// The app icon for a `size` px slot: the native design of that size, else
+/// the next larger one scaled down by Windows.
+fn app_icon(light: bool, size: i32) -> Option<HICON> {
+    let mut cache = APP_ICON_CACHE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(&(_, handle)) = cache.iter().find(|(key, _)| *key == (light, size)) {
+        return Some(HICON(handle as *mut c_void));
+    }
+    let (_, onyx, paper) = APP_ICONS
+        .iter()
+        .find(|(s, ..)| *s >= size)
+        .or(APP_ICONS.last())?;
+    let png = if light { onyx } else { paper };
+    // SAFETY: `png` is a whole PNG file, which CreateIconFromResourceEx
+    // reads as an icon resource (Windows Vista and later); it only reads
+    // the slice and returns a new icon we own.
+    let icon =
+        unsafe { CreateIconFromResourceEx(png, true, 0x0003_0000, size, size, LR_DEFAULTCOLOR) };
+    match icon {
+        Ok(icon) => {
+            cache.push(((light, size), icon.0 as isize));
+            Some(icon)
+        }
+        Err(error) => {
+            warn("could not make the app icon", error);
+            None
+        }
+    }
+}
+
+/// Sets the window's icons (the taskbar button and Alt+Tab, and the small
+/// one) to the app icon for the taskbar's colour mode: Onyx on a light
+/// taskbar, its white twin on a dark one (brand/BRAND.md, "The app icon").
+/// Sizes follow the window's DPI; call it again after a DPI change.
+pub(crate) fn set_app_icon(window: &WebviewWindow, light: bool) {
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    // SAFETY: GetDpiForWindow only reads the window's DPI.
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+    for (kind, metric) in [(ICON_SMALL, SM_CXSMICON), (ICON_BIG, SM_CXICON)] {
+        // SAFETY: GetSystemMetricsForDpi has no preconditions.
+        let size = unsafe { GetSystemMetricsForDpi(metric, dpi) }.max(16);
+        let Some(icon) = app_icon(light, size) else {
+            continue;
+        };
+        // SAFETY: WM_SETICON takes an icon handle, which stays valid for as
+        // long as the app runs (the cache never destroys it). The window
+        // does not own it, so the icon it returns is not ours to destroy.
+        unsafe {
+            SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(kind as usize)),
+                Some(LPARAM(icon.0 as isize)),
+            );
+        }
+    }
 }
 
 /// Whether Windows shows animations ("Animation effects" in Settings);
@@ -1102,5 +1245,26 @@ pub(crate) fn shut_down() -> Result<(), String> {
             "InitiateShutdownW failed: {}",
             windows::core::Error::from_hresult(windows::core::HRESULT::from_win32(code))
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_makes_app_icons_from_the_brand_pngs() {
+        for (light, size) in [
+            (true, 16),
+            (false, 16),
+            (true, 32),
+            (false, 40),
+            (false, 300),
+        ] {
+            let icon = app_icon(light, size);
+            assert!(icon.is_some(), "{light} {size}");
+            // A second ask is the cached icon.
+            assert_eq!(app_icon(light, size).map(|i| i.0), icon.map(|i| i.0));
+        }
     }
 }

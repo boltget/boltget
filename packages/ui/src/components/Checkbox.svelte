@@ -1,6 +1,6 @@
 <!--
   A checkbox in the Windows 11 manner: a 16 px box with a 4 px radius, solid
-  emerald with a white check when on, a dash when mixed. The native input
+  accent (ink on light, white on dark) with a contrasting check when on, a dash when mixed. The native input
   stays underneath (keyboard, forms, screen readers); only its look changes.
   The label is the children, or `label` when nothing visible is wanted.
 -->

@@ -1,7 +1,7 @@
 <!--
-  The Boltget mark, the geometry of brand/svg/mark.svg: solid ink on the
-  light theme, the app icon's white-to-sky ramp on dark (BRAND.md, The mark). With `arrive`, the rows light up once, top to
-  bottom, in the brand rhythm (BRAND.md, Motion: linear, 0.12 s stagger, the
+  The Boltget mark, the geometry of brand/svg/mark.svg, in one colour: ink
+  on the light theme, white on dark (BRAND.md, The bare mark). With
+  `arrive`, the rows light up once, top to bottom, in the brand rhythm (BRAND.md, Motion: linear, 0.12 s stagger, the
   0.31 s rise) and stay lit; `paused` holds them dim until the moment it
   should play (when the window appears). With reduced motion it is static.
 

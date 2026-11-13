@@ -7,6 +7,13 @@ const THEME_JSON: &str = "../../../packages/ui/src/tokens/theme.json";
 
 fn main() {
     println!("cargo:rerun-if-changed={THEME_JSON}");
+    // `tauri::include_image!` (src/mark.rs) decodes these at compile time
+    // but does not tell Cargo; a rerun here rebuilds the crate with them.
+    for colour in ["ink", "white"] {
+        for size in [16, 20, 24, 32] {
+            println!("cargo:rerun-if-changed=../../../brand/png/tray-{colour}-{size}.png");
+        }
+    }
     let json =
         fs::read_to_string(THEME_JSON).expect("packages/ui/src/tokens/theme.json is readable");
     let themes: serde_json::Value = serde_json::from_str(&json).expect("theme.json is valid JSON");

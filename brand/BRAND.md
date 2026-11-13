@@ -126,8 +126,9 @@ with the same resolution-reduced arrows on whole pixels, filling the square:
 `svg/tray-ink-N.svg` and `svg/tray-white-N.svg`, the PNGs, and
 `ico/tray-ink.ico` / `ico/tray-white.ico` (16, 20, 24, 32). Its rows carry the
 motion (§6). The taskbar button and the window keep the app icon, Onyx or
-Paper by the same colour mode. The app currently draws its own tray glyph
-(`apps/desktop/src-tauri/src/mark.rs`).
+Paper by the same colour mode. The app embeds the tray PNGs
+(`apps/desktop/src-tauri/src/mark.rs`) and the 16–128 px app icons in both
+modes (`platform/windows.rs`).
 
 ### Variants
 

@@ -67,7 +67,7 @@ svg {
   -webkit-user-drag: none;
 }
 
-/* Rings only for keyboard focus: 2 px emerald, 2 px offset (#30). */
+/* Rings only for keyboard focus: 2 px accent (ink or white), 2 px offset (#30). */
 :focus {
   outline: none;
 }
