@@ -4,3 +4,4 @@ node_modules/
 public/
 test-results/
 playwright-report/
+store/.cache/

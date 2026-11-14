@@ -1,0 +1,178 @@
+/* The store images' page: the pearl sky, the type and the frames. Used by
+   scripts/compose.mjs, which sets --w, --h and --sky. Ink, paper and graphite
+   only (brand/BRAND.md); colour comes only from the captured UI. */
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+html,
+body {
+  width: var(--w);
+  height: var(--h);
+  overflow: hidden;
+  background: #f5f5f3;
+  -webkit-font-smoothing: antialiased;
+}
+.slide {
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  overflow: hidden;
+  color: #0a0a0b;
+  font-family: "Red Hat Text", sans-serif;
+  background-image:
+    linear-gradient(var(--wash, 90deg), rgb(245 245 243 / 0.92) 0%, rgb(245 245 243 / 0) 62%),
+    var(--sky);
+  background-size:
+    100% 100%,
+    cover;
+  background-position:
+    0 0,
+    var(--sky-at, 100% 0);
+}
+/* Each slide shows another part of the sky. The clouds sit top right in the source. */
+.sky-a {
+  --wash: 180deg;
+  --sky-at: 100% 0%;
+}
+.sky-b {
+  --sky-at: 60% 20%;
+}
+.sky-c {
+  --sky-at: 100% 60%;
+}
+.sky-d {
+  --sky-at: 80% 0%;
+}
+.sky-e {
+  --sky-at: 100% 100%;
+}
+.sky-tile {
+  --wash: 0deg;
+  --sky-at: 70% 10%;
+}
+.sky-marquee {
+  --sky-at: 100% 30%;
+}
+
+/* Words */
+.words h1,
+.marquee h1 {
+  font-family: "Red Hat Display", sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.words h1 {
+  font-size: 52px;
+  line-height: 56px;
+}
+.words p,
+.marquee p {
+  margin-top: 18px;
+  color: #46484c;
+  font-size: 23px;
+  line-height: 32px;
+  font-weight: 450;
+  text-wrap: pretty;
+}
+.words.top {
+  position: absolute;
+  left: 96px;
+  right: 96px;
+  top: 88px;
+}
+.words.top p {
+  margin-top: 14px;
+}
+.words.side {
+  position: absolute;
+  left: 96px;
+  top: 0;
+  bottom: 0;
+  width: 470px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.words.side.narrow {
+  width: 400px;
+}
+
+/* Frames: the captured UI on a soft, ink-tinted shadow. */
+.frame {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgb(10 10 11 / 0.08),
+    0 2px 6px rgb(10 10 11 / 0.06),
+    0 24px 64px -12px rgb(10 10 11 / 0.28);
+}
+.frame img {
+  position: absolute;
+  display: block;
+  max-width: none;
+}
+.frame.window {
+  border-radius: 10px;
+}
+.frame.popover {
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px rgb(10 10 11 / 0.1),
+    0 4px 12px rgb(10 10 11 / 0.1),
+    0 32px 72px -16px rgb(10 10 11 / 0.4);
+}
+.frame.card {
+  background: transparent;
+  box-shadow:
+    0 2px 6px rgb(10 10 11 / 0.06),
+    0 24px 64px -12px rgb(10 10 11 / 0.24);
+}
+
+/* The small promo tile */
+.tile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 40px;
+}
+.tile .lockup {
+  height: 56px;
+  width: auto;
+  align-self: flex-start;
+}
+.tile p {
+  margin-top: 20px;
+  font-family: "Red Hat Display", sans-serif;
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 30px;
+  letter-spacing: -0.02em;
+  max-width: 300px;
+}
+
+/* The marquee */
+.marquee {
+  position: absolute;
+  left: 96px;
+  top: 0;
+  bottom: 0;
+  width: 520px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.marquee .lockup {
+  height: 40px;
+  width: auto;
+  align-self: flex-start;
+  margin-bottom: 36px;
+}
+.marquee h1 {
+  font-size: 52px;
+  line-height: 56px;
+}

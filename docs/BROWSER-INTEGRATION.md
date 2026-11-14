@@ -355,6 +355,8 @@ Media detection only **detects and hands off**. All extraction, format selection
 
 What the owner has to do before the first submission (the packages build with `pnpm --filter @boltget/extension zip`):
 
+> **As built:** the Chrome Web Store listing is ready in `apps/extension/store/`: `listing.md` holds the text, the single purpose, the permission justifications, the data-use answers and a submission checklist; `pnpm --filter @boltget/extension store-images` captures the real popup, settings page and app UI and composes the screenshots, promo tiles and store icon into `store/output/`, metadata stripped and verified.
+
 - **Accounts:** a Chrome Web Store developer account (one-time registration fee, verified contact email), a Microsoft Partner Center account for Edge Add-ons, and a Firefox Add-ons (AMO) developer account, each with two-step verification.
 - **IDs:** after the first Chrome and Edge uploads, put the store-assigned IDs in `packages/native-messaging/extensions.json` (`release.chromium`, replacing the `aaaa...` and `bbbb...` placeholders) and ship a Boltget whose host registration lists them. Firefox keeps `extension@boltget.app`.
 - **Listing:** the single purpose ("send downloads to the Boltget download manager"), a description, screenshots of the popup and options page (1280 × 800 for Chrome), the 128 px icon from `public/icons`, and a promotional tile if wanted. Nothing about YouTube.

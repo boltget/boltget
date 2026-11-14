@@ -7,13 +7,22 @@ import ts from "typescript-eslint";
 import { catalogRule } from "@boltget/ui/eslint";
 
 export default defineConfig(
-  { ignores: ["node_modules/", ".output/", ".wxt/", "test-results/", "playwright-report/"] },
+  {
+    ignores: [
+      "node_modules/",
+      ".output/",
+      ".wxt/",
+      "test-results/",
+      "playwright-report/",
+      "store/.cache/",
+    ],
+  },
   js.configs.recommended,
   ts.configs.recommended,
   svelte.configs.recommended,
   { languageOptions: { globals: { ...globals.browser, ...globals.webextensions } } },
   {
-    files: ["*.config.js", "*.config.ts", "scripts/**", "e2e/**"],
+    files: ["*.config.js", "*.config.ts", "scripts/**", "store/scripts/**", "e2e/**"],
     languageOptions: { globals: { ...globals.node } },
   },
   {

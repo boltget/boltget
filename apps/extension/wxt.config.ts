@@ -91,6 +91,8 @@ export default defineConfig({
   zip: {
     artifactTemplate: "boltget-extension-{{version}}-{{browser}}{{modeSuffix}}.zip",
     sourcesTemplate: "boltget-extension-{{version}}-sources{{modeSuffix}}.zip",
+    // The store listing's images and their scripts are not part of the extension.
+    excludeSources: ["store/**"],
   },
   vite: () => ({
     // packages/ui's fonts live in brand/ at the repository root.
