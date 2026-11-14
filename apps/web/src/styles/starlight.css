@@ -3,7 +3,7 @@
 @import "./fonts.css";
 
 :root {
-  --sl-font: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --sl-font: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
   --sl-font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --sl-border-radius: 2px;
 }

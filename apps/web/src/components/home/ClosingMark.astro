@@ -78,9 +78,9 @@ const path = cells.map((c) => `M${c.x} ${c.y}h${PX}v${PX}h-${PX}z`).join("");
   h2 {
     margin-top: 1.25rem;
     font-size: var(--type-section);
-    font-weight: 400;
+    font-weight: var(--display-weight);
     line-height: 1.08;
-    letter-spacing: -0.03em;
+    letter-spacing: var(--display-tracking);
     color: var(--ink);
   }
   .mark {

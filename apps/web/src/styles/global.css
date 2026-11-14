@@ -14,7 +14,12 @@
   --header-h: 3.5rem;
   --header-top: clamp(0.5rem, 1.2vw, 0.875rem);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --font-serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  /* Red Hat Text for body and UI, Red Hat Display for headings (fonts.css). */
+  --font-sans: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Red Hat Display", "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+  --display-weight: 600;
+  --display-tracking: -0.02em;
+  --font-accent: "Source Serif 4", "Iowan Old Style", Georgia, serif;
   /* The frame: white gutters around one rounded panel. */
   --frame-gap: clamp(1rem, 1.6vw, 1.5rem);
   --frame-radius: 24px;
@@ -64,6 +69,7 @@ html {
   background: var(--white);
   color: var(--text);
   font-family: var(--font-sans);
+  font-weight: 450;
   font-size: 100%;
   line-height: 1.6;
   -webkit-text-size-adjust: 100%;
@@ -109,6 +115,7 @@ h1,
 h2,
 h3 {
   margin: 0;
+  font-family: var(--font-display);
   font-weight: 600;
   text-wrap: balance;
 }
@@ -181,6 +188,7 @@ pre {
 
 /* A short line set in the statement style. */
 .statement {
+  font-family: var(--font-display);
   font-size: var(--type-statement);
   line-height: 1.1;
   letter-spacing: -0.035em;
@@ -536,7 +544,8 @@ details > summary::-webkit-details-marker {
 
 /* A section's lede: serif, ink at 78%; key phrases take the section's tint. */
 .lede {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
+  font-weight: 450;
   font-size: var(--type-lede);
   line-height: 1.55;
   color: var(--ink-78);
