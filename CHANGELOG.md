@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-preview.2] - 2026-11-14
+
+The second preview of the desktop app: Boltget's new black-and-white look, an icon that follows a light or dark taskbar, and new type throughout the app.
+
 ### Changed
 
 - The brand is now black and white. The app icon is a white pixel arrow on a black tile, with a white twin for dark taskbars and dark tabs, and both keep every pixel and gap crisp down to 16 px. Green and blue are gone; colour now only marks a download that is paused or has failed. The favicon is the bare arrow, black on light browsers and white on dark ones, and the link previews show the new icon in a grey sky.
@@ -91,6 +95,7 @@ The first release: the download engine and the `boltget` command-line downloader
 - Project policies: GPL-3.0-or-later license, contributing guide, governance, support, security policy and code of conduct.
 - GitHub configuration: issue forms, pull request template, code owners, Dependabot, label taxonomy, and workflows for PR title and documentation link checks.
 
-[Unreleased]: https://github.com/boltget/boltget/compare/v0.2.0-preview.1...HEAD
+[Unreleased]: https://github.com/boltget/boltget/compare/v0.2.0-preview.2...HEAD
+[0.2.0-preview.2]: https://github.com/boltget/boltget/compare/v0.2.0-preview.1...v0.2.0-preview.2
 [0.2.0-preview.1]: https://github.com/boltget/boltget/compare/v0.1.0...v0.2.0-preview.1
 [0.1.0]: https://github.com/boltget/boltget/releases/tag/v0.1.0
