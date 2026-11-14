@@ -413,6 +413,7 @@ The roadmap promises that the app survives a forced kill during active downloads
   - *v0.1 deviation:* one transaction per download per writer flush (see [ENGINE.md, Checkpointing](ENGINE.md#checkpointing-and-crash-safe-resume)); still never one per segment update.
 - **Secrets in the DB:** `request_ctx` (cookies, Authorization header, proxy credentials) is encrypted with Windows DPAPI (`CryptProtectData`, current-user scope) before storage. It is deleted when the download completes, unless the user opts to keep it for re-downloads. On other platforms: the OS keychain via the `keyring` crate holds a per-install key used to encrypt this column.
   - *v0.1 deviation:* no secret is stored yet, so nothing needs encrypting: cookies come from a `cookies.txt` whose path is saved and which is read again on resume; `Authorization`, `--cookie` values and proxy passwords are passed again to `resume`. DPAPI arrives with browser-captured cookies (v0.2/v0.3). See [ENGINE.md, Request context](ENGINE.md#request-context).
+  - *v0.3:* browser-captured cookies and `Authorization` are held in the engine's memory per download while it runs (never written to the database), so a download keeps them across queue starts, pauses and resumes; after a restart they are gone and a download whose server wants them asks for a new link.
 - **Logs:** rotating files in `%LOCALAPPDATA%\Boltget\logs` via `tracing` + `tracing-appender`. URLs are logged with query strings redacted by default (signed URLs are credentials).
 
 ## Threading and async model

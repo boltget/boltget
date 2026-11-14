@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Boltget browser extension for Chrome, Edge and Firefox (not in the stores yet). Big downloads and the file types you choose go to Boltget with the site's cookies, so files behind a sign-in come along; small files and documents stay in the browser. If Boltget is missing, busy or refuses a download, the browser simply carries on with it. Hold Alt while clicking a link to keep it in the browser, or Alt+Shift to send it to Boltget whatever the rules say. Right-click a link for Download with Boltget, or a page or selection to send all its links to Boltget's add sheet. The toolbar popup shows whether Boltget is connected and switches capture off or pauses it for ten minutes; the settings page holds the size threshold, file types, sites to never or always send from, and private windows. Site access is asked for once, with a plain explanation, and capture works without it.
 - Settings, Browser: "Ask before adding browser downloads" opens the add sheet first instead of starting downloads from the browser at once, and "Browser integration" shows whether each browser can reach Boltget, with a Repair button for when it cannot (for example after moving Boltget).
 
+### Fixed
+
+- Downloads from the browser now send the site's cookies with every request, not only Boltget's first look at the link, so files behind a sign-in download in full. A download added to a queue or paused and resumed keeps its cookies and sign-in header while Boltget runs. After Boltget restarts they are gone (they are never saved to disk), and a download that needs them now says so and asks you to download it again from the browser.
+
 ## [0.2.0-preview.2] - 2026-11-14
 
 The second preview of the desktop app: Boltget's new black-and-white look, an icon that follows a light or dark taskbar, and new type throughout the app.
