@@ -2,7 +2,7 @@
 
 The Boltget extension catches downloads in the browser and hands them to the Boltget app together with everything the app needs to fetch the same file (cookies, referrer, headers). It also detects media on pages and offers to send the page to the app. It does no downloading itself and contains no site-specific extraction logic.
 
-- Code: `apps/extension` (planned); the native host is `crates/native-host`, its protocol `crates/ipc/src/browser.rs`
+- Code: `apps/extension` (`@boltget/extension`); the native host is `crates/native-host`, its protocol `crates/ipc/src/browser.rs`
 - Framework: [WXT](https://wxt.dev), Manifest V3, TypeScript, Svelte 5 for the popup and options UI
 - Targets: Chrome, Microsoft Edge, Firefox. Other Chromium browsers (Brave, Vivaldi, Opera) are expected to work with the Chrome build but are not tested targets for v0.3.
 - Transport to the app: [native messaging](#native-messaging), never a localhost server
@@ -36,6 +36,28 @@ apps/extension/
 
 The capture decision is a pure function `shouldCapture(event, rules) → Decision` so it can be tested exhaustively without a browser.
 
+> **As built (v0.3 step 2).** `srcDir` is the package root and WXT's auto-imports are off (imports are explicit, as in the app):
+>
+> | Path | What |
+> |---|---|
+> | `wxt.config.ts` | Manifest per browser and flavor (see "Flavors and builds" below) |
+> | `entrypoints/background.ts` | The service worker / event page: download listeners, the handoff, context menus, the modifier script's registration, `hello` at start-up |
+> | `entrypoints/modifiers.ts` | The modifier-key watcher, an *unlisted* script registered at run time (a WXT content script would add its match patterns to the required host permissions) |
+> | `entrypoints/popup/`, `entrypoints/options/` | Svelte 5 pages built from `@boltget/ui`'s tokens, fonts and primitives; `lib/ui/` holds what they share |
+> | `lib/capture.ts` | `shouldCapture` and the type matching |
+> | `lib/handoff.ts` | Pause, ask, then cancel and erase or give back (the fallback guarantee) |
+> | `lib/native.ts` | The native messaging client, reply checks, the connection states |
+> | `lib/headers.ts`, `lib/cookies.ts` | Header observation and the allowlist; cookie collection |
+> | `lib/message.ts` | Builds `capture`, `add_links` and `media_page` within the host's limits |
+> | `lib/modifiers.ts`, `lib/rules.ts`, `lib/settings.ts` | The click log, rule normalising and site matching, what is stored |
+> | `lib/collect.ts` | The link collector injected for the link menus |
+> | `lib/platform.ts` | The thin layer over the browser APIs; everything else in `lib/` is pure and unit-tested |
+> | `lib/en.json`, `lib/i18n.ts` | The string catalog and `t()` (the app's no-literal-strings ESLint rule applies); the manifest's own strings are in `public/_locales/en/messages.json` |
+> | `public/icons/` | Onyx and its Paper twin at 16, 32, 48 and 128 px, copied from `brand/png` by `scripts/icons.mjs` (`check` fails while stale). Firefox swaps them with its theme (`theme_icons`); Chromium has no manifest switch, so the popup and options page report the browser's colour scheme and the background sets the toolbar icon, now and at each start |
+> | `e2e/` | Playwright tests, the stub host and its registration |
+>
+> Media detection (`lib/media.ts`) arrives with v0.4.
+
 ## Permissions
 
 | Permission | Why |
@@ -46,7 +68,8 @@ The capture decision is a pure function `shouldCapture(event, rules) → Decisio
 | `webRequest` | Observe (not block, on Chrome) request headers such as `Referer` and `User-Agent`, and response `Content-Type` for media detection |
 | `contextMenus` | "Download with Boltget", "Download all links", "Send page to Boltget" |
 | `storage` | Capture rules and site lists |
-| `scripting` | Inject the link collector only when the user invokes "Download all links" |
+| `scripting` | Inject the link collector only when the user invokes "Download all links"; register the modifier-key script once site access is granted |
+| `activeTab` | Lets the link collector run in the tab whose menu was used, without host permissions |
 | host permissions | Needed by `cookies` and `webRequest` for the sites involved. Requested as **optional** `<all_urls>` during onboarding with an explanation, so the user explicitly grants them. Without them, capture still works but without cookies/headers (many downloads will then fail in the app, and the extension says so). |
 
 Not requested: `tabs` beyond what `activeTab` gives, `history`, `bookmarks`, `<all_urls>` content scripts at install time, `webRequestBlocking` on Chrome (not available to normal MV3 extensions).
@@ -79,6 +102,8 @@ sequenceDiagram
   end
 ```
 
+> **As built (v0.3 step 2): flavors and builds.** `wxt build` is the release flavor (store IDs, host `app.boltget.native_host`, Firefox `extension@boltget.app`). `wxt build --mode development` (and `wxt`, the dev server) is the development flavor: the manifest carries `extensions.json`'s `chromiumKey` as `key`, so an unpacked Chromium build gets the pinned ID `fckefagfbiinebmgfpgjiielmmmaggbd`; it talks to `app.boltget.native_host_dev`, and Firefox runs it as `extension-dev@boltget.app`. `wxt build --mode e2e` is the development flavor for the end-to-end tests: it talks to `app.boltget.native_host_e2e` and holds `<all_urls>` as a required host permission, because a test cannot answer the browser's permission prompt. Firefox builds are Manifest V3 too, with `data_collection_permissions: { required: ["none"] }` and a minimum of Firefox 128; Chromium builds ask for Chrome 120. `pnpm --filter @boltget/extension zip` writes `boltget-extension-<version>-chrome.zip`, `-firefox.zip` and the Firefox sources zip to `.output/`.
+
 ### Chromium (Chrome, Edge)
 
 Manifest V3 extensions cannot block network requests with `webRequest`, so capture works through the `downloads` API:
@@ -86,6 +111,8 @@ Manifest V3 extensions cannot block network requests with `webRequest`, so captu
 1. `chrome.downloads.onCreated` gives the `DownloadItem` (URL, final URL, referrer, MIME, size if known, incognito flag). `onDeterminingFilename` additionally gives the browser's proposed filename once headers are known.
 2. The extension **pauses** the browser download immediately, then asks the app.
 3. Only after the app replies "accepted" does the extension cancel and erase the browser's download. If the app is unreachable within a timeout (design target: 3 s including app launch), the download is resumed in the browser.
+
+> **As built (v0.3 step 2).** The extension decides in `downloads.onDeterminingFilename`, not `onCreated`: it fires once per download, after the response headers, with the browser's file name, which the type rules need (at `onCreated` Chromium's `filename` is still empty). The listener calls `suggest()` at once without a suggestion (the browser's name stands; Boltget never renames in the browser), then decides and pauses. The timeout is 20 s, not 3 s (see "Timing" below). On `accepted` the browser's download is cancelled and erased; if the browser had already finished it (the pause failed and the file was small), both copies are kept rather than deleting a finished file. On anything else the download is given back (`giveBack` in `lib/handoff.ts`): resumed when the extension paused it and it is still paused; if resuming fails, or the paused connection was dropped and the download cannot resume, the link is started again with `downloads.download` and the dead entry erased; a download the user cancelled or removed meanwhile is left alone. Downloads started by an extension (`byExtensionId`), Boltget's own restarts included, are never captured. The end-to-end tests check that a refused one-time link finishes from its first and only request.
 
 Caveat: by the time the extension sees the download, the browser has already sent the request. For **one-time links** (a token valid for a single request), the app's request may then be refused. In that case the app replies `rejected` with the reason `link_refused` after its probe fails, and the extension resumes the browser's paused download, which still holds the original response. The user gets the file either way; it just isn't accelerated.
 
@@ -101,6 +128,8 @@ Firefox's Manifest V3 implementation still supports blocking `webRequest` (`webR
 
 Whether to use blocking `webRequest` on Firefox in v0.3 or keep a single code path is decided during implementation; the capture decision function is shared either way.
 
+> **Decided (v0.3 step 2): one code path.** The Firefox build uses the `downloads` API like Chromium and decides in `downloads.onCreated` (Firefox has no `onDeterminingFilename`; its item already has the full target path, whose last segment is the name). Blocking `webRequest` would need `webRequestBlocking` and required host permissions for every site, against goal 3, and a second capture path to test. Firefox pauses only downloads it can resume; when the pause fails the download simply continues, and on `accepted` it is cancelled then. Revisit if one-time links prove common on Firefox. The Firefox build has not been run in Firefox yet (see "Testing").
+
 ### What is never captured
 
 - `blob:` and `data:` URLs (the bytes only exist inside the page; the app cannot fetch them).
@@ -108,6 +137,8 @@ Whether to use blocking `webRequest` on Firefox in v0.3 or keep a single code pa
 - `file:` URLs.
 - Requests with a `POST` body that the extension cannot see (form-submission downloads). These stay in the browser.
 - Downloads started by the Boltget app itself (none in v1, but guarded).
+
+> **As built (v0.3 step 2).** All of the above, with these decisions: a download started by any extension is left alone (that covers Boltget's own fallback restarts and avoids fighting other download extensions); a `POST` is recognised from the request `webRequest` observed, so only with site access (without it, a form download goes to the app, whose own first request fails, and it stays in the browser); an **explicit** request, the link menu or Alt+Shift, is honoured in a private window too, with `incognito: true` in the message, because the user asked for Boltget by name. Automatic capture in private windows still needs "Private windows" in options.
 
 ## Capture rules
 
@@ -125,6 +156,10 @@ Defaults (all editable in options, synced from the app's settings on `hello` so 
 
 Matching uses, in order: the filename from `Content-Disposition`/browser suggestion, then the URL path extension, then MIME type.
 
+> **As built (v0.3 step 2), `lib/capture.ts`.** The precedence is: not fetchable (`blob:`, `data:`, `file:`, over 32 KiB) → started by an extension → `POST` → Alt (bypass) → Alt+Shift or the link menu (forced) → private window without the setting → capture off or paused → never-capture list → always-capture list (any type, any size) → type and size. For the type, the first of file name, final URL's path, link's path and MIME type that names a type decides; extensions that name a script rather than a file (`php`, `asp`, `aspx`, `jsp`, `cgi`, `html` and the like) name nothing, and MIME types map to the listed extensions (`video/mp4` to `mp4`, `application/x-msdownload` to `exe`, ...). A listed type is captured unless its known size is under the threshold; generic bytes (`application/octet-stream` and kin, or no MIME type) with no telling name are captured when their known size reaches the threshold; everything else stays. Site lists match the hosts of the link, the final URL and the referrer as suffixes on label boundaries; the never list wins. A test enumerates every combination of these inputs (41,472) against an independent statement of this precedence.
+>
+> Rules live in `storage.local`: the app's arrive with each `hello` (at install, at browser start, and whenever the popup or options open) and apply until the user edits them in options; then the user's are kept and the app's are kept aside for "Use Boltget's rules". The popup's switch and "Pause for 10 minutes" are the extension's own and sit on top of the rules' `enabled`.
+
 ### Modifier-key bypass
 
 - **Bypass (let the browser download):** hold **Alt** while clicking the link (default; configurable).
@@ -136,6 +171,8 @@ Notes:
 
 - In Chromium, Alt+click on a link already means "download link" by default, so Alt fits naturally: the user is asking the browser to download it.
 - The content script is injected only on pages where host permission was granted. Without it, modifier bypass is unavailable and the popup toggle is the bypass.
+
+> **As built (v0.3 step 2).** The watcher (`entrypoints/modifiers.ts`) is registered with `scripting.registerContentScripts` (all frames, `document_start`, `http`/`https` pages) while the user has granted `<all_urls>` and "Alt and Alt+Shift on links" is on in options, and unregistered otherwise. It reports only a left `mousedown` or Enter with Alt held on a link, as `{href, alt, shift}`. A Chromium `DownloadItem` has no tab, so the background matches a download's link or final URL to a click within 2 s, once.
 
 ## Context menus
 
@@ -149,6 +186,8 @@ Notes:
 
 Media-related items follow the [store policy constraints](#store-policy-constraints).
 
+> **As built (v0.3 step 2).** Link, selection, page and "Send page to Boltget" exist; the video/audio element item comes with media detection in v0.4. The link item sends a forced `capture` with the link's cookies and the page as referrer; if the app does not accept it, the extension starts the download in the browser instead, so the link is never lost. The selection and page items inject `lib/collect.ts` into the frame that was clicked (`activeTab`) and send `add_links` with cookies for each site the links are on (at most 20 sites). "Send page" is answered `unsupported` until v0.4, and the extension says so. On YouTube's domains it sends nothing and says it is not available there; hiding the item there needs the tab's URL and is left to v0.4's media work. A menu outcome that needs words leaves a notice: a badge on the toolbar button and, where the browser allows `action.openPopup`, the popup, which shows it.
+
 ## Cookies, headers and referrer forwarding
 
 For each captured download the extension sends:
@@ -159,6 +198,10 @@ For each captured download the extension sends:
 - **Filename hint and size hint** from the browser.
 
 Nothing is sent for downloads that are not captured. Nothing is stored by the extension beyond the short-lived header map.
+
+> **As built (v0.3 step 2).** Cookies: `cookies.getAll({url, storeId})` for the link and the final URL, and again with `partitionKey: {topLevelSite}` built from the referrer's scheme and host (best effort: a browser that refuses the query gives no partitioned cookies); on Firefox with `firstPartyDomain: null` (every first-party domain) and the item's `cookieStoreId`; on Chromium store `0`, or `1` in a private window. Deduplicated and cut to the protocol's 300 cookies and 64 KiB. Headers: `onSendHeaders` for `main_frame`, `sub_frame` and `other` requests (with `extraHeaders` on Chromium), at most 256 requests for 30 s, each taken once. The context menus, which have no observed request, send the browser's `User-Agent` and the page as `Referer`. A value the host would refuse (a file name with a folder or control characters, a non-`http` referrer, a MIME type with non-ASCII) is left out rather than sent, since one bad field refuses the whole message.
+>
+> **Site access.** `<all_urls>` is an optional host permission. After install the options page opens with a welcome note and explains it in one paragraph (what is read, for which downloads, where it goes), with Allow access; the popup offers it while it is missing. Without it, capture still works, without cookies or headers, and the Alt keys are off.
 
 ## Native messaging
 
@@ -258,6 +301,8 @@ macOS and Linux (post-1.0) use manifest files in each browser's `NativeMessaging
 
 The popup shows one of: Connected (app version), App not running (it will start when needed), App not installed (link to download), App too old (update), Extension too old (update). The options page has a "Test connection" button that sends `hello`.
 
+> **As built (v0.3 step 2).** The popup and options page send `hello` each time they open (Test connection sends it again). A host that exits, one that refuses this extension (`forbidden`), a timeout or a reply that is not the protocol's show "Can't reach Boltget". The extension also checks versions itself: a `hello` whose `oldest` is above its version is Extension too old, one whose `current` is below its oldest is App too old.
+>
 > **Mapping (v0.3 step 1):** a `hello` reply with `app` set is Connected; with `app: null`, App not running (the host answered, so Boltget is installed); no host at all (`runtime.lastError`, "Specified native messaging host not found") is App not installed; `error: app_too_old` is App too old; `error: extension_too_old` is Extension too old; `unavailable: mismatch` asks to reinstall Boltget.
 
 ## Media detection panel
@@ -290,3 +335,30 @@ Media detection only **detects and hands off**. All extraction, format selection
 - Unit tests for `shouldCapture`, header filtering, media grouping (Vitest).
 - End-to-end tests with Playwright driving Chromium with the unpacked extension, against the engine's local test server, with a stub native host that records messages.
 - A manual capture matrix before each release: direct links, redirects, signed URLs, cookie-protected downloads, `Content-Disposition` names, downloads started by JavaScript, downloads in iframes, Alt-bypass, private windows.
+
+> **As built (v0.3 step 2).**
+>
+> - **Vitest** (`pnpm --filter @boltget/extension test`): everything in `lib/` but `platform.ts`, including the exhaustive `shouldCapture` table; the handoff against a fake `downloads` API (app missing; hung past the timeout, with a late `accepted` that changes nothing; every refusal; a one-time link whose paused connection dropped; a download the user cancelled or removed; a pause that failed); and a check that the default file types are `DEFAULT_EXTENSIONS` in `crates/ipc/src/browser.rs`.
+> - **Playwright** (`pnpm --filter @boltget/extension e2e`): builds `--mode e2e`, registers `e2e/stub-host.mjs` as `app.boltget.native_host_e2e` (on Windows HKCU keys for Chromium, Chrome for Testing, Chrome and Edge; on Linux the per-user folders and the profile's own; removed after each test), and loads the build into Chromium (new headless mode) with a fresh profile whose downloads go to a temporary folder. Playwright's own download handling skips the extensions' `onDeterminingFilename`, so the tests give downloads back to the browser (`Browser.setDownloadBehavior: default`). A local server serves slow files, a one-time link and a cookie. The tests cover capture with cookies and headers, generic bytes and Alt+Shift; what stays (small files, documents, `blob:`, Alt, capture off, the never list, the app's rules from `hello`); the fallback when the app refuses a one-time link (finished from its single request), is not installed, exits, answers garbage or hangs (resumed after 20 s); and the popup and options pages. `BOLTGET_E2E_BROWSER` runs another Chromium build. CI runs them on Windows (`.github/workflows/extension.yml`). The context menus are not driven: Playwright cannot click the browser's own menus.
+> - **Real run (2026-11-14, by hand):** the development build in Microsoft Edge (temporary profile, `--load-extension`), the debug `boltget-native-host` registered with `--register`, and the debug desktop app with its own data and download folders. A 4 MiB archive went to the app, which the host started from cold; the app accepted it and downloaded it byte for byte while the browser's copy was erased. A one-time link was refused by the app's first request (410, `link_refused`) and finished in the browser. With site access, the app's requests carried the browser's cookie and `User-Agent`. The run found the host starting the command-line tool (`boltget.exe`) for `Boltget.exe` in a build folder, now fixed in the host.
+> - **Not yet run:** the Firefox build in Firefox, and the manual matrix on all three browsers.
+
+## Development
+
+1. Build and register the development host: `cargo build -p boltget-native-host -p boltget-desktop`, then `target\debug\boltget-native-host.exe --register` (a debug host registers `app.boltget.native_host_dev` for Chrome, Edge and Firefox with the development IDs; `--status` checks, `--unregister` removes). The host starts `boltget-desktop.exe` from its own folder when a download arrives; `BOLTGET_NATIVE_HOST_APP` starts another build, and `BOLTGET_DATA_DIR` in the browser's environment (the host and the app inherit it) keeps test downloads apart from your own.
+2. Build the extension: `pnpm --filter @boltget/extension build:dev` (Chrome and Edge, `.output/chrome-mv3-dev`) or `build:firefox:dev` (`.output/firefox-mv3-dev`). `pnpm --filter @boltget/extension dev` rebuilds on change and opens a browser with it loaded.
+3. Chrome or Edge: `chrome://extensions` (or `edge://extensions`), turn on Developer mode, Load unpacked, choose `.output/chrome-mv3-dev`. The ID must read `fckefagfbiinebmgfpgjiielmmmaggbd`; the manifest's key pins it.
+4. Firefox: `about:debugging#/runtime/this-firefox`, Load Temporary Add-on, choose `.output/firefox-mv3-dev/manifest.json`. It runs as `extension-dev@boltget.app` until Firefox restarts.
+5. A separate browser profile for development is best. The development extension and a released one can sit side by side: they talk to different hosts.
+
+## Store submission
+
+What the owner has to do before the first submission (the packages build with `pnpm --filter @boltget/extension zip`):
+
+- **Accounts:** a Chrome Web Store developer account (one-time registration fee, verified contact email), a Microsoft Partner Center account for Edge Add-ons, and a Firefox Add-ons (AMO) developer account, each with two-step verification.
+- **IDs:** after the first Chrome and Edge uploads, put the store-assigned IDs in `packages/native-messaging/extensions.json` (`release.chromium`, replacing the `aaaa...` and `bbbb...` placeholders) and ship a Boltget whose host registration lists them. Firefox keeps `extension@boltget.app`.
+- **Listing:** the single purpose ("send downloads to the Boltget download manager"), a description, screenshots of the popup and options page (1280 × 800 for Chrome), the 128 px icon from `public/icons`, and a promotional tile if wanted. Nothing about YouTube.
+- **Permission justifications:** one line each, from the Permissions table above (`downloads`, `nativeMessaging`, `cookies`, `webRequest`, `contextMenus`, `storage`, `scripting`, `activeTab`, and the optional `<all_urls>`).
+- **Privacy disclosures:** Chrome's data-use form and Edge's equivalent. The extension handles website content and authentication information (cookies) only to hand a download to the Boltget app on the same computer; nothing is sold, transferred to third parties or used for anything else, and there is no remote code. A privacy policy URL: boltget.app's privacy page, updated to cover the extension. Firefox: `data_collection_permissions` says `none` (nothing leaves the computer).
+- **Firefox sources:** AMO asks for the source of a bundled extension. The generated sources zip lacks the workspace packages it imports (`packages/ui`, `packages/native-messaging`, `brand/`), so upload a tagged archive of the repository with the build steps instead (`pnpm install`, then `pnpm --filter @boltget/extension build:firefox`).
+- **Review:** re-read each store's current policies first ([RELEASE.md](RELEASE.md)). The listings can stay unlisted until v1.0.
