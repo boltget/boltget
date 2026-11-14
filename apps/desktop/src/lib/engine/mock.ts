@@ -12,6 +12,7 @@
 import type {
   AddDownload,
   AppSettings,
+  BrowserIntegration,
   DownloadDetails,
   DownloadId,
   DownloadRow,
@@ -102,6 +103,14 @@ export function mockEngineApi(search: string): EngineApi {
   const now = Date.now();
   const sims = new Map<DownloadId, Sim>();
   let settings: AppSettings = { ...DEFAULT_SETTINGS };
+  // `?browsers=missing` shows the browsers needing repair.
+  let browsers: BrowserIntegration = {
+    supported: true,
+    browsers: (["chrome", "edge", "firefox"] as const).map((browser) => ({
+      browser,
+      state: params.get("browsers") === "missing" ? ("missing" as const) : ("registered" as const),
+    })),
+  };
   let recent: string[] = [];
   let focused: DownloadId | null = null;
   let emit: (m: EngineMessage) => void = () => {};
@@ -543,12 +552,23 @@ export function mockEngineApi(search: string): EngineApi {
         if (patch.closeToTray != null) next.closeToTray = patch.closeToTray;
         if (patch.startWithWindows != null) next.startWithWindows = patch.startWithWindows;
         if (patch.clipboard != null) next.clipboard = patch.clipboard;
+        if (patch.browserAsk != null) next.browserAsk = patch.browserAsk;
         settings = next;
         emit({ type: "settings", settings });
         return ok(settings);
       },
       async systemProxy() {
         return { proxy: params.get("proxy"), script: params.has("pac") };
+      },
+      async browserIntegration() {
+        return browsers;
+      },
+      async repairBrowserIntegration() {
+        browsers = {
+          supported: true,
+          browsers: browsers.browsers.map((b) => ({ ...b, state: "registered" as const })),
+        };
+        return ok(browsers);
       },
       async openDownloadsFolder() {
         return ok(null);

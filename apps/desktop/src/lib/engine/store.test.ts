@@ -89,6 +89,8 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
       ok({ ...DEFAULT_SETTINGS, maxConnections: patch.maxConnections ?? 16 }),
     ),
     systemProxy: vi.fn(() => Promise.resolve({ proxy: null, script: false })),
+    browserIntegration: vi.fn(() => Promise.resolve({ supported: false, browsers: [] })),
+    repairBrowserIntegration: vi.fn(() => ok({ supported: false, browsers: [] })),
     openDownloadsFolder: vi.fn(() => ok(null)),
     quitApp: vi.fn(() => Promise.resolve()),
     setFocusedDownload: vi.fn(() => Promise.resolve()),

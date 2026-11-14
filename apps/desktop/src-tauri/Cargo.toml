@@ -23,6 +23,9 @@ tauri-build = { version = "2.7", features = [] }
 boltget-engine.workspace = true
 # The named pipe the app serves to the CLI (docs/ARCHITECTURE.md, "CLI to app").
 boltget-ipc.workspace = true
+# The browsers' registration of the native host, for Settings' "Repair
+# browser integration" (the same code the installer runs).
+boltget-native-host.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # The tray icon and its menu (docs/APP-DESIGN.md #13).

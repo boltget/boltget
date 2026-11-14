@@ -166,6 +166,10 @@ pub(crate) struct AppSettings {
     pub(crate) start_with_windows: bool,
     /// Offer links copied to the clipboard (off by default).
     pub(crate) clipboard: bool,
+    /// Downloads the browser hands over open the add sheet first instead of
+    /// starting (off by default: docs/BROWSER-INTEGRATION.md, "Capture
+    /// flow").
+    pub(crate) browser_ask: bool,
 }
 
 impl Default for AppSettings {
@@ -181,6 +185,7 @@ impl Default for AppSettings {
             close_to_tray: true,
             start_with_windows: false,
             clipboard: false,
+            browser_ask: false,
         }
     }
 }
@@ -200,6 +205,7 @@ pub(crate) struct SettingsPatch {
     pub(crate) close_to_tray: Option<bool>,
     pub(crate) start_with_windows: Option<bool>,
     pub(crate) clipboard: Option<bool>,
+    pub(crate) browser_ask: Option<bool>,
 }
 
 /// A change to one category.
@@ -223,6 +229,7 @@ const KEY_THEME: &str = "theme";
 const KEY_NOTIFICATIONS: &str = "notifications";
 const KEY_CLOSE_TO_TRAY: &str = "close_to_tray";
 const KEY_CLIPBOARD: &str = "clipboard";
+const KEY_BROWSER_ASK: &str = "browser_ask";
 
 /// Reads one stored value; a missing or unreadable one is the default.
 async fn read<T: serde::de::DeserializeOwned>(engine: &Engine, key: &str) -> Option<T> {
@@ -279,6 +286,9 @@ pub(crate) async fn load(engine: &Engine) -> Result<AppSettings, UiError> {
     }
     if let Some(b) = read(engine, KEY_CLIPBOARD).await {
         s.clipboard = b;
+    }
+    if let Some(b) = read(engine, KEY_BROWSER_ASK).await {
+        s.browser_ask = b;
     }
     s.start_with_windows = platform::autostart_enabled();
     Ok(s)
@@ -436,6 +446,9 @@ pub(crate) fn patched(
     if let Some(b) = patch.clipboard {
         next.clipboard = b;
     }
+    if let Some(b) = patch.browser_ask {
+        next.browser_ask = b;
+    }
     Ok(next)
 }
 
@@ -477,6 +490,9 @@ pub(crate) async fn store(
     }
     if old.clipboard != new.clipboard {
         write(engine, KEY_CLIPBOARD, &new.clipboard).await?;
+    }
+    if old.browser_ask != new.browser_ask {
+        write(engine, KEY_BROWSER_ASK, &new.browser_ask).await?;
     }
     Ok(())
 }

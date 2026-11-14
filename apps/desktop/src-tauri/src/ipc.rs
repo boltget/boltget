@@ -9,7 +9,7 @@
 use tauri_specta::{Builder, collect_commands, collect_events};
 
 use crate::bridge::commands as engine;
-use crate::{clipboard, commands, shell};
+use crate::{browser, clipboard, commands, shell};
 
 /// The generated file, relative to this crate.
 #[cfg(test)]
@@ -50,6 +50,8 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             engine::get_settings,
             engine::update_settings,
             engine::system_proxy,
+            browser::browser_integration,
+            browser::repair_browser_integration,
             engine::open_downloads_folder,
             engine::download_segments,
             engine::download_details,

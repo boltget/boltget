@@ -6,12 +6,14 @@
 //! engine and its database and streams it to the page. Around the window:
 //! one instance per session (`shell`), the tray and taskbar progress
 //! (`tray`), notifications (`notify`), the named pipe the CLI talks to
-//! (`pipe`), the settings (`settings`, with clipboard monitoring in
-//! `clipboard`), and the end of the session (`RunEvent::Exit` below).
+//! (`pipe`) and the browser extension through it (`browser`), the settings
+//! (`settings`, with clipboard monitoring in `clipboard`), and the end of
+//! the session (`RunEvent::Exit` below).
 // No console window behind the app in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod browser;
 mod catalog;
 mod clipboard;
 mod commands;
@@ -83,6 +85,7 @@ fn main() {
         .manage(PendingLinks::new(launch.links))
         .manage(bridge)
         .manage(clipboard::Monitor::default())
+        .manage(browser::Captured::default())
         .invoke_handler(ipc.invoke_handler())
         .setup(move |app| {
             ipc.mount_events(app);

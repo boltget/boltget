@@ -1,6 +1,7 @@
-//! The named pipe the app serves to the `boltget` CLI (docs/ARCHITECTURE.md,
-//! "CLI to app (named pipe)"): the protocol and its security live in
-//! `boltget-ipc`; here the app connects it to its engine and its list.
+//! The named pipe the app serves to the `boltget` CLI and the browser's
+//! native host (docs/ARCHITECTURE.md, "CLI to app (named pipe)"): the
+//! protocol and its security live in `boltget-ipc`; here the app connects
+//! it to its engine and its list, and the browser's messages to `browser`.
 //!
 //! The pipe is served from the start, before the engine is open: a client
 //! that arrives early waits for it, and one that arrives while a standalone
@@ -9,8 +10,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use boltget_engine::{DownloadId, DownloadSummary};
-use boltget_ipc::{Endpoint, Owner, Server};
+use boltget_engine::{DownloadId, DownloadSummary, Engine};
+use boltget_ipc::browser::Message;
+use boltget_ipc::{BrowserReply, Endpoint, Owner, Server};
 use tauri::{AppHandle, Manager};
 
 use crate::bridge::Bridge;
@@ -30,6 +32,10 @@ impl Owner for App {
 
     fn limit_changed(&self, bytes_per_second: Option<u64>) {
         self.0.state::<Bridge>().limit_changed(bytes_per_second);
+    }
+
+    fn browser(&self, engine: Engine, _v: u32, message: Message) -> BrowserReply {
+        crate::browser::reply(self.0.clone(), engine, message)
     }
 }
 

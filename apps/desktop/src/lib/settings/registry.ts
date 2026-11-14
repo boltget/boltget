@@ -5,7 +5,8 @@
 import { t, type PlainMessageKey } from "@boltget/ui/messages";
 import type { IconName } from "../Icon.svelte";
 
-export type SectionId = "general" | "downloads" | "connections" | "network" | "shortcuts" | "about";
+export type SectionId =
+  "general" | "downloads" | "connections" | "network" | "browser" | "shortcuts" | "about";
 
 export interface Section {
   id: SectionId;
@@ -18,6 +19,7 @@ export const SECTIONS: readonly Section[] = [
   { id: "downloads", label: "settings.section.downloads", icon: "folder" },
   { id: "connections", label: "settings.section.connections", icon: "active" },
   { id: "network", label: "settings.section.network", icon: "globe" },
+  { id: "browser", label: "settings.section.browser", icon: "link" },
   { id: "shortcuts", label: "settings.section.shortcuts", icon: "keyboard" },
   { id: "about", label: "settings.section.about", icon: "info" },
 ];
@@ -33,6 +35,8 @@ export type RowId =
   | "connections"
   | "limit"
   | "proxy"
+  | "browser_ask"
+  | "browser_integration"
   | "shortcuts"
   | "about";
 
@@ -114,6 +118,20 @@ export const ROWS: readonly Row[] = [
     label: "settings.proxy",
     description: "settings.proxy.description",
     keywords: "keywords.proxy",
+  },
+  {
+    id: "browser_ask",
+    section: "browser",
+    label: "settings.browser_ask",
+    description: "settings.browser_ask.description",
+    keywords: "keywords.browser_ask",
+  },
+  {
+    id: "browser_integration",
+    section: "browser",
+    label: "settings.browser_integration",
+    description: "settings.browser_integration.description",
+    keywords: "keywords.browser_integration",
   },
   {
     id: "shortcuts",

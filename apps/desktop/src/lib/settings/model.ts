@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   closeToTray: true,
   startWithWindows: false,
   clipboard: false,
+  browserAsk: false,
 };
 
 export type Check<T> = { ok: true; value: T } | { ok: false; problem: string };

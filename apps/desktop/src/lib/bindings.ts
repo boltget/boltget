@@ -128,6 +128,13 @@ export const commands = {
 	updateSettings: (patch: SettingsPatch) => typedError<AppSettings, UiError>(__TAURI_INVOKE("update_settings", { patch })),
 	/**  What Windows' proxy settings say now, for the Network section. */
 	systemProxy: () => __TAURI_INVOKE<SystemProxyInfo>("system_proxy"),
+	/**  Whether each browser finds Boltget's native messaging host. */
+	browserIntegration: () => __TAURI_INVOKE<BrowserIntegration>("browser_integration"),
+	/**
+	 *  "Repair browser integration": writes the manifests and registry keys
+	 *  again for this install, then says how each browser stands.
+	 */
+	repairBrowserIntegration: () => typedError<BrowserIntegration, UiError>(__TAURI_INVOKE("repair_browser_integration")),
 	/**  Opens the default download folder in Explorer (the palette, the tray). */
 	openDownloadsFolder: () => typedError<null, UiError>(__TAURI_INVOKE("open_downloads_folder")),
 	/**  The file map of a running download, now (`null` if it is not running). */
@@ -239,6 +246,29 @@ export type AppSettings = {
 	startWithWindows: boolean,
 	/**  Offer links copied to the clipboard (off by default). */
 	clipboard: boolean,
+	/**
+	 *  Downloads the browser hands over open the add sheet first instead of
+	 *  starting (off by default: docs/BROWSER-INTEGRATION.md, "Capture
+	 *  flow").
+	 */
+	browserAsk: boolean,
+};
+
+/**  What Settings shows about the browsers. */
+export type BrowserIntegration = {
+	/**  Whether this system has browser integration (Windows, for now). */
+	supported: boolean,
+	/**  Every browser, Chrome, Edge, Firefox; empty when not supported. */
+	browsers: BrowserRegistration[],
+};
+
+/**  A browser in Settings. */
+export type BrowserName = "chrome" | "edge" | "firefox";
+
+/**  One browser's registration. */
+export type BrowserRegistration = {
+	browser: BrowserName,
+	state: RegistrationState,
 };
 
 /**
@@ -574,6 +604,17 @@ export type QueuePatch = {
 	onFinish?: FinishAction | null,
 };
 
+/**  How a browser's registration stands. */
+export type RegistrationState = 
+/**  The browser finds Boltget. */
+"registered" | 
+/**  Not registered. */
+"missing" | 
+/**  Registered for a Boltget elsewhere, or files are gone. */
+"wrongPath" | 
+/**  Registered by an older release. */
+"outdated";
+
 /**
  *  A byte range of a download and how far it has been received: one run of
  *  squares in the details pane's file map.
@@ -614,6 +655,7 @@ export type SettingsPatch = {
 	closeToTray?: boolean | null,
 	startWithWindows?: boolean | null,
 	clipboard?: boolean | null,
+	browserAsk?: boolean | null,
 };
 
 /**  What the page is asked to do from outside it. */

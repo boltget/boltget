@@ -138,6 +138,12 @@ impl Bridge {
         self.hub.send(Request::Upsert(row));
     }
 
+    /// A download added outside the page (the browser): its first row, so
+    /// the list shows it before the engine's first event.
+    pub(crate) fn added(&self, id: DownloadId, url: String) {
+        self.upsert(hub::new_row(id, url));
+    }
+
     pub(crate) fn set_state(&self, id: DownloadId, state: DownloadState) {
         self.hub.send(Request::State(id, state));
     }

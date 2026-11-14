@@ -19,6 +19,8 @@
   import { app } from "../app.svelte";
   import type {
     AppSettings,
+    BrowserIntegration,
+    BrowserName,
     CategoryId,
     ProxyMode,
     SettingsPatch,
@@ -61,6 +63,14 @@
   let content: HTMLElement | undefined = $state();
   let info = $state<AppInfo | null>(null);
   let system = $state<SystemProxyInfo | null>(null);
+  let browsers = $state<BrowserIntegration | null>(null);
+  let repairing = $state(false);
+  const BROWSER_NAMES: Record<BrowserName, "browser.chrome" | "browser.edge" | "browser.firefox"> =
+    {
+      chrome: "browser.chrome",
+      edge: "browser.edge",
+      firefox: "browser.firefox",
+    };
   let highlighted = $state<RowId | null>(null);
 
   // Problems by field, and drafts of typed values.
@@ -106,6 +116,7 @@
   onMount(() => {
     void appInfo().then((i) => (info = i));
     void refreshSystemProxy();
+    void downloads.browserIntegration().then((b) => (browsers = b));
     // The list that had focus is gone: focus the current section, so the
     // keyboard and a screen reader carry on in Settings (unless the palette
     // or a link put focus on a setting).
@@ -232,6 +243,19 @@
   ) {
     const result = await downloads.chooseFolder(start);
     if (result.status === "ok" && result.data) void save(field, apply(result.data));
+  }
+
+  async function repairBrowsers() {
+    repairing = true;
+    const result = await downloads.repairBrowserIntegration();
+    repairing = false;
+    if (result.status === "error") {
+      problem("browser_integration", errorText(result.error));
+      return;
+    }
+    problem("browser_integration", null);
+    browsers = result.data;
+    app.toast(t("settings.browser_integration.repaired"));
   }
 
   function chooseProxyMode(mode: ProxyMode) {
@@ -698,6 +722,62 @@
               </SettingRow>
             {/if}
 
+            {#if shown.has("browser_ask")}
+              <SettingRow
+                id="browser_ask"
+                label={t("settings.browser_ask")}
+                description={t("settings.browser_ask.description")}
+                target={highlighted === "browser_ask"}
+                problem={problems.browser_ask}
+              >
+                {#snippet control()}
+                  <Switch
+                    checked={s.browserAsk}
+                    aria-labelledby="setting-browser_ask"
+                    aria-describedby={describedBy("browser_ask", "browser_ask")}
+                    onchange={onswitch("browser_ask", (browserAsk) => ({ browserAsk }))}
+                  />
+                {/snippet}
+              </SettingRow>
+            {/if}
+
+            {#if shown.has("browser_integration")}
+              <SettingRow
+                id="browser_integration"
+                label={t("settings.browser_integration")}
+                description={t("settings.browser_integration.description")}
+                target={highlighted === "browser_integration"}
+                problem={problems.browser_integration}
+              >
+                {#snippet control()}
+                  {#if browsers?.supported}
+                    <Button
+                      disabled={repairing}
+                      aria-describedby={describedBy("browser_integration", "browser_integration")}
+                      onclick={() => void repairBrowsers()}
+                    >
+                      {t("settings.browser_integration.repair")}
+                    </Button>
+                  {/if}
+                {/snippet}
+                {#if browsers && !browsers.supported}
+                  <p class="note">{t("settings.browser_integration.unsupported")}</p>
+                {:else if browsers}
+                  <ul class="browsers">
+                    {#each browsers.browsers as b (b.browser)}
+                      <li class="browser">
+                        <span class="browser-name">{t(BROWSER_NAMES[b.browser])}</span>
+                        <span class="browser-state" class:ready={b.state === "registered"}>
+                          <Icon name={b.state === "registered" ? "check" : "alert"} />
+                          {t(`settings.browser_integration.${b.state}`)}
+                        </span>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </SettingRow>
+            {/if}
+
             {#if shown.has("shortcuts")}
               <SettingRow
                 id="shortcuts"
@@ -1010,6 +1090,38 @@
     color: var(--color-text-subtle);
     font-size: var(--text-12);
     line-height: var(--leading-12);
+  }
+
+  /* Browsers. */
+  .browsers {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--color-hairline);
+  }
+  .browser {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 32px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  .browser:last-child {
+    border-bottom: 0;
+  }
+  .browser-state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-text-muted);
+    font-size: var(--text-12);
+  }
+  .browser-state :global(.icon) {
+    color: var(--color-warning);
+  }
+  .browser-state.ready :global(.icon) {
+    color: var(--color-text-muted);
   }
 
   /* Shortcuts. */

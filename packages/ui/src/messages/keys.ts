@@ -34,6 +34,8 @@ export interface MessageParams {
   "engine.failed": never;
   "error.unknown": never;
   "error.engine_unavailable": never;
+  "error.browser_integration": never;
+  "error.browser_host_missing": never;
   "error.no_data_dir": never;
   "error.no_download_folder": never;
   "error.invalid_file_name": never;
@@ -288,6 +290,7 @@ export interface MessageParams {
   "settings.section.downloads": never;
   "settings.section.connections": never;
   "settings.section.network": never;
+  "settings.section.browser": never;
   "settings.section.shortcuts": never;
   "settings.section.about": never;
   "settings.theme": never;
@@ -303,6 +306,20 @@ export interface MessageParams {
   "settings.notifications.description": never;
   "settings.clipboard": never;
   "settings.clipboard.description": never;
+  "settings.browser_ask": never;
+  "settings.browser_ask.description": never;
+  "settings.browser_integration": never;
+  "settings.browser_integration.description": never;
+  "settings.browser_integration.repair": never;
+  "settings.browser_integration.repaired": never;
+  "settings.browser_integration.unsupported": never;
+  "settings.browser_integration.registered": never;
+  "settings.browser_integration.missing": never;
+  "settings.browser_integration.wrongPath": never;
+  "settings.browser_integration.outdated": never;
+  "browser.chrome": never;
+  "browser.edge": never;
+  "browser.firefox": never;
   "settings.folder": never;
   "settings.folder.description": never;
   "settings.folder.windows": never;
@@ -402,6 +419,8 @@ export interface MessageParams {
   "keywords.density": never;
   "keywords.search": never;
   "keywords.clipboard": never;
+  "keywords.browser_ask": never;
+  "keywords.browser_integration": never;
   "keywords.notifications": never;
   "keywords.autostart": never;
   "keywords.tray": never;

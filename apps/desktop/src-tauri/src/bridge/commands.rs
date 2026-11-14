@@ -16,6 +16,7 @@ use super::dto::{
     ProbePreview, QueueId, QueueInfo, QueuePatch, SegmentSpan, ShiftDirection, path_string,
 };
 use super::hub::new_row;
+use crate::browser::Captured;
 use crate::error::UiError;
 use crate::settings::{self, SettingsPatch, SystemProxyInfo};
 
@@ -55,10 +56,15 @@ pub(crate) async fn list_downloads(bridge: State<'_, Bridge>) -> Result<Vec<Down
 #[specta::specta]
 pub(crate) async fn probe_url(
     bridge: State<'_, Bridge>,
+    captured: State<'_, Captured>,
     url: String,
 ) -> Result<ProbePreview, UiError> {
     let engine = bridge.engine()?;
-    let ctx = RequestContext::new(url.trim())?;
+    // A link the browser handed over is probed as the browser asked for it.
+    let ctx = match captured.get(url.trim()) {
+        Some(ctx) => ctx,
+        None => RequestContext::new(url.trim())?,
+    };
     let probe = engine.probe(&ctx).await?;
     Ok(ProbePreview::from(&probe))
 }
@@ -72,10 +78,16 @@ pub(crate) async fn probe_url(
 pub(crate) async fn add_download(
     app: AppHandle,
     bridge: State<'_, Bridge>,
+    captured: State<'_, Captured>,
     request: AddDownload,
 ) -> Result<DownloadRow, UiError> {
     let engine = bridge.engine()?;
-    let ctx = RequestContext::new(request.url.trim())?;
+    // A link the browser handed over keeps its cookies and headers (and
+    // gives them up once it is added).
+    let ctx = match captured.get(request.url.trim()) {
+        Some(ctx) => ctx,
+        None => RequestContext::new(request.url.trim())?,
+    };
     let dir = match request.directory.as_deref().map(str::trim) {
         Some(d) if !d.is_empty() => PathBuf::from(d),
         _ => default_folder(&app, &bridge, request.file_name.as_deref())?,
@@ -121,6 +133,7 @@ pub(crate) async fn add_download(
         row.start_at = request.start_at;
     }
     bridge.upsert(row.clone());
+    captured.take(request.url.trim());
     remember_folder(engine, &dir).await;
     Ok(row)
 }

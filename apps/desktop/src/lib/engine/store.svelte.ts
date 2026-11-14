@@ -11,6 +11,7 @@ import type {
   AddDefaults,
   AddDownload,
   AppSettings,
+  BrowserIntegration,
   DestinationCheck,
   DownloadDetails,
   DownloadError,
@@ -70,6 +71,8 @@ export interface EngineApi {
     | "setSpeedLimit"
     | "updateSettings"
     | "systemProxy"
+    | "browserIntegration"
+    | "repairBrowserIntegration"
     | "openDownloadsFolder"
     | "quitApp"
     | "setFocusedDownload"
@@ -491,6 +494,16 @@ export class DownloadStore {
   /** What Windows' proxy settings say now. */
   systemProxy(): Promise<SystemProxyInfo> {
     return this.#api.commands.systemProxy();
+  }
+
+  /** Whether each browser finds Boltget (Settings, Browser). */
+  browserIntegration(): Promise<BrowserIntegration> {
+    return this.#api.commands.browserIntegration();
+  }
+
+  /** Registers Boltget with the browsers again. A refusal is returned. */
+  repairBrowserIntegration(): Promise<Result<BrowserIntegration>> {
+    return this.#api.commands.repairBrowserIntegration();
   }
 
   /** Opens the default download folder in Explorer. */
