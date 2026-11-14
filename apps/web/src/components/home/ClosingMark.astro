@@ -62,8 +62,8 @@ const path = cells.map((c) => `M${c.x} ${c.y}h${PX}v${PX}h-${PX}z`).join("");
   <h2 id="cta-title">{t("home.cta.heading")}</h2>
   <p class="lede">{t("home.cta.lede")}</p>
   <p class="actions">
-    <a class="button button-primary" href="/download/"><Icon name="windows" size={15} />{t("home.cta.primary")}</a>
-    <a class="button button-secondary" href="/docs/">{t("home.cta.secondary")}</a>
+    <a class="button button-primary" href="/download/"><Icon name="windows" size={15} class="nudge-pop" />{t("home.cta.primary")}</a>
+    <a class="button button-secondary" href="/docs/">{t("home.cta.secondary")}<Icon name="arrowRight" size={15} class="nudge-x" /></a>
   </p>
 </section>
 

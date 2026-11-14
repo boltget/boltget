@@ -125,7 +125,7 @@ const data = JSON.stringify({ ui, chips });
   <div class="try" data-try hidden>
     <span class="try-label" id="hero-app-try">{t("home.app.try")}</span>
     <span class="chips" role="group" aria-labelledby="hero-app-try">
-      {chipList.map((c) => <button type="button" class="chip" data-chip={c.key}>{c.label}</button>)}
+      {chipList.map((c) => <button type="button" class="button button-chip" data-chip={c.key}>{c.label}</button>)}
     </span>
   </div>
   <div class="bezel">
@@ -264,39 +264,7 @@ const data = JSON.stringify({ ui, chips });
     display: inline-flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.375rem;
-  }
-  .hero-app .chip {
-    height: 1.875rem;
-    padding: 0 0.8rem;
-    border: 0;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.82);
-    box-shadow:
-      0 0 0 1px rgb(10 10 11 / 0.08),
-      0 1px 2px rgb(10 10 11 / 0.05);
-    color: var(--ink);
-    font: inherit;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background-color 0.16s linear,
-      box-shadow 0.16s linear;
-  }
-  .hero-app .chip:hover {
-    background: var(--white);
-    box-shadow:
-      0 0 0 1px rgb(10 10 11 / 0.14),
-      0 2px 6px rgb(10 10 11 / 0.08);
-  }
-  .hero-app .chip[aria-pressed="true"] {
-    background: var(--ink);
-    color: var(--white);
-  }
-  .hero-app .chip:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 999px;
+    gap: 0.5rem;
   }
   .hero-app .caption {
     margin-top: 0.875rem;

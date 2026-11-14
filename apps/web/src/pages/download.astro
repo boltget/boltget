@@ -56,13 +56,13 @@ const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-set
       <div class="get">
         {
           app ? (
-            <a class="button button-primary big" href={app.url}>
-              <Icon name="windows" size={15} />
+            <a class="button button-primary button-lg" href={app.url}>
+              <Icon name="windows" size={16} class="nudge-pop" />
               {t("download.primary")}
               <span class="size">{size(app)}</span>
             </a>
           ) : (
-            <a class="button button-primary big" href={release?.url ?? RELEASES_URL}>
+            <a class="button button-primary button-lg" href={release?.url ?? RELEASES_URL}>
               {t("download.primaryFallback")}
             </a>
           )
@@ -128,7 +128,7 @@ const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-set
       <a href={RELEASES_URL}>{t("download.links.all")}</a>
     </p>
 
-    <details class="verify">
+    <details class="verify fold">
       <summary>{t("download.verify.heading")}</summary>
       <div class="verify-body">
         <p>{t("download.verify.body")}</p>
@@ -185,10 +185,6 @@ const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-set
     display: grid;
     justify-items: center;
     margin-top: 2.25rem;
-  }
-  .big {
-    min-height: 3rem;
-    padding-inline: 1.4rem;
   }
   .size {
     margin-left: 0.15rem;
@@ -342,18 +338,54 @@ const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-set
     font-size: inherit;
     white-space: pre;
   }
+  /* Copy: a small white key; when the command is on the clipboard it turns
+     ink and says so for a moment, then eases back. */
   .copy {
+    min-width: 4.25rem;
     padding: 0.3rem 0.7rem;
     border: 0;
     border-radius: 8px;
     background: var(--white);
-    box-shadow: 0 0 0 1px rgb(10 10 11 / 0.1);
+    box-shadow:
+      0 0 0 1px rgb(10 10 11 / 0.1),
+      0 1px 2px rgb(10 10 11 / 0.05);
     color: var(--ink);
     font: 500 0.75rem/1.2 var(--font-sans);
     cursor: pointer;
+    transition:
+      background-color 0.22s var(--ease-out),
+      color 0.22s var(--ease-out),
+      box-shadow 0.22s var(--ease-out),
+      transform 0.22s var(--ease-out);
   }
   .copy:hover {
-    box-shadow: 0 0 0 1px rgb(10 10 11 / 0.2);
+    box-shadow:
+      0 0 0 1px rgb(10 10 11 / 0.2),
+      0 2px 6px -2px rgb(10 10 11 / 0.15);
+  }
+  .copy:active {
+    transform: scale(0.95);
+    transition-duration: 90ms;
+  }
+  .copy:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .copy.copied {
+    background: var(--ink);
+    color: var(--white);
+    box-shadow: 0 0 0 1px var(--ink);
+    animation: copied 0.36s var(--ease-out);
+  }
+  @keyframes copied {
+    40% {
+      transform: scale(1.06);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .copy.copied {
+      animation: none;
+    }
   }
 
   .links {
@@ -431,7 +463,12 @@ const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-set
         try {
           await navigator.clipboard.writeText(b.dataset.copy ?? "");
           b.textContent = b.dataset.done ?? label;
-          setTimeout(() => (b.textContent = label), 1600);
+          b.classList.add("copied");
+          clearTimeout(b._t);
+          b._t = setTimeout(() => {
+            b.textContent = label;
+            b.classList.remove("copied");
+          }, 1600);
         } catch {}
       });
     }

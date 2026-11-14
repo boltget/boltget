@@ -51,7 +51,6 @@
     "lede": "Boltget splits every file across many connections, keeps each one busy to the last byte, and never loses its place.",
     "primary": "Download for Windows",
     "secondary": "See how it works",
-    "platforms": "Windows 10 and 11",
     "app": {
       "label": "A demonstration of the Boltget app, simulated in the page. Pick a file with the buttons above it to watch it download: a new row appears, the file map fills from several connections at once and the download finishes.",
       "try": "Try it: pick a file",
@@ -225,8 +224,17 @@
           "lead": "Finished parts take over.",
           "body": "A connection that runs out of work takes half of the biggest part left, so they all finish together."
         }
-      },
-      "link": "How we measure"
+      }
+    },
+    "proof": {
+      "heading": "Measured, run after run.",
+      "lede": "The same files, downloaded again and again by Boltget and [another download manager], both at their defaults. The shorter the bar, the sooner the file arrived.",
+      "label": "Median download time for each test, in seconds: Boltget against another download manager at default settings.",
+      "unit": "Median time, seconds",
+      "faster": "Faster in every run on {count} of {total} tests.",
+      "overlap": "Where the runs overlap, we claim no difference.",
+      "same": "Runs overlap",
+      "link": "Every result, the method and the raw data"
     },
     "resume": {
       "heading": "Pull the plug. It picks up where it stopped.",
@@ -246,6 +254,22 @@
           "two": "kexp-live-session-2026.flac",
           "twoHost": "archive.org"
         }
+      }
+    },
+    "cli": {
+      "heading": "At home in a terminal, too.",
+      "lede": "The same engine as [one command]. Ctrl-C pauses it, resume picks it up, and scripts get [exit codes and JSON].",
+      "label": "A terminal running boltget get with a link: the progress bar, speed, connections and file map update until the file is saved and its checksum is checked.",
+      "caption": "A simulation of the command-line tool, sped up.",
+      "link": "Using the command line",
+      "term": {
+        "title": "boltget",
+        "prompt": "$",
+        "command": "boltget get https://cdn.example.com/atlas-4.2-x64.zip",
+        "file": "atlas-4.2-x64.zip",
+        "folder": "/home/you/Downloads",
+        "saved": "Saved /home/you/Downloads/atlas-4.2-x64.zip (1.25 GiB) in 26.8s, 47.76 MiB/s average, 8 connections, 11 segments",
+        "checksum": "Checksum OK (sha256:3f6a0c8e91d27b45e0c1f9a2d4b67e83c5a19f02e7d4b6c81a3f5e9d02c7b148)"
       }
     },
     "builtin": {
@@ -278,6 +302,38 @@
         }
       },
       "next": "Coming next: browser extension and video downloads."
+    },
+    "faq": {
+      "heading": "Questions, answered.",
+      "lede": "The short version of what people ask before they install.",
+      "items": {
+        "platforms": {
+          "q": "Does it run on macOS and Linux?",
+          "a": "The desktop app runs on Windows 10 and 11 today, and the command-line tool on Windows and Linux. The app for macOS and Linux is on the way."
+        },
+        "smartscreen": {
+          "q": "Why does Windows warn me when I open the installer?",
+          "a": "While Boltget is in preview, its installer isn't signed yet, so Windows SmartScreen asks once. Choose More info, then Run anyway. The SHA-256 of every file is published, so you can check what you downloaded.",
+          "link": "Download and checksums",
+          "href": "/download/"
+        },
+        "privacy": {
+          "q": "What does Boltget collect?",
+          "a": "Nothing. No telemetry, no ads, no account. It connects only to the links you give it, keeps your download list on your own disk, and its source code is public on GitHub under the GPL.",
+          "link": "Privacy",
+          "href": "/privacy/"
+        },
+        "compare": {
+          "q": "How does it compare with other download managers?",
+          "a": "We time it against another download manager, both at default settings, and publish every result with the method and the raw data. Where the runs overlap, we claim no difference.",
+          "link": "Benchmarks",
+          "href": "/benchmarks/"
+        },
+        "browser": {
+          "q": "Does it catch downloads from my browser?",
+          "a": "Not yet: a browser extension is coming next, with video downloads. Until then, paste a link, or turn on Offer copied links in Settings and the app offers the links you copy."
+        }
+      }
     },
     "cta": {
       "heading": "Faster from the first byte.",

@@ -1,0 +1,270 @@
+---
+// "Measured" on Home (docs/WEBSITE.md, Home as built): the newest published
+// benchmark run in one compact card. Every number is a median from
+// bench/results/<run>/summary.csv (src/lib/bench.ts), never typed in by hand.
+// Each test is one track: the other download manager's median in graphite,
+// Boltget's in ink over it, so the gap reads at a glance. A test whose runs
+// overlap says so instead of claiming a difference. Two columns on wide
+// screens: the words left, the card right.
+import Icon from "../Icon.astro";
+import { highlight } from "../../lib/rich";
+import { fixed, latestRun, rowOf, targetsOf, verdict } from "../../lib/bench";
+import { t, tDynamic } from "../../i18n";
+
+const run = latestRun();
+const tests = targetsOf(run).map((target) => {
+  const bolt = rowOf(run, target, "boltget", "auto");
+  const other = rowOf(run, target, "idm", "default");
+  const max = Math.max(bolt.medianS, other.medianS);
+  return {
+    label: tDynamic(`bench.targets.${target}`),
+    verdict: verdict(run, target),
+    bolt: fixed(bolt.medianS, 2),
+    other: fixed(other.medianS, 2),
+    boltPct: ((bolt.medianS / max) * 100).toFixed(2),
+    otherPct: ((other.medianS / max) * 100).toFixed(2),
+  };
+});
+const total = tests.length;
+const faster = tests.filter((x) => x.verdict === "faster").length;
+const summary = [
+  faster > 0 && t("home.proof.faster", { count: faster, total }),
+  tests.some((x) => x.verdict !== "faster") && t("home.proof.overlap"),
+]
+  .filter(Boolean)
+  .join(" ");
+---
+
+<div class="wrap grid">
+    <div class="words" data-reveal>
+      <h2 id="proof-title">{t("home.proof.heading")}</h2>
+      <p class="lede" set:html={highlight(t("home.proof.lede"))} />
+      <p class="summary">{summary}</p>
+      <p class="more">
+        <a href="/benchmarks/">{t("home.proof.link")}<Icon name="arrowRight" size={14} /></a>
+      </p>
+    </div>
+    <figure class="card" aria-label={t("home.proof.label")} data-reveal data-proof>
+      <p class="legend" aria-hidden="true">
+        <span><i class="key bolt"></i>{t("bench.series.boltget")}</span>
+        <span><i class="key other"></i>{t("bench.series.other")}</span>
+        <span class="unit">{t("home.proof.unit")}</span>
+      </p>
+      <ul class="tests">
+        {
+          tests.map((test, i) => (
+            <li style={`--i:${i}`}>
+              <p class="test">
+                <span>{test.label}</span>
+                {test.verdict !== "faster" && <span class="tag">{t("home.proof.same")}</span>}
+              </p>
+              <div class="line">
+                <span class="track" aria-hidden="true">
+                  <span class="bar other" style={`--w:${test.otherPct}%`} />
+                  <span class="bar bolt" style={`--w:${test.boltPct}%`} />
+                </span>
+                <p class="values">
+                  <span class="visually-hidden">{t("bench.series.boltget")}:</span>
+                  <span class="v bolt">{t("bench.seconds", { value: test.bolt })}</span>
+                  <span class="visually-hidden">{t("bench.series.other")}:</span>
+                  <span class="v other">{t("bench.seconds", { value: test.other })}</span>
+                </p>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </figure>
+</div>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    align-items: center;
+    gap: clamp(2.5rem, 6vw, 5.5rem);
+  }
+  h2 {
+    font-size: var(--type-section);
+    font-weight: 400;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+  .words .lede {
+    margin-top: 1.25rem;
+    max-width: 30rem;
+  }
+  .summary {
+    margin-top: 1.5rem;
+    max-width: 30rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid rgb(10 10 11 / 0.08);
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    color: var(--text-muted);
+  }
+  .more {
+    margin-top: 1.25rem;
+    font-size: 0.9375rem;
+  }
+  .more a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--ink);
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-color: rgb(10 10 11 / 0.25);
+    text-underline-offset: 0.3em;
+    transition: text-decoration-color 0.2s var(--ease-out);
+  }
+  .more a :global(svg) {
+    transition: transform 0.2s var(--ease-out);
+  }
+  .more a:hover {
+    text-decoration-color: currentColor;
+  }
+  .more a:hover :global(svg) {
+    transform: translateX(3px);
+  }
+
+  .card {
+    margin: 0;
+    padding: clamp(1.25rem, 3vw, 2rem) clamp(1.25rem, 3vw, 2.25rem) clamp(1.5rem, 3vw, 2.25rem);
+    border-radius: 20px;
+    background: linear-gradient(180deg, var(--white), var(--white) 60%, rgb(255 255 255 / 0.7));
+    box-shadow:
+      0 0 0 1px rgb(10 10 11 / 0.05),
+      0 1px 2px rgb(10 10 11 / 0.04),
+      0 24px 48px -28px rgb(10 10 11 / 0.22);
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1.25rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .key {
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 2px;
+  }
+  .key.bolt {
+    background: var(--ink);
+  }
+  .key.other {
+    background: var(--graphite-300);
+  }
+  .legend .unit {
+    margin-left: auto;
+    font-weight: 400;
+    color: var(--text-subtle);
+  }
+  .tests {
+    display: grid;
+    gap: 1.15rem;
+    margin: 1.5rem 0 0;
+    padding: 1.25rem 0 0;
+    list-style: none;
+    border-top: 1px solid rgb(10 10 11 / 0.07);
+  }
+  .test {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.6rem;
+    font-size: 0.875rem;
+    color: var(--ink-78);
+  }
+  .tag {
+    font-size: 0.75rem;
+    color: var(--text-subtle);
+  }
+  .line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.45rem;
+  }
+  .track {
+    position: relative;
+    display: block;
+    height: 0.5rem;
+    border-radius: 2px;
+    background: rgb(10 10 11 / 0.035);
+  }
+  .bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--w);
+    min-width: 3px;
+    border-radius: 2px;
+    transform-origin: left center;
+  }
+  .bar.other {
+    background: var(--graphite-300);
+  }
+  .bar.bolt {
+    background: linear-gradient(90deg, var(--graphite-800), var(--ink));
+    box-shadow: 0 1px 2px rgb(10 10 11 / 0.2);
+  }
+  .values {
+    display: flex;
+    gap: 0.75rem;
+    min-width: 8.5rem;
+    justify-content: flex-end;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .v.bolt {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .v.other {
+    color: var(--text-subtle);
+  }
+
+  /* The bars draw in once when the card scrolls in (with the reveal). */
+  :global(.reveal [data-proof]:not(.in) .bar) {
+    transform: scaleX(0);
+  }
+  :global(.reveal [data-proof] .bar) {
+    transition: transform 1.1s var(--ease-out);
+    transition-delay: calc(0.25s + var(--i) * 0.08s);
+  }
+  :global(.reveal [data-proof] .bar.bolt) {
+    transition-delay: calc(0.45s + var(--i) * 0.08s);
+  }
+
+  @media (max-width: 60rem) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .words {
+      text-align: center;
+      display: grid;
+      justify-items: center;
+    }
+  }
+  @media (max-width: 30rem) {
+    .legend .unit {
+      margin-left: 0;
+      width: 100%;
+    }
+    .values {
+      min-width: 0;
+      gap: 0.5rem;
+    }
+  }
+</style>

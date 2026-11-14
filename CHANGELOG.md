@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rebuilt the website around a light framed layout, self-hosted typography and an interactive demonstration of the Windows app. Download now starts with the installer and first-run instructions; benchmarks show one measured comparison with the method folded away.
 - Updated the install guide and privacy page for the desktop preview. Changelog and privacy have section navigation and a reading layout that adapts to smaller screens.
 - Retired the website design lab and the separate IDM comparison page; existing comparison links lead to benchmarks.
+- Polished the website: the hero's sky now fills the top of the page frame, every button shares one refined, softly lit style with gentle hover and press feedback, and Home adds the measured benchmark results, a terminal showing the command-line tool at work and a short list of common questions. Folds open smoothly, the header's links share a sliding highlight, copy buttons confirm with "Copied", and wheel scrolling is lightly smoothed (off under reduced motion).
 
 ## [0.2.0-preview.1] - 2026-11-07
 

@@ -90,15 +90,16 @@ const { windowsHref, class: className } = Astro.props;
     white-space: nowrap;
     pointer-events: none;
     opacity: 0;
-    transform: translate(-50%, 3px);
+    transform: translate(-50%, 4px) scale(0.96);
+    transform-origin: 50% 100%;
     transition:
-      opacity 0.14s linear,
-      transform 0.14s var(--ease-out);
+      opacity 0.18s var(--ease-out),
+      transform 0.22s var(--ease-out);
   }
   .off:hover::after,
   .off:focus-visible::after {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translate(-50%, 0) scale(1);
   }
   @media (prefers-reduced-motion: reduce) {
     .off::after {

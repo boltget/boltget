@@ -63,6 +63,12 @@ const ogImage = new URL("/og-image.png", Astro.site);
       </main>
       <Footer />
     </div>
+    <script>
+      import { smoothDetails } from "../lib/disclosure";
+      import { smoothScroll } from "../lib/smooth";
+      smoothDetails();
+      smoothScroll();
+    </script>
   </body>
 </html>
 
