@@ -80,7 +80,21 @@ name = "boltget-fuzz"
 version = "0.0.0"
 dependencies = [
  "boltget-engine",
+ "boltget-ipc",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "boltget-ipc"
+version = "0.2.0-preview.2"
+dependencies = [
+ "boltget-engine",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
