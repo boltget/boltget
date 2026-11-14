@@ -59,6 +59,43 @@ impl Cookie {
         }
     }
 
+    /// A cookie as a browser reports it (`cookies.getAll` in an extension):
+    /// for `domain` and its subdomains unless `host_only`, under `path`
+    /// (anything not starting with `/` is `/`), sent over `https` only when
+    /// `secure`, until `expires` (`None`: a session cookie). A leading dot
+    /// on `domain` is dropped, as RFC 6265 does.
+    pub fn from_browser(
+        name: &str,
+        value: &str,
+        domain: &str,
+        host_only: bool,
+        path: &str,
+        secure: bool,
+        expires: Option<SystemTime>,
+    ) -> Self {
+        Self {
+            name: name.to_owned(),
+            value: value.to_owned(),
+            domain: domain
+                .trim_start_matches('.')
+                .trim_end_matches('.')
+                .to_ascii_lowercase(),
+            host_only,
+            path: if path.starts_with('/') {
+                path.to_owned()
+            } else {
+                "/".into()
+            },
+            secure,
+            expires,
+        }
+    }
+
+    /// Whether the cookie has expired by `now`.
+    pub fn is_expired(&self, now: SystemTime) -> bool {
+        self.expired(now)
+    }
+
     /// The cookie's name.
     pub fn name(&self) -> &str {
         &self.name
@@ -325,6 +362,46 @@ mod tests {
     fn header(jar: &CookieJar, url: &str) -> Option<String> {
         jar.header_for(&u(url), SystemTime::now())
             .map(|v| v.to_str().unwrap().to_owned())
+    }
+
+    #[test]
+    fn browser_records() {
+        let mut jar = CookieJar::new();
+        jar.insert(Cookie::from_browser(
+            "sid",
+            "1",
+            ".Example.com",
+            false,
+            "/",
+            true,
+            None,
+        ));
+        jar.insert(Cookie::from_browser(
+            "host",
+            "2",
+            "dl.example.com",
+            true,
+            "/files",
+            false,
+            None,
+        ));
+        let past = UNIX_EPOCH + Duration::from_secs(1);
+        let old = Cookie::from_browser("old", "3", "example.com", false, "x", false, Some(past));
+        assert!(old.is_expired(SystemTime::now()));
+        jar.insert(old);
+        assert_eq!(
+            header(&jar, "https://dl.example.com/files/a.iso").as_deref(),
+            Some("host=2; sid=1")
+        );
+        assert_eq!(
+            header(&jar, "http://sub.dl.example.com/files/a").as_deref(),
+            None,
+            "host-only, and secure over http"
+        );
+        assert_eq!(
+            header(&jar, "https://example.com/").as_deref(),
+            Some("sid=1")
+        );
     }
 
     #[test]
