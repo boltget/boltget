@@ -11,3 +11,9 @@ Thumbs.db
 
 # Written by tauri-build on every build (capability schemas).
 apps/desktop/src-tauri/gen/
+
+# WXT (apps/extension): generated types and build output; Playwright reports.
+.wxt/
+.output/
+test-results/
+playwright-report/

@@ -1,0 +1,18 @@
+{
+  "extension_name": {
+    "message": "Boltget",
+    "description": "The extension's name in the browser and the stores."
+  },
+  "extension_name_dev": {
+    "message": "Boltget (development)",
+    "description": "The development build's name."
+  },
+  "extension_description": {
+    "message": "Sends your downloads to the Boltget download manager, with everything it needs to fetch them faster.",
+    "description": "The extension's description in the browser and the stores."
+  },
+  "extension_action_title": {
+    "message": "Boltget",
+    "description": "The toolbar button's tooltip."
+  }
+}

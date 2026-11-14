@@ -1,0 +1,48 @@
+{
+  "name": "@boltget/extension",
+  "private": true,
+  "version": "0.3.0",
+  "description": "The Boltget browser extension for Chrome, Edge and Firefox: hands downloads to the Boltget app over native messaging.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt --mode development",
+    "dev:firefox": "wxt --mode development -b firefox",
+    "build": "wxt build",
+    "build:dev": "wxt build --mode development",
+    "build:firefox": "wxt build -b firefox",
+    "build:firefox:dev": "wxt build -b firefox --mode development",
+    "build:edge": "wxt build -b edge",
+    "zip": "wxt zip && wxt zip -b firefox",
+    "icons": "node scripts/icons.mjs",
+    "postinstall": "wxt prepare",
+    "check": "node scripts/icons.mjs --check && wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "e2e": "wxt build --mode development && playwright test"
+  },
+  "dependencies": {
+    "@boltget/native-messaging": "workspace:*",
+    "@boltget/ui": "workspace:*",
+    "svelte": "5.57.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.1",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@types/node": "24.19.2",
+    "@wxt-dev/module-svelte": "2.0.5",
+    "eslint": "10.14.0",
+    "eslint-plugin-svelte": "3.23.1",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "prettier-plugin-svelte": "4.1.1",
+    "svelte-check": "4.7.7",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5",
+    "wxt": "0.21.5"
+  }
+}
