@@ -17,9 +17,12 @@ export const FIREFOX = import.meta.env.FIREFOX;
 /** The browser, for `hello` (the Chrome build also runs in Edge and others). */
 export function detectBrowser(): ProtocolBrowser {
   if (FIREFOX) return "firefox";
+  const data = (navigator as { userAgentData?: { brands?: { brand: string }[] } }).userAgentData;
+  const brands = data?.brands?.map((b) => b.brand) ?? [];
   const ua = navigator.userAgent;
-  if (/\bEdg\//.test(ua)) return "edge";
-  if (/\bChrome\//.test(ua)) return "chrome";
+  if (brands.includes("Microsoft Edge") || /\bEdg\//.test(ua)) return "edge";
+  // Headless builds say "HeadlessChrome/".
+  if (brands.some((b) => b.includes("Chrom")) || /Chrome\//.test(ua)) return "chrome";
   return "other";
 }
 
@@ -28,11 +31,14 @@ export function extensionVersion(): string {
   return browser.runtime.getManifest().version;
 }
 
+/** The stub host the end-to-end tests register (e2e/stub-host.mjs). */
+export const E2E_HOST_NAME = "app.boltget.native_host_e2e";
+
 /** A native messaging client for this build's host. */
 export function nativeClient(): NativeClient {
   return new NativeClient(
     (host, message) => browser.runtime.sendNativeMessage(host, message),
-    hostName(FLAVOR),
+    import.meta.env.MODE === "e2e" ? E2E_HOST_NAME : hostName(FLAVOR),
   );
 }
 
