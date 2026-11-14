@@ -44,6 +44,9 @@ jobs:
               # script reads the generated theme colours.
               - "apps/desktop/src-tauri/**"
               - "packages/ui/src/tokens/theme.json"
+              # The browser protocol's generated TypeScript and the extension
+              # ids the native host registers.
+              - "packages/native-messaging/**"
               # The engine's unit tests run the fuzz seed corpus.
               - "fuzz/**"
               - "Cargo.toml"

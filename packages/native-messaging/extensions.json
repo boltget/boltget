@@ -1,0 +1,13 @@
+{
+  "release": {
+    "host": "app.boltget.native_host",
+    "chromium": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+    "firefox": ["extension@boltget.app"]
+  },
+  "development": {
+    "host": "app.boltget.native_host_dev",
+    "chromium": ["fckefagfbiinebmgfpgjiielmmmaggbd"],
+    "chromiumKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArNphqD4XrQVoEmnRpBiFfVquovgvqNVbsxWwcy9/IL4gDlIfi/R5HG4grzLRAc0YoCz5tUYA7IV6IeRTEK27NcEQ8FZlt8iAKm25LWV9OjBad02UF5ykrJRKoTlhFgpZJvs4V46aojNig5pzHs2nBdkg9OYcZ+kQvOn3ZgzLJBLRve/3cQSEKUvlRPKDFbpFyBmmuADCxJVRam532qJVOwSrxjIs4+3PGjob4Y0IqacX4PF1dSABR7XyBJDK2dhYnnBOdwcVLfsMaazG1/nPutbZPNyya7Og0PEpT2CFBmMqXnflNwfMfr92K2Czfo8crSB8gf09Rut0RpI2Oc/W7wIDAQAB",
+    "firefox": ["extension-dev@boltget.app"]
+  }
+}

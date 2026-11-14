@@ -1,0 +1,42 @@
+[package]
+name = "boltget-native-host"
+description = "Boltget's native messaging host: the bridge the browser starts between the extension and the app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "boltget-native-host"
+path = "src/main.rs"
+
+[dependencies]
+boltget-engine.workspace = true
+boltget-ipc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+# The browsers' registry keys (src/registration.rs): a safe wrapper of the
+# registry API, already in the tree through Tauri's build.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+
+[dev-dependencies]
+boltget-ipc = { workspace = true, features = ["typescript"] }
+# TypeScript types of the browser protocol for the extension (tests/bindings.rs).
+# The same pinned versions as the desktop app's tauri-specta.
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+specta-serde = "=0.0.13"
+specta-typescript = "=0.0.13"
+sha2.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

@@ -194,7 +194,7 @@ pub struct Capture {
     pub filename: Option<String>,
     /// The size, when the browser knows it (`totalBytes` > 0).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "typescript", specta(type = Option<f64>))]
+    #[cfg_attr(feature = "typescript", specta(type = Option<u32>))]
     pub size: Option<u64>,
     /// The response's MIME type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -565,10 +565,7 @@ impl Reply {
 
     /// [`Reply::Unavailable`] with a diagnostic.
     pub fn unavailable(reason: UnavailableReason, message: impl Into<String>) -> Self {
-        Self::Unavailable(Unavailable {
-            reason,
-            message: message.into(),
-        })
+        Self::Unavailable(Unavailable::new(reason, message))
     }
 
     /// [`Reply::Error`] with a diagnostic.
@@ -634,7 +631,7 @@ pub struct CaptureRules {
     /// Capture at all.
     pub enabled: bool,
     /// The smallest download captured, in bytes, when its size is known.
-    #[cfg_attr(feature = "typescript", specta(type = f64))]
+    #[cfg_attr(feature = "typescript", specta(type = u32))]
     pub min_size: u64,
     /// File extensions captured, lowercase, without dots.
     pub extensions: Vec<String>,
@@ -673,7 +670,7 @@ impl Default for CaptureRules {
 #[non_exhaustive]
 pub struct Accepted {
     /// The new download's id, when the app added it at once.
-    #[cfg_attr(feature = "typescript", specta(type = Option<f64>))]
+    #[cfg_attr(feature = "typescript", specta(type = Option<u32>))]
     pub download: Option<u64>,
     /// The app asks the user first (its add sheet is open with the link).
     pub confirm: bool,
@@ -734,7 +731,7 @@ pub struct StatusReply {
     /// Downloads waiting in a queue.
     pub queued: u32,
     /// Bytes per second, all downloads together.
-    #[cfg_attr(feature = "typescript", specta(type = f64))]
+    #[cfg_attr(feature = "typescript", specta(type = u32))]
     pub speed: u64,
 }
 
@@ -758,6 +755,16 @@ pub struct Unavailable {
     pub reason: UnavailableReason,
     /// English diagnostic, for logs.
     pub message: String,
+}
+
+impl Unavailable {
+    /// No app, for `reason`, with a diagnostic.
+    pub fn new(reason: UnavailableReason, message: impl Into<String>) -> Self {
+        Self {
+            reason,
+            message: message.into(),
+        }
+    }
 }
 
 /// Why no app could be asked.

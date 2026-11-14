@@ -1,6 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["crates/engine", "crates/ipc", "crates/cli", "crates/testserver", "apps/desktop/src-tauri"]
+members = [
+    "crates/engine",
+    "crates/ipc",
+    "crates/cli",
+    "crates/native-host",
+    "crates/testserver",
+    "apps/desktop/src-tauri",
+]
 # Fuzz targets: their own workspace, built with nightly by cargo-fuzz
 # (docs/ENGINE.md, "Testing strategy").
 exclude = ["fuzz"]
@@ -18,6 +25,7 @@ publish = false
 [workspace.dependencies]
 boltget-engine = { path = "crates/engine" }
 boltget-ipc = { path = "crates/ipc" }
+boltget-native-host = { path = "crates/native-host" }
 boltget-testserver = { path = "crates/testserver" }
 
 anyhow = "1.0.100"

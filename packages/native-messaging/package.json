@@ -1,0 +1,16 @@
+{
+  "name": "@boltget/native-messaging",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The Boltget extension's native messaging protocol: TypeScript types generated from crates/ipc/src/browser.rs, and the extension ids the host registers.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/protocol.ts",
+    "./extensions.json": "./extensions.json"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check": "node scripts/generate.mjs --check"
+  }
+}

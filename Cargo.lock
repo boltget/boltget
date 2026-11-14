@@ -510,6 +510,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "boltget-native-host"
+version = "0.2.0-preview.2"
+dependencies = [
+ "boltget-engine",
+ "boltget-ipc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "specta",
+ "specta-serde",
+ "specta-typescript",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "winreg",
+]
+
+[[package]]
 name = "boltget-testserver"
 version = "0.2.0-preview.2"
 dependencies = [
