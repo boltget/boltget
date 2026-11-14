@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-preview.1] - 2026-11-14
+
+The first preview with the browser extension: downloads from Chrome, Edge and Firefox go to Boltget with the cookies and headers the site expects, and stay in the browser whenever Boltget can't take them.
+
 ### Added
 
 - The groundwork for the browser extension: a small helper, `boltget-native-host`, that Chrome, Edge and Firefox start to hand downloads to Boltget, with the browser's cookies and headers. The installer registers it with the three browsers for your account and removes it again on uninstall. If Boltget is not running, the first download from the browser starts it in the tray; if Boltget cannot take a download (a one-time link, a server that refuses it, no Boltget at all), the browser keeps it.
@@ -105,7 +109,8 @@ The first release: the download engine and the `boltget` command-line downloader
 - Project policies: GPL-3.0-or-later license, contributing guide, governance, support, security policy and code of conduct.
 - GitHub configuration: issue forms, pull request template, code owners, Dependabot, label taxonomy, and workflows for PR title and documentation link checks.
 
-[Unreleased]: https://github.com/boltget/boltget/compare/v0.2.0-preview.2...HEAD
+[Unreleased]: https://github.com/boltget/boltget/compare/v0.3.0-preview.1...HEAD
+[0.3.0-preview.1]: https://github.com/boltget/boltget/compare/v0.2.0-preview.2...v0.3.0-preview.1
 [0.2.0-preview.2]: https://github.com/boltget/boltget/compare/v0.2.0-preview.1...v0.2.0-preview.2
 [0.2.0-preview.1]: https://github.com/boltget/boltget/compare/v0.1.0...v0.2.0-preview.1
 [0.1.0]: https://github.com/boltget/boltget/releases/tag/v0.1.0

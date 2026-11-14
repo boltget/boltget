@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "boltget-cli"
-version = "0.2.0-preview.2"
+version = "0.3.0-preview.1"
 dependencies = [
  "anyhow",
  "boltget-engine",
@@ -433,7 +433,7 @@ dependencies = [
 
 [[package]]
 name = "boltget-desktop"
-version = "0.2.0-preview.2"
+version = "0.3.0-preview.1"
 dependencies = [
  "boltget-engine",
  "boltget-ipc",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "boltget-engine"
-version = "0.2.0-preview.2"
+version = "0.3.0-preview.1"
 dependencies = [
  "boltget-testserver",
  "bytes",
@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "boltget-ipc"
-version = "0.2.0-preview.2"
+version = "0.3.0-preview.1"
 dependencies = [
  "boltget-engine",
  "boltget-testserver",
@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "boltget-native-host"
-version = "0.2.0-preview.2"
+version = "0.3.0-preview.1"
 dependencies = [
  "boltget-engine",
  "boltget-ipc",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "boltget-testserver"
-version = "0.2.0-preview.2"
+version = "0.3.0-preview.1"
 dependencies = [
  "bytes",
  "http",
