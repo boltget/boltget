@@ -13,6 +13,13 @@ import {
   type Stub,
 } from "./fixtures";
 
+/** The version the build puts in the manifest, which hello reports. */
+const VERSION = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
+
 const MIB = 1024 * 1024;
 
 /** Waits for the browser to finish one download and checks its bytes. */
@@ -44,7 +51,7 @@ function noCapture(stub: Stub) {
 test("says hello when installed, as the browser it runs in", async ({ worker, stub }) => {
   expect(worker.url()).toContain("background.js");
   const hello = await eventually(() => stub.messages("hello")[0]);
-  expect(hello.message).toMatchObject({ v: 1, type: "hello", extension: "0.3.0" });
+  expect(hello.message).toMatchObject({ v: 1, type: "hello", extension: VERSION });
   expect(["chrome", "edge"]).toContain(hello.message.browser);
 });
 
