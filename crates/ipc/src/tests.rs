@@ -36,6 +36,7 @@ struct Recorder {
     changed: Mutex<Vec<(u64, String)>>,
     removed: Mutex<Vec<u64>>,
     limits: Mutex<Vec<Option<u64>>>,
+    browser: Mutex<Vec<(u32, &'static str)>>,
 }
 
 impl crate::Owner for Recorder {
@@ -50,6 +51,15 @@ impl crate::Owner for Recorder {
     }
     fn limit_changed(&self, bps: Option<u64>) {
         self.limits.lock().unwrap().push(bps);
+    }
+    fn browser(
+        &self,
+        _engine: Engine,
+        v: u32,
+        message: crate::browser::Message,
+    ) -> crate::BrowserReply {
+        self.browser.lock().unwrap().push((v, message.kind()));
+        Box::pin(async { crate::browser::Reply::Accepted(crate::browser::Accepted::added(42)) })
     }
 }
 
@@ -170,8 +180,120 @@ async fn hello_waits_for_the_engine_and_a_non_owner_sends_clients_away() {
     // Another process took the database: clients open it themselves.
     tx.send_replace(Ownership::NotOwner);
     assert!(Client::connect(&endpoint, "test").await.unwrap().is_none());
+    assert!(matches!(
+        Client::reach(&endpoint, "host", Some(crate::Role::Browser)).await,
+        Ok(crate::Reach::NotOwner)
+    ));
     task.abort();
     engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_native_host_relays_the_browser_and_nothing_else() {
+    use crate::browser::{Capture, ErrorReason, Message, Reply};
+
+    let owner = Owner::start().await;
+    let crate::Reach::Connected(mut host) =
+        Client::reach(&owner.endpoint, "host", Some(crate::Role::Browser))
+            .await
+            .unwrap()
+    else {
+        panic!("served")
+    };
+    let capture = Request::Browser {
+        v: 1,
+        message: Message::Capture(Capture::new("https://x.test/a.iso")),
+    };
+    let reply = host.request(&capture).await.unwrap();
+    assert!(
+        matches!(&reply, Response::Browser { reply: Reply::Accepted(a) } if a.download == Some(42)),
+        "{reply:?}"
+    );
+    assert_eq!(*owner.recorder.browser.lock().unwrap(), [(1, "capture")]);
+
+    // Checked again by the owner: an invalid message never reaches it.
+    let bad = Request::Browser {
+        v: 1,
+        message: Message::Capture(Capture::new("file:///C:/a.iso")),
+    };
+    let reply = host.request(&bad).await.unwrap();
+    assert!(
+        matches!(&reply, Response::Browser { reply: Reply::Error(e) } if e.reason == ErrorReason::Invalid),
+        "{reply:?}"
+    );
+    let newer = Request::Browser {
+        v: 9,
+        message: Message::Status(crate::browser::Status {}),
+    };
+    let reply = host.request(&newer).await.unwrap();
+    assert!(
+        matches!(&reply, Response::Browser { reply: Reply::Error(e) } if e.reason == ErrorReason::AppTooOld),
+        "{reply:?}"
+    );
+    assert_eq!(owner.recorder.browser.lock().unwrap().len(), 1);
+
+    // The host may not list, pause or add.
+    let reply = host.request(&Request::List).await.unwrap();
+    assert!(
+        matches!(&reply, Response::Error { error } if error.key == INVALID_REQUEST_KEY),
+        "{reply:?}"
+    );
+    // And the CLI may not pretend to be the browser.
+    let mut cli = owner.client().await;
+    let reply = cli.request(&capture).await.unwrap();
+    assert!(
+        matches!(&reply, Response::Error { error } if error.key == INVALID_REQUEST_KEY),
+        "{reply:?}"
+    );
+    assert_eq!(owner.recorder.browser.lock().unwrap().len(), 1);
+    owner.stop().await;
+}
+
+#[tokio::test]
+async fn an_owner_that_ignores_the_browser_declines() {
+    use crate::browser::{Message, RejectReason, Reply, Status};
+
+    let data = tempfile::tempdir().unwrap();
+    let endpoint = Endpoint::for_data_dir(data.path()).unwrap();
+    let server = Server::bind(endpoint.clone()).await.unwrap();
+    let engine = Engine::open(cfg(), data.path()).unwrap();
+    let (_tx, ownership) = tokio::sync::watch::channel(Ownership::Owner(engine.clone()));
+    let task = tokio::spawn(server.serve(ownership, Arc::new(()), "Boltget test".into()));
+    let crate::Reach::Connected(mut host) =
+        Client::reach(&endpoint, "host", Some(crate::Role::Browser))
+            .await
+            .unwrap()
+    else {
+        panic!("served")
+    };
+    let reply = host
+        .request(&Request::Browser {
+            v: 1,
+            message: Message::Status(Status {}),
+        })
+        .await
+        .unwrap();
+    assert!(
+        matches!(&reply, Response::Browser { reply: Reply::Rejected(r) } if r.reason == RejectReason::Unsupported),
+        "{reply:?}"
+    );
+    task.abort();
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_role_needs_version_3() {
+    let owner = Owner::start().await;
+    let mut io = transport::connect(&owner.endpoint).await.unwrap().unwrap();
+    let hello = Request::Hello {
+        v: 2,
+        client: "old".into(),
+        role: Some(crate::Role::Browser),
+    };
+    write_message(&mut io, &hello).await.unwrap();
+    let reply: Response = read_message(&mut io).await.unwrap().unwrap();
+    assert!(matches!(reply, Response::Error { .. }), "{reply:?}");
+    owner.stop().await;
 }
 
 #[tokio::test]
@@ -191,6 +313,7 @@ async fn a_client_of_another_version_is_told_why() {
     let hello = Request::Hello {
         v: 99,
         client: "boltget-cli 9.9".into(),
+        role: None,
     };
     write_message(&mut io, &hello).await.unwrap();
     let reply: Response = read_message(&mut io).await.unwrap().unwrap();

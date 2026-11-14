@@ -17,6 +17,14 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# TypeScript types of the browser protocol (`browser`), generated for the
+# extension by the native host's tests; off in every shipped build.
+specta = { version = "=2.0.0-rc.26", features = ["derive"], optional = true }
+
+[features]
+typescript = ["dep:specta"]
+# Exposes `boltget_ipc::browser::fuzz` for the fuzz target in `fuzz/`. Not an API.
+fuzzing = []
 
 # The pipe's security: its ACL, the user's SID in its name, and checks that
 # the other end is in the same session (src/platform/windows.rs).

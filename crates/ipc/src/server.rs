@@ -1,6 +1,8 @@
 //! The owner's side: accepts clients and runs their requests on the engine.
 
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,8 +13,9 @@ use boltget_engine::{
 };
 use tokio::sync::{broadcast, watch};
 
+use crate::browser::{self, ErrorReason, RejectReason, Reply};
 use crate::frame::{read_message, write_message};
-use crate::proto::{INVALID_REQUEST_KEY, NOT_OWNER_KEY, VERSION_ERROR_KEY};
+use crate::proto::{INVALID_REQUEST_KEY, NOT_OWNER_KEY, Role, VERSION_ERROR_KEY};
 use crate::transport::{BoxStream, Listener};
 use crate::{
     AddSpec, Endpoint, Error, Finished, OLDEST_SUPPORTED, PROTOCOL_VERSION, ProgressReport,
@@ -26,10 +29,27 @@ const STARTING_TIMEOUT: Duration = Duration::from_secs(8);
 /// How often [`Request::Watch`] reports progress.
 const WATCH_TICK: Duration = Duration::from_millis(500);
 
+/// The owner's answer to a browser message, when it is ready.
+pub type BrowserReply = Pin<Box<dyn Future<Output = Reply> + Send>>;
+
 /// What the owner learns about changes clients make that the engine does
-/// not announce as events, so its own view (the app's list) stays current.
-/// Everything has a default that does nothing.
+/// not announce as events, so its own view (the app's list) stays current,
+/// and what it answers the browser. Everything has a default.
 pub trait Owner: Send + Sync + 'static {
+    /// A message from the browser extension (already validated), at
+    /// extension protocol version `v`, with the engine it may use. The
+    /// default declines everything as [`RejectReason::Unsupported`].
+    fn browser(&self, engine: Engine, v: u32, message: browser::Message) -> BrowserReply {
+        let _ = (engine, v);
+        let kind = message.kind();
+        Box::pin(async move {
+            Reply::rejected(
+                RejectReason::Unsupported,
+                format!("this owner does not handle {kind}"),
+            )
+        })
+    }
+
     /// A download changed in the database without an engine event: paused
     /// while not running, given a new link, or given a new limit.
     fn changed(&self, summary: &DownloadSummary) {
@@ -118,6 +138,7 @@ struct Shared {
 struct Ctx {
     engine: Engine,
     owner: Arc<dyn Owner>,
+    role: Option<Role>,
 }
 
 /// The engine once it is open; `None` if this process does not own it.
@@ -153,10 +174,13 @@ async fn connection(
     shared: Arc<Shared>,
     mut ownership: watch::Receiver<Ownership>,
 ) {
-    let engine = match tokio::time::timeout(HELLO_TIMEOUT, read_message::<Request, _>(&mut io))
-        .await
+    let (engine, role) = match tokio::time::timeout(
+        HELLO_TIMEOUT,
+        read_message::<Request, _>(&mut io),
+    )
+    .await
     {
-        Ok(Ok(Some(Request::Hello { v, client }))) => {
+        Ok(Ok(Some(Request::Hello { v, client, role }))) => {
             if !(OLDEST_SUPPORTED..=PROTOCOL_VERSION).contains(&v) {
                 let msg = format!(
                     "{} speaks pipe protocol {}, {client} speaks {v}: use the same release of both",
@@ -174,12 +198,16 @@ async fn connection(
                 .await;
                 return;
             }
+            if role.is_some() && v < 3 {
+                let _ = send(&mut io, &refuse(invalid("roles need pipe protocol 3"))).await;
+                return;
+            }
             let Some(engine) = engine(&mut ownership).await else {
                 let msg = format!("{} does not own the downloads right now", shared.name);
                 let _ = send(&mut io, &refuse(WireError::protocol(NOT_OWNER_KEY, msg))).await;
                 return;
             };
-            tracing::debug!(client, v, "pipe client connected");
+            tracing::debug!(client, v, ?role, "pipe client connected");
             let hello = Response::Hello {
                 v,
                 server: shared.name.clone(),
@@ -187,7 +215,7 @@ async fn connection(
             if send(&mut io, &hello).await.is_err() {
                 return;
             }
-            engine
+            (engine, role)
         }
         Ok(Ok(Some(_))) => {
             let _ = send(&mut io, &refuse(invalid("the first message must be hello"))).await;
@@ -202,6 +230,7 @@ async fn connection(
     let ctx = Ctx {
         engine,
         owner: shared.owner.clone(),
+        role,
     };
     loop {
         let req = match read_message::<Request, _>(&mut io).await {
@@ -215,6 +244,26 @@ async fn connection(
             }
         };
         let sent = match req {
+            // The browser's host may relay the extension and nothing else;
+            // nobody else relays the extension.
+            Request::Browser { .. } if ctx.role != Some(Role::Browser) => {
+                send(
+                    &mut io,
+                    &refuse(invalid("browser messages come from the native host only")),
+                )
+                .await
+            }
+            Request::Browser { v, message } => {
+                let reply = ctx.browser(v, message).await;
+                send(&mut io, &Response::Browser { reply }).await
+            }
+            _ if ctx.role == Some(Role::Browser) => {
+                send(
+                    &mut io,
+                    &refuse(invalid("the native host may only relay the browser")),
+                )
+                .await
+            }
             Request::Watch { id } => watch(&mut io, &ctx, DownloadId(id)).await,
             req => {
                 let resp = ctx.handle(req).await;
@@ -239,10 +288,30 @@ impl Ctx {
             Request::Settings => self.settings().await,
             Request::SetLimit { id, bps } => self.set_limit(id.map(DownloadId), bps).await,
             Request::Hello { .. } => Err(invalid("hello was already said")),
+            // Handled by the connection.
+            Request::Browser { .. } => Err(invalid("not a browser connection")),
             // Handled by the connection, which streams it.
             Request::Watch { .. } => Err(invalid("watch cannot be nested")),
         };
         result.unwrap_or_else(refuse)
+    }
+
+    /// A browser message: checked again (the host checked it before
+    /// relaying), then answered by the owner.
+    async fn browser(&self, v: u32, message: browser::Message) -> Reply {
+        if !(browser::OLDEST_VERSION..=browser::VERSION).contains(&v) {
+            let reason = if v > browser::VERSION {
+                ErrorReason::AppTooOld
+            } else {
+                ErrorReason::ExtensionTooOld
+            };
+            return Reply::error(reason, format!("extension protocol {v} is not served"));
+        }
+        if let Err(e) = message.validate() {
+            return Reply::error(ErrorReason::Invalid, e.to_string());
+        }
+        tracing::debug!(kind = message.kind(), "browser message");
+        self.owner.browser(self.engine.clone(), v, message).await
     }
 
     async fn summary(&self, id: DownloadId) -> Result<DownloadSummary, WireError> {

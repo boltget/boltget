@@ -17,10 +17,11 @@ use serde::{Deserialize, Serialize};
 /// The protocol version this build speaks. It changes when a message changes
 /// meaning or a request gains a field (requests are strict); a response
 /// gaining a field does not change it.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// The oldest client version the owner still serves. Version 2 added
-/// [`AddSpec::queue`]; a version 1 client simply never sends it.
+/// [`AddSpec::queue`], version 3 [`Role`] in hello and
+/// [`Request::Browser`]; an older client simply never sends them.
 pub const OLDEST_SUPPORTED: u32 = 1;
 
 /// The key of the error an owner answers a client of another version with.
@@ -34,7 +35,7 @@ pub const NOT_OWNER_KEY: &str = "error.not_owner";
 pub const INVALID_REQUEST_KEY: &str = "error.invalid_request";
 
 /// A link for logs: no query, fragment or credentials.
-fn redact(url: &str) -> String {
+pub(crate) fn redact(url: &str) -> String {
     let cut = url.find(['?', '#']).unwrap_or(url.len());
     let (base, rest) = url.split_at(cut);
     let base = match base.split_once("://") {
@@ -63,6 +64,10 @@ pub enum Request {
         v: u32,
         /// Who is asking, for logs (`boltget-cli 0.2.0`).
         client: String,
+        /// What the client may ask (version 3): absent for the CLI's full
+        /// set, [`Role::Browser`] for the native host's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        role: Option<Role>,
     },
     /// Every download: [`Response::Downloads`].
     List,
@@ -105,6 +110,25 @@ pub enum Request {
         /// The download.
         id: u64,
     },
+    /// A message from the browser extension, relayed by the native host
+    /// (version 3; only on a [`Role::Browser`] connection):
+    /// [`Response::Browser`].
+    Browser {
+        /// The extension's protocol version ([`crate::browser::VERSION`]).
+        v: u32,
+        /// The message, as the host validated it.
+        message: crate::browser::Message,
+    },
+}
+
+/// What a connection may ask, said in hello.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Role {
+    /// The browser's native host: only [`Request::Browser`], which can
+    /// propose downloads and nothing else (docs/ARCHITECTURE.md, Security).
+    Browser,
 }
 
 const fn yes() -> bool {
@@ -371,6 +395,11 @@ pub enum Response {
     Progress(ProgressReport),
     /// The end of [`Request::Watch`]: the download stopped.
     Finished(Finished),
+    /// [`Request::Browser`]: the reply for the extension.
+    Browser {
+        /// The reply.
+        reply: crate::browser::Reply,
+    },
 }
 
 /// [`Response::Progress`].
@@ -558,6 +587,33 @@ mod tests {
     }
 
     #[test]
+    fn hello_names_a_role_only_for_the_browser() {
+        let old = json!({"type": "hello", "v": 2, "client": "boltget-cli 0.2.0"});
+        assert_eq!(
+            parse(old.clone()).unwrap(),
+            Request::Hello {
+                v: 2,
+                client: "boltget-cli 0.2.0".into(),
+                role: None
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(parse(old.clone()).unwrap()).unwrap(),
+            old,
+            "older owners never see a role"
+        );
+        let host = json!({"type": "hello", "v": 3, "client": "h", "role": "browser"});
+        assert!(matches!(
+            parse(host).unwrap(),
+            Request::Hello {
+                role: Some(Role::Browser),
+                ..
+            }
+        ));
+        assert!(parse(json!({"type": "hello", "v": 3, "client": "h", "role": "admin"})).is_err());
+    }
+
+    #[test]
     fn requests_are_strict() {
         assert!(parse(json!({"type": "pause", "id": 7, "force": true})).is_err());
         assert!(
@@ -568,6 +624,11 @@ mod tests {
             "nested specs too"
         );
         assert!(parse(json!({"type": "explode"})).is_err());
+        assert!(
+            parse(json!({"type": "browser", "v": 1, "message": {"type": "status", "x": 1}}))
+                .is_err(),
+            "browser messages too"
+        );
         assert!(parse(json!({"id": 7})).is_err());
     }
 
@@ -586,6 +647,18 @@ mod tests {
             Request::Hello {
                 v: PROTOCOL_VERSION,
                 client: "test".into(),
+                role: None,
+            },
+            Request::Hello {
+                v: PROTOCOL_VERSION,
+                client: "boltget-native-host".into(),
+                role: Some(Role::Browser),
+            },
+            Request::Browser {
+                v: crate::browser::VERSION,
+                message: crate::browser::Message::Capture(crate::browser::Capture::new(
+                    "https://x.test/a.iso",
+                )),
             },
             Request::Add(add),
             Request::Resume(resume),

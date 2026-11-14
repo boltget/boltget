@@ -18,12 +18,17 @@
 //!   [`Response::Error`] with the key `error.protocol_version`. Then one
 //!   request, one response, in turn; [`Request::Watch`] instead streams a
 //!   download's events and progress until it stops ([`proto`]).
+//! - **The browser.** The native host says hello as [`Role::Browser`]
+//!   and may then only relay the extension's messages
+//!   ([`Request::Browser`], answered by [`Owner::browser`]). Their protocol,
+//!   the one between the extension and the host, is [`browser`].
 //! - **Ownership.** The app serves its endpoint from the start; a hello
 //!   waits while its engine opens, and is refused with `error.not_owner`
 //!   while a standalone `boltget` holds the database ([`Ownership`]).
 //!
 //! The owner side is [`Server`]; the client side is [`Client`].
 
+pub mod browser;
 mod client;
 mod endpoint;
 pub mod frame;
@@ -37,13 +42,13 @@ mod transport;
 
 use std::io;
 
-pub use client::Client;
+pub use client::{Client, Reach};
 pub use endpoint::Endpoint;
 pub use proto::{
     AddSpec, Finished, OLDEST_SUPPORTED, PROTOCOL_VERSION, ProgressReport, RefreshSpec, Request,
-    RequestSpec, Response, ResumeSpec, WireError,
+    RequestSpec, Response, ResumeSpec, Role, WireError,
 };
-pub use server::{Owner, Ownership, Server};
+pub use server::{BrowserReply, Owner, Ownership, Server};
 
 /// Why talking over the pipe failed.
 #[derive(Debug, thiserror::Error)]
