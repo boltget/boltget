@@ -88,6 +88,10 @@ export default defineConfig({
   imports: false,
   modules: ["@wxt-dev/module-svelte"],
   manifest,
+  zip: {
+    artifactTemplate: "boltget-extension-{{version}}-{{browser}}{{modeSuffix}}.zip",
+    sourcesTemplate: "boltget-extension-{{version}}-sources{{modeSuffix}}.zip",
+  },
   vite: () => ({
     // packages/ui's fonts live in brand/ at the repository root.
     server: { fs: { allow: ["../.."] } },

@@ -1,0 +1,99 @@
+# Browser extension (apps/extension): icons freshness, svelte-check, ESLint,
+# Prettier, Vitest, the Chrome and Firefox builds, and the Playwright
+# end-to-end tests against a stub native host. Windows, the platform the
+# extension ships on first; the stub host is registered in HKCU for the
+# test's Chromium and removed again by the tests.
+name: Extension
+
+on:
+  pull_request:
+    paths:
+      - "apps/extension/**"
+      - "packages/native-messaging/**"
+      - "packages/ui/**"
+      - "brand/tokens/**"
+      - "brand/fonts/**"
+      - "brand/png/**"
+      - "crates/ipc/src/browser.rs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".node-version"
+      - ".github/workflows/extension.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/extension/**"
+      - "packages/native-messaging/**"
+      - "packages/ui/**"
+      - "brand/tokens/**"
+      - "brand/fonts/**"
+      - "brand/png/**"
+      - "crates/ipc/src/browser.rs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".node-version"
+      - ".github/workflows/extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: check, lint, test, build, e2e (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Version from "packageManager" in the root package.json.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install
+        # The extension and its workspace dependencies only.
+        run: pnpm install --frozen-lockfile --filter "@boltget/extension..."
+
+      - name: Check (icons, svelte-check, tsc)
+        run: pnpm --filter @boltget/extension check
+
+      - name: Lint (ESLint, Prettier)
+        run: pnpm --filter @boltget/extension lint
+
+      - name: Test (Vitest)
+        run: pnpm --filter @boltget/extension test
+
+      - name: Build and zip (Chrome/Edge, Firefox)
+        run: pnpm --filter @boltget/extension zip
+
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @boltget/extension exec playwright install chromium
+
+      - name: End-to-end (Playwright, stub host)
+        run: pnpm --filter @boltget/extension e2e
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: extension-playwright-report
+          path: |
+            apps/extension/playwright-report/
+            apps/extension/test-results/
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: boltget-extension
+          path: apps/extension/.output/*.zip
+          retention-days: 7
