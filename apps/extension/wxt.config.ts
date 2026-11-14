@@ -15,6 +15,13 @@ import { defineConfig, type ConfigEnv } from "wxt";
 import extensions from "../../packages/native-messaging/extensions.json" with { type: "json" };
 
 const ICON_SIZES = [16, 32, 48, 128] as const;
+// The toolbar button has its own icons, the arrow drawn solid per size
+// (scripts/icons.mjs), because the brand's gapped pixel arrow breaks up there.
+const TOOLBAR_SIZES = [16, 24, 32] as const;
+
+function toolbarIcons(variant: "toolbar" | "toolbar-on-dark"): Record<number, string> {
+  return Object.fromEntries(TOOLBAR_SIZES.map((size) => [size, `icons/${variant}-${size}.png`]));
+}
 
 function icons(variant: "icon" | "icon-on-dark"): Record<number, string> {
   return Object.fromEntries(ICON_SIZES.map((size) => [size, `icons/${variant}-${size}.png`]));
@@ -35,16 +42,16 @@ function manifest({ mode, browser }: ConfigEnv) {
     homepage_url: "https://boltget.app",
     icons: icons("icon"),
     action: {
-      default_icon: icons("icon"),
+      default_icon: toolbarIcons("toolbar"),
       default_title: "__MSG_extension_action_title__",
       // Firefox swaps the toolbar icon with its theme. Chromium has no
       // manifest equivalent; the background swaps it from what the popup
       // and options pages report (lib/icon.ts).
       ...(firefox
         ? {
-            theme_icons: ICON_SIZES.map((size) => ({
-              light: `icons/icon-${size}.png`,
-              dark: `icons/icon-on-dark-${size}.png`,
+            theme_icons: TOOLBAR_SIZES.map((size) => ({
+              light: `icons/toolbar-${size}.png`,
+              dark: `icons/toolbar-on-dark-${size}.png`,
               size,
             })),
           }

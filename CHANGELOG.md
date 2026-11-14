@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The browser extension's toolbar button shows a clear arrow instead of a grid of dots, at every display scale.
+
 ## [0.3.0-preview.1] - 2026-11-14
 
 The first preview with the browser extension: downloads from Chrome, Edge and Firefox go to Boltget with the cookies and headers the site expects, and stay in the browser whenever Boltget can't take them.

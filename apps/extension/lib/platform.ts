@@ -124,9 +124,9 @@ export async function takeNotice(): Promise<NoticeKey | null> {
 /** The toolbar icon for a dark or a light toolbar (Chromium; Firefox uses theme_icons). */
 export async function setToolbarIcon(dark: boolean): Promise<void> {
   if (FIREFOX) return;
-  const variant = dark ? "icon-on-dark" : "icon";
+  const variant = dark ? "toolbar-on-dark" : "toolbar";
   await browser.action.setIcon({
-    path: Object.fromEntries([16, 32].map((s) => [s, `/icons/${variant}-${s}.png`])),
+    path: Object.fromEntries([16, 24, 32].map((s) => [s, `/icons/${variant}-${s}.png`])),
   });
 }
 
