@@ -7,6 +7,10 @@
 //   pinned development key (so an unpacked Chromium build gets the ID in
 //   packages/native-messaging/extensions.json), host
 //   `app.boltget.native_host_dev`, and Firefox `extension-dev@boltget.app`.
+// - `wxt build --mode e2e` is the development flavor for the end-to-end tests
+//   (e2e/): it talks to `app.boltget.native_host_e2e`, a stub the tests
+//   register, and holds site access from the start, because a test cannot
+//   answer the browser's permission prompt.
 import { defineConfig, type ConfigEnv } from "wxt";
 import extensions from "../../packages/native-messaging/extensions.json" with { type: "json" };
 
@@ -18,6 +22,7 @@ function icons(variant: "icon" | "icon-on-dark"): Record<number, string> {
 
 function manifest({ mode, browser }: ConfigEnv) {
   const development = mode !== "production";
+  const e2e = mode === "e2e";
   const firefox = browser === "firefox";
   const ids = development ? extensions.development : extensions.release;
 
@@ -56,7 +61,7 @@ function manifest({ mode, browser }: ConfigEnv) {
       "activeTab",
     ],
     // Granted by the user during onboarding (options page), never at install.
-    optional_host_permissions: ["<all_urls>"],
+    ...(e2e ? { host_permissions: ["<all_urls>"] } : { optional_host_permissions: ["<all_urls>"] }),
     ...(firefox
       ? {
           browser_specific_settings: {
