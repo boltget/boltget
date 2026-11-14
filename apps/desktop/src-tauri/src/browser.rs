@@ -374,29 +374,44 @@ mod tests {
         c
     }
 
-    #[tokio::test]
-    async fn a_capture_starts_with_the_browsers_cookies() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_capture_downloads_with_the_browsers_cookies() {
         let srv = TestServer::start().await;
         let f = Fixture::new();
-        let reply = f
-            .send(
-                false,
-                Message::Capture(capture_of(srv.url("/data?size=65536"))),
-            )
-            .await;
+        f.engine
+            .start_queues(std::sync::Arc::new(boltget_engine::SystemClock));
+        // The server refuses every request without the cookie; several
+        // connections.
+        let url = srv.url("/cookie?need=sid%3Ds3cret&size=4194304&throttle=4194304");
+        let reply = f.send(false, Message::Capture(capture_of(url))).await;
         let Reply::Accepted(a) = reply else {
             panic!("{reply:?}")
         };
         assert!(!a.confirm);
         let id = a.download.expect("added at once");
-        let list = f.engine.list().await.unwrap();
-        assert!(list.iter().any(|d| d.id.0 == id));
-        let first = &srv.requests()[0];
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let done = loop {
+            let list = f.engine.list().await.unwrap();
+            let d = list.into_iter().find(|d| d.id.0 == id).expect("listed");
+            if d.state.is_terminal() {
+                break d;
+            }
+            assert!(Instant::now() < deadline, "still {}", d.state);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
         assert_eq!(
-            first.cookie.as_deref(),
-            Some("sid=s3cret"),
-            "the app's own request"
+            done.state,
+            boltget_engine::State::Completed,
+            "{:?}",
+            done.error
         );
+        // The app's own first request, the download's probe and every
+        // connection after it.
+        let reqs = srv.requests();
+        assert!(reqs.len() >= 3, "{reqs:?}");
+        for r in &reqs {
+            assert_eq!(r.cookie.as_deref(), Some("sid=s3cret"), "{r:?}");
+        }
         assert!(f.sheet.lock().unwrap().is_empty());
         f.engine.shutdown().await;
     }
