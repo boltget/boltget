@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the install guide and privacy page for the desktop preview. Changelog and privacy have section navigation and a reading layout that adapts to smaller screens.
 - Retired the website design lab and the separate IDM comparison page; existing comparison links lead to benchmarks.
 - Polished the website: the hero's sky now fills the top of the page frame, every button shares one refined, softly lit style with gentle hover and press feedback, and Home adds the measured benchmark results, a terminal showing the command-line tool at work and a short list of common questions. Folds open smoothly, the header's links share a sliding highlight, copy buttons confirm with "Copied", and wheel scrolling is lightly smoothed (off under reduced motion). The site now sets headlines in Red Hat Display and text in Red Hat Text.
+- The desktop app now uses the same type as the website, Red Hat Text with Red Hat Display for titles and large figures, tuned to stay crisp at small sizes, and its title bar icon is drawn as a vector so it stays sharp at every display scale.
 
 ## [0.2.0-preview.1] - 2026-11-07
 

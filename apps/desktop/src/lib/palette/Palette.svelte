@@ -323,8 +323,11 @@
     flex-direction: column;
     max-height: min(520px, 70vh);
   }
+  /* The box has only a max-height, so the list's flex basis resolves to its
+     content: the field and the footer must not shrink under a long list. */
   .search {
     display: flex;
+    flex: none;
     align-items: center;
     gap: var(--space-3);
     height: 48px;
@@ -418,6 +421,7 @@
 
   .footer {
     display: flex;
+    flex: none;
     gap: var(--space-4);
     padding: var(--space-2) var(--space-4);
     border-top: 1px solid var(--color-hairline);

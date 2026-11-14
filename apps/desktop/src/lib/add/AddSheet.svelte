@@ -875,9 +875,11 @@
   }
   .title {
     margin: 0;
+    font-family: var(--font-display);
     font-size: var(--text-15);
     line-height: var(--leading-15);
     font-weight: var(--weight-title);
+    letter-spacing: var(--tracking-15);
   }
 
   /* The link: Mono, one line until there are several. */

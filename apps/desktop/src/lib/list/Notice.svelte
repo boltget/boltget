@@ -61,6 +61,7 @@
     max-width: 420px;
   }
   .title {
+    font-family: var(--font-display);
     font-size: var(--text-15);
     line-height: var(--leading-15);
     font-weight: var(--weight-medium);

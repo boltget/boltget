@@ -277,9 +277,11 @@
   }
   .title {
     margin: 0 0 var(--space-4);
+    font-family: var(--font-display);
     font-size: var(--text-15);
     line-height: var(--leading-15);
     font-weight: var(--weight-title);
+    letter-spacing: var(--tracking-15);
   }
   .field {
     display: flex;
@@ -317,7 +319,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    font-weight: var(--weight-regular, 400);
+    font-weight: var(--weight-regular);
     color: var(--color-text-muted);
     font-size: var(--text-12);
   }

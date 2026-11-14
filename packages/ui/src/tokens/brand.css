@@ -30,4 +30,7 @@
   --motion-arrive-stagger: 0.12s;
   --motion-arrive-rise: 0.312s;
   --motion-arrive-rest: 0.15;
+  --font-family-display: "Red Hat Display";
+  --font-family-text: "Red Hat Text";
+  --font-family-mono: "Geist Mono";
 }

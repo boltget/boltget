@@ -19,6 +19,8 @@ import sharp from 'sharp';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = resolve(ROOT, '..');
 const FONT_DIR = join(ROOT, 'node_modules', 'geist', 'dist', 'fonts');
+/** Vendored font inputs that no npm package here provides (source/fonts). */
+const SOURCE_FONTS = join(ROOT, 'source', 'fonts');
 const out = (...p) => join(ROOT, ...p);
 
 /* ------------------------------------------------------------------------ */
@@ -53,6 +55,18 @@ const MOTION = {
   stagger: 0.12, // s, per row
   values: [0.15, 1, 1, 0.15],
   keyTimes: [0, 0.12, 0.85, 1],
+};
+
+/**
+ * Type (BRAND.md, Typography). Red Hat Display for headings and large
+ * figures, Red Hat Text for everything else, Geist Mono for code. The text
+ * face reads thin at its regular weight, so body copy sits at 450. The
+ * wordmark is outlined Geist SemiBold and does not follow these.
+ */
+const FONT = {
+  display: { family: 'Red Hat Display', weight: 600, tracking: -0.02 },
+  text: { family: 'Red Hat Text', weight: 450 },
+  mono: { family: 'Geist Mono', weight: 400 },
 };
 
 /*
@@ -230,9 +244,9 @@ const fonts = {};
 const font = (file) => (fonts[file] ??= opentype.loadSync(join(FONT_DIR, file)));
 const SANS = (w) => font(`geist-sans/Geist-${w}.ttf`);
 const MONO = (w) => font(`geist-mono/GeistMono-${w}.ttf`);
-/** Source Serif 4 ships to the site as woff2 only; fontkitten reads it. */
+/** Source Serif 4: the upright is a brand input only, the italic also ships on the site. fontkitten reads woff2. */
 const SERIF = (italic = false) =>
-  (fonts[`serif-${italic}`] ??= openFont(readFileSync(join(REPO, 'apps', 'web', 'src', 'fonts', `SourceSerif4-400${italic ? '-italic' : ''}-latin.woff2`))));
+  (fonts[`serif-${italic}`] ??= openFont(readFileSync(italic ? join(REPO, 'apps', 'web', 'src', 'fonts', 'SourceSerif4-400-italic-latin.woff2') : join(SOURCE_FONTS, 'SourceSerif4-400-latin.woff2'))));
 
 /** Optical kerning for the wordmark, in font units, added to the font's own GPOS kerning. */
 const WORDMARK = { weight: 'SemiBold', tracking: -0.025, adjust: { Bo: -6, lt: 12 } };
@@ -980,6 +994,7 @@ function buildTokens() {
     mark: { ink: INK, white: WHITE, onyx: ICON.onyx.tile, paper: ICON.paper.tile },
     gradient: { progress: PROGRESS_DARK, progressLight: PROGRESS_LIGHT },
     atmosphere: ATMOSPHERE,
+    font: FONT,
     motion: MOTION,
   };
   write(out('tokens/tokens.json'), JSON.stringify(tokens, null, 2) + '\n');
@@ -1000,8 +1015,12 @@ ${v(ATMOSPHERE, 'atmosphere')}
   --gradient-tile-paper: linear-gradient(180deg, ${ICON.paper.tile.join(', ')});
   --gradient-progress: linear-gradient(90deg, ${PROGRESS_DARK.map(([o, c]) => `${c} ${o * 100}%`).join(', ')});
   --gradient-progress-light: linear-gradient(90deg, ${PROGRESS_LIGHT.map(([o, c]) => `${c} ${o * 100}%`).join(', ')});
-  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-display: "${FONT.display.family}", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "${FONT.text.family}", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "${FONT.mono.family}", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-display-weight: ${FONT.display.weight};
+  --font-display-tracking: ${FONT.display.tracking}em;
+  --font-text-weight: ${FONT.text.weight};
   --motion-arrive-duration: ${MOTION.dur}s;
   --motion-arrive-stagger: ${MOTION.stagger}s;
 }
@@ -1017,20 +1036,21 @@ ${theme('light')}
 }
 
 function copyFonts() {
+  mkdirSync(out('fonts'), { recursive: true });
   const files = [
-    ['geist-sans/Geist-Regular.woff2', 'Geist-Regular.woff2'],
-    ['geist-sans/Geist-Medium.woff2', 'Geist-Medium.woff2'],
-    ['geist-sans/Geist-SemiBold.woff2', 'Geist-SemiBold.woff2'],
-    ['geist-mono/GeistMono-Regular.woff2', 'GeistMono-Regular.woff2'],
-    ['geist-mono/GeistMono-Medium.woff2', 'GeistMono-Medium.woff2'],
+    // Red Hat Display and Red Hat Text: variable latin subsets, vendored in source/fonts.
+    [join(SOURCE_FONTS, 'RedHatDisplay-latin.woff2'), 'RedHatDisplay-latin.woff2'],
+    [join(SOURCE_FONTS, 'RedHatText-latin.woff2'), 'RedHatText-latin.woff2'],
+    [join(SOURCE_FONTS, 'RedHat-OFL.txt'), 'RedHat-OFL.txt'],
+    // Geist Mono, from the geist package.
+    [join(FONT_DIR, 'geist-mono/GeistMono-Regular.woff2'), 'GeistMono-Regular.woff2'],
+    [join(FONT_DIR, 'geist-mono/GeistMono-Medium.woff2'), 'GeistMono-Medium.woff2'],
+    [join(ROOT, 'node_modules', 'geist', 'LICENSE.TXT'), 'Geist-OFL.txt'],
   ];
   for (const [from, to] of files) {
-    mkdirSync(out('fonts'), { recursive: true });
-    copyFileSync(join(FONT_DIR, from), out('fonts', to));
+    copyFileSync(from, out('fonts', to));
     written.push(`fonts/${to}`);
   }
-  copyFileSync(join(ROOT, 'node_modules', 'geist', 'LICENSE.TXT'), out('fonts', 'OFL.txt'));
-  written.push('fonts/OFL.txt');
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1057,17 +1077,16 @@ function buildPreview() {
 <title>Boltget brand kit</title>
 <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
 <style>
-@font-face{font-family:Geist;src:url(fonts/Geist-Regular.woff2) format("woff2");font-weight:400}
-@font-face{font-family:Geist;src:url(fonts/Geist-Medium.woff2) format("woff2");font-weight:500}
-@font-face{font-family:Geist;src:url(fonts/Geist-SemiBold.woff2) format("woff2");font-weight:600}
+@font-face{font-family:"Red Hat Display";src:url(fonts/RedHatDisplay-latin.woff2) format("woff2");font-weight:300 900}
+@font-face{font-family:"Red Hat Text";src:url(fonts/RedHatText-latin.woff2) format("woff2");font-weight:300 700}
 @font-face{font-family:"Geist Mono";src:url(fonts/GeistMono-Regular.woff2) format("woff2");font-weight:400}
 :root{--bg:${INK};--surface:${GRAPHITE[950]};--border:${GRAPHITE[800]};--text:${GRAPHITE[50]};--muted:${GRAPHITE[400]};--subtle:${GRAPHITE[500]};--accent:${WHITE}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--text);font:450 15px/1.55 "Red Hat Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:1180px;margin:0 auto;padding:56px 24px 96px}
 header{display:flex;align-items:center;gap:20px;margin-bottom:56px}
 header img{width:64px;height:64px}
-h1{font-weight:600;font-size:28px;letter-spacing:-.02em;margin:0}
+h1{font-family:"Red Hat Display",system-ui,sans-serif;font-weight:600;font-size:28px;letter-spacing:-.02em;margin:0}
 header p{margin:2px 0 0;color:var(--muted)}
 h2{font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-family:"Geist Mono",monospace;margin:72px 0 20px;padding-top:24px;border-top:1px solid var(--border)}
 h3{font-weight:500;font-size:15px;margin:28px 0 12px;color:var(--muted)}

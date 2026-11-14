@@ -3,9 +3,15 @@
    generated into ../tokens/theme.css. */
 :root {
   /* Type. 13 px for rows and controls, 12 px secondary, 15 px pane titles;
-     larger sizes only for empty states and settings headers (#25). */
-  --font-sans: "Geist", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+     larger sizes only for empty states and settings headers (#25). Red Hat
+     Text for everything; Red Hat Display for titles and big figures (15 px
+     and up); Geist Mono for URLs, hashes, headers and the log. The families
+     come from the brand tokens (../tokens/brand.css). */
+  --font-sans: var(--font-family-text), "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display:
+    var(--font-family-display), var(--font-family-text), "Segoe UI Variable Display", "Segoe UI",
+    system-ui, sans-serif;
+  --font-mono: var(--font-family-mono), ui-monospace, "Cascadia Mono", Consolas, monospace;
   --font-caption: "Segoe Fluent Icons", "Segoe MDL2 Assets";
   --text-12: 12px;
   --text-13: 13px;
@@ -15,12 +21,16 @@
   --leading-13: 18px;
   --leading-15: 20px;
   --leading-20: 28px;
-  --weight-regular: 400;
-  --weight-medium: 500;
+  /* Red Hat Text is light at 400 on screen at 12 to 13 px, so the steps sit a
+     little heavier than their names: 450, 550 and 600 (variable font). */
+  --weight-regular: 450;
+  --weight-medium: 550;
   --weight-title: 600;
-  /* Secondary 12 px text is 500 on dark so it holds its weight (#25). */
-  --weight-secondary: 400;
-  --tracking-20: -0.01em;
+  /* Secondary 12 px text is a step heavier on dark so it holds its weight (#25). */
+  --weight-secondary: 450;
+  /* Titles in Red Hat Display: 15 px pane titles, 20 px headers and figures. */
+  --tracking-15: -0.005em;
+  --tracking-20: -0.015em;
 
   /* Spacing: a 4 px grid. */
   --space-1: 4px;

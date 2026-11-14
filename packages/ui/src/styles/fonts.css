@@ -1,26 +1,22 @@
-/* Geist and Geist Mono (SIL OFL 1.1, brand/fonts/OFL.txt), served from brand/
-   so there is one copy of each file. `block` because the files are bundled with
-   the app: they load in milliseconds, and a fallback flash would be worse. */
+/* Red Hat Display, Red Hat Text and Geist Mono (SIL OFL 1.1, brand/fonts/
+   RedHat-OFL.txt and Geist-OFL.txt), served from brand/ so the app and the
+   website share one copy of each file. Red Hat comes as variable latin
+   subsets; characters outside them (other scripts in file names) fall back to
+   Segoe UI per glyph. `block` because the files are bundled with the app: they
+   load in milliseconds, and a fallback flash would be worse. */
 @font-face {
-  font-family: "Geist";
+  font-family: "Red Hat Text";
   font-style: normal;
-  font-weight: 400;
+  font-weight: 300 700;
   font-display: block;
-  src: url("../../../../brand/fonts/Geist-Regular.woff2") format("woff2");
+  src: url("../../../../brand/fonts/RedHatText-latin.woff2") format("woff2");
 }
 @font-face {
-  font-family: "Geist";
+  font-family: "Red Hat Display";
   font-style: normal;
-  font-weight: 500;
+  font-weight: 300 900;
   font-display: block;
-  src: url("../../../../brand/fonts/Geist-Medium.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Geist";
-  font-style: normal;
-  font-weight: 600;
-  font-display: block;
-  src: url("../../../../brand/fonts/Geist-SemiBold.woff2") format("woff2");
+  src: url("../../../../brand/fonts/RedHatDisplay-latin.woff2") format("woff2");
 }
 @font-face {
   font-family: "Geist Mono";

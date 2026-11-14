@@ -41,9 +41,10 @@
   }
   .title {
     margin: var(--space-4) 0 0;
+    font-family: var(--font-display);
     font-size: var(--text-20);
     line-height: var(--leading-20);
-    font-weight: var(--weight-medium);
+    font-weight: var(--weight-title);
     letter-spacing: var(--tracking-20);
   }
   .hint {

@@ -5,7 +5,7 @@
   0.31 s rise) and stay lit; `paused` holds them dim until the moment it
   should play (when the window appears). With reduced motion it is static.
 
-  For 24 px and up. Smaller sizes use the pixel-snapped icons in brand/svg.
+  For 24 px and up. The app icon on its tile, at any size, is AppMark.
   At 108 px (or 54 px) every square lands on whole pixels at 100% scale.
 -->
 <script lang="ts">

@@ -477,9 +477,11 @@
   }
   .name {
     margin: 0;
+    font-family: var(--font-display);
     font-size: var(--text-15);
     line-height: var(--leading-15);
     font-weight: var(--weight-title);
+    letter-spacing: var(--tracking-15);
     overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -602,10 +604,11 @@
   }
   .v b {
     color: var(--color-text);
+    font-family: var(--font-display);
     font-size: var(--text-20);
     line-height: var(--leading-20);
-    font-weight: var(--weight-medium);
-    letter-spacing: -0.02em;
+    font-weight: var(--weight-title);
+    letter-spacing: var(--tracking-20);
   }
 
   .block {

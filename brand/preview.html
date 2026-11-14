@@ -6,17 +6,16 @@
 <title>Boltget brand kit</title>
 <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
 <style>
-@font-face{font-family:Geist;src:url(fonts/Geist-Regular.woff2) format("woff2");font-weight:400}
-@font-face{font-family:Geist;src:url(fonts/Geist-Medium.woff2) format("woff2");font-weight:500}
-@font-face{font-family:Geist;src:url(fonts/Geist-SemiBold.woff2) format("woff2");font-weight:600}
+@font-face{font-family:"Red Hat Display";src:url(fonts/RedHatDisplay-latin.woff2) format("woff2");font-weight:300 900}
+@font-face{font-family:"Red Hat Text";src:url(fonts/RedHatText-latin.woff2) format("woff2");font-weight:300 700}
 @font-face{font-family:"Geist Mono";src:url(fonts/GeistMono-Regular.woff2) format("woff2");font-weight:400}
 :root{--bg:#0A0A0B;--surface:#111213;--border:#2E3033;--text:#F7F7F8;--muted:#A0A3A8;--subtle:#7D8086;--accent:#FFFFFF}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--text);font:450 15px/1.55 "Red Hat Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:1180px;margin:0 auto;padding:56px 24px 96px}
 header{display:flex;align-items:center;gap:20px;margin-bottom:56px}
 header img{width:64px;height:64px}
-h1{font-weight:600;font-size:28px;letter-spacing:-.02em;margin:0}
+h1{font-family:"Red Hat Display",system-ui,sans-serif;font-weight:600;font-size:28px;letter-spacing:-.02em;margin:0}
 header p{margin:2px 0 0;color:var(--muted)}
 h2{font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-family:"Geist Mono",monospace;margin:72px 0 20px;padding-top:24px;border-top:1px solid var(--border)}
 h3{font-weight:500;font-size:15px;margin:28px 0 12px;color:var(--muted)}

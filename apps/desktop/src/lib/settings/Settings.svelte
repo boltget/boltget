@@ -852,6 +852,7 @@
   }
   .title {
     margin: 0 0 var(--space-3);
+    font-family: var(--font-display);
     font-size: var(--text-20);
     line-height: var(--leading-20);
     font-weight: var(--weight-title);

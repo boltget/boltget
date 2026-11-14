@@ -3,11 +3,11 @@
    - Red Hat Display (variable, 300-900): headings and display figures.
    - Red Hat Text (variable, 300-700): body, ledes and UI.
      Both are the Google Fonts latin subsets of github.com/RedHatOfficial/RedHatFont;
-     licence in src/fonts/RedHat-OFL.txt.
+     served from brand/fonts (shared with the app); licence in brand/fonts/RedHat-OFL.txt.
    - Geist Mono 400: code only, from brand/fonts. */
 @font-face {
   font-family: "Red Hat Display";
-  src: url("../fonts/RedHatDisplay-latin.woff2") format("woff2");
+  src: url("../../../../brand/fonts/RedHatDisplay-latin.woff2") format("woff2");
   font-weight: 300 900;
   font-style: normal;
   font-display: swap;
@@ -15,7 +15,7 @@
 }
 @font-face {
   font-family: "Red Hat Text";
-  src: url("../fonts/RedHatText-latin.woff2") format("woff2");
+  src: url("../../../../brand/fonts/RedHatText-latin.woff2") format("woff2");
   font-weight: 300 700;
   font-style: normal;
   font-display: swap;

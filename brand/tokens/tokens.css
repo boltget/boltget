@@ -24,8 +24,12 @@
   --gradient-tile-paper: linear-gradient(180deg, #FFFFFF, #F3F4F5, #E1E3E6);
   --gradient-progress: linear-gradient(90deg, #7D8086 0%, #C4C6C9 50%, #FFFFFF 100%);
   --gradient-progress-light: linear-gradient(90deg, #7D8086 0%, #46484C 50%, #0A0A0B 100%);
-  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Red Hat Display", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-display-weight: 600;
+  --font-display-tracking: -0.02em;
+  --font-text-weight: 450;
   --motion-arrive-duration: 2.6s;
   --motion-arrive-stagger: 0.12s;
 }

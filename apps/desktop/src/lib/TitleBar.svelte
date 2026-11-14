@@ -4,20 +4,11 @@
   not a control drags the window; double-click maximizes.
 -->
 <script lang="ts">
+  import AppMark from "@boltget/ui/components/AppMark.svelte";
   import Button from "@boltget/ui/components/Button.svelte";
   import Keycap from "@boltget/ui/components/Keycap.svelte";
   import { t } from "@boltget/ui/messages";
   import { onMount } from "svelte";
-  import icon16 from "../../../../brand/svg/icon-16.svg";
-  import icon20 from "../../../../brand/svg/icon-20.svg";
-  import icon24 from "../../../../brand/svg/icon-24.svg";
-  import icon32 from "../../../../brand/svg/icon-32.svg";
-  import icon40 from "../../../../brand/svg/icon-40.svg";
-  import dark16 from "../../../../brand/svg/icon-on-dark-16.svg";
-  import dark20 from "../../../../brand/svg/icon-on-dark-20.svg";
-  import dark24 from "../../../../brand/svg/icon-on-dark-24.svg";
-  import dark32 from "../../../../brand/svg/icon-on-dark-32.svg";
-  import dark40 from "../../../../brand/svg/icon-on-dark-40.svg";
   import CaptionButtons from "./CaptionButtons.svelte";
   import Icon from "./Icon.svelte";
   import { app } from "./app.svelte";
@@ -84,26 +75,9 @@
 
 <header class="titlebar" class:inactive={!focused} data-tauri-drag-region="deep">
   <div class="brand">
-    <!-- The pixel-snapped app icon: the native design for each display scale,
-         Onyx on the light theme and its white twin on dark (CSS picks one). -->
-    <img
-      class="icon light"
-      src={icon16}
-      srcset="{icon16} 1x, {icon20} 1.25x, {icon24} 1.5x, {icon32} 2x, {icon40} 2.5x"
-      width="16"
-      height="16"
-      alt=""
-      draggable="false"
-    />
-    <img
-      class="icon dark"
-      src={dark16}
-      srcset="{dark16} 1x, {dark20} 1.25x, {dark24} 1.5x, {dark32} 2x, {dark40} 2.5x"
-      width="16"
-      height="16"
-      alt=""
-      draggable="false"
-    />
+    <!-- The app icon as a vector (AppMark): Onyx on light, its white twin on
+         dark. The window and taskbar keep the native per-size icons. -->
+    <AppMark size={20} />
     <span class="name">{t("app.name")}</span>
   </div>
 
@@ -144,24 +118,6 @@
     background: var(--color-chrome);
   }
 
-  /* The theme is data-theme on <html> when set, else the OS (base.css). */
-  .icon.dark {
-    display: none;
-  }
-  @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .icon.light {
-      display: none;
-    }
-    :global(:root:not([data-theme="light"])) .icon.dark {
-      display: block;
-    }
-  }
-  :global(:root[data-theme="dark"]) .icon.light {
-    display: none;
-  }
-  :global(:root[data-theme="dark"]) .icon.dark {
-    display: block;
-  }
   .brand {
     display: flex;
     align-items: center;
@@ -229,7 +185,7 @@
   }
 
   .inactive .name,
-  .inactive img {
+  .inactive .brand :global(.app-mark) {
     opacity: 0.6;
   }
 

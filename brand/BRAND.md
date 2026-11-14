@@ -300,12 +300,19 @@ swatches:
 
 | Role | Typeface | Notes |
 |---|---|---|
-| Everything | **Geist** (SIL OFL 1.1, by Vercel) | Weights 400 / 500 / 600. Avoid 700+ in UI |
-| Numbers, sizes, speeds, URLs, hashes, labels | **Geist Mono** | Tabular by nature, so download stats don't jitter. In the desktop app's dense lists, numbers use Geist with tabular figures (`tnum`) instead, and Mono is kept for URLs, hashes, headers and logs ([APP-DESIGN.md](../docs/APP-DESIGN.md)) |
+| Headlines, titles and large figures | **Red Hat Display** (SIL OFL 1.1, by Red Hat) | Weight 600, −0.02 em tracking on the web (the app's 15 and 20 px titles use −0.005 and −0.015 em). Variable, 300–900 |
+| Body, UI and everything else | **Red Hat Text** (SIL OFL 1.1, by Red Hat) | Reads thin at 400 on screen, so body text sits at **450**, emphasis at 550, titles at 600. Avoid 700+ in UI. Variable, 300–700 |
+| Code, URLs, hashes, headers and logs | **Geist Mono** (SIL OFL 1.1, by Vercel) | In the desktop app's dense lists, numbers use Red Hat Text with tabular figures (`tnum`), and Mono is kept for URLs, hashes, headers and logs ([APP-DESIGN.md](../docs/APP-DESIGN.md)) |
+| The wordmark | **Geist SemiBold**, outlined | Only inside the logo artwork (The wordmark, above); never set as live text |
 | Website ledes and the italic accent line | **Source Serif 4** (SIL OFL 1.1, by Adobe) | The website only, 400 and 400 italic, never in the app or for UI ([docs/WEBSITE.md](../docs/WEBSITE.md#character)) |
 
-The fonts are in `fonts/` (woff2 plus `OFL.txt`). They also come from the `geist`
-npm package or Google Fonts.
+The families, weights and tracking are tokens (`font` in `tokens/tokens.json`,
+`--font-display`, `--font-sans`, `--font-mono` and friends in `tokens.css`). The
+files are in `fonts/`, shared by the app and the website: Red Hat Display and
+Red Hat Text as variable Latin subsets (the Google Fonts subsets of
+[RedHatOfficial/RedHatFont](https://github.com/RedHatOfficial/RedHatFont),
+`RedHat-OFL.txt`) and Geist Mono 400 and 500 (`Geist-OFL.txt`). *Until
+November 2026 the brand set everything in Geist; it read as generic.*
 
 Suggested scale for the web and print. Headlines get tighter tracking as they grow. The desktop app uses its own compact scale (13 / 12 / 15 px), defined in [APP-DESIGN.md](../docs/APP-DESIGN.md#visual-system):
 
@@ -499,8 +506,9 @@ SVG. `apple-touch-icon.png` (180) and the avatars are full bleed;
 | `social/x-header.png` | 1500 × 500 | X / Twitter header |
 | `social/avatar-400.png`, `avatar-512.png`, `avatar.svg` | Avatars | GitHub org, social profiles |
 | `tokens/tokens.css`, `tokens/tokens.json` | Colour, gradient, font and motion tokens | App and website |
-| `fonts/*.woff2`, `fonts/OFL.txt` | Geist and Geist Mono (OFL) | Web, `preview.html` |
+| `fonts/*.woff2`, `fonts/*-OFL.txt` | Red Hat Display, Red Hat Text and Geist Mono (OFL) | App, website, `preview.html` |
 | `source/og-art.png`, `source/sky-master.webp` | Source art (not generated) | Input to the build |
+| `source/fonts/` | Red Hat woff2 and the upright Source Serif 4 (not generated; OFL beside them) | Input to the build: copied to `fonts/`, the serif outlined in the X header |
 | `preview.html` | Every asset on one page | Review |
 | `scripts/build.mjs` | Generator for everything above except `source/` | Rebuilding |
 
@@ -516,10 +524,10 @@ The build wipes and regenerates `icon.svg`, `icon-on-dark.svg`,
 `icon-animated.svg`, `svg/`, `png/`, `ico/`, `web/`, `social/`, `tokens/`,
 `fonts/` and `preview.html`; it never writes to `source/`. It fails if the
 maskable arrow would leave its safe zone. `@resvg/resvg-js` renders the
-images, `opentype.js` outlines Geist, `fontkitten` outlines Source Serif 4
-(the website's woff2), `sharp` reads the source art and the sky and
+images, `opentype.js` outlines Geist (the wordmark), `fontkitten` outlines
+Source Serif 4 (`source/fonts/` and the website's italic), `sharp` reads the source art and the sky and
 compresses the social PNGs, and the ICO encoder is built in. After changing
-colours, run `pnpm --filter @boltget/ui generate` so the app's tokens follow;
+colours or fonts, run `pnpm --filter @boltget/ui generate` so the app's tokens follow;
 after changing the web icons, `pnpm --filter @boltget/web brand` copies them
 into the site. The generated files are committed, so nobody needs to run the
 build just to use the assets.
