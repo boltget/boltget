@@ -30,6 +30,8 @@ pnpm --filter @boltget/desktop installer         # build the NSIS installer
 
 The installer is `target/x86_64-pc-windows-msvc/release/bundle/nsis/Boltget_<version>_x64-setup.exe`; the first build downloads NSIS into `%LOCALAPPDATA%	auri`. It installs for the current user without administrator rights; `/S` installs silently and `/D=<folder>` chooses the folder. The release workflow renames it to `boltget-<version>-windows-x64-setup.exe`. `BOLTGET_DATA_DIR` gives the app (any build) another data directory, as it does for the CLI.
 
+The installer also builds and installs the browsers' native messaging host, `boltget-native-host.exe`, and registers it. To try browser integration from source, build the host next to the development app and register it: `cargo build -p boltget-native-host`, then `target\debug\boltget-native-host.exe --register` (`--status` shows each browser, `--unregister` removes it). A debug build registers the development host name, `app.boltget.native_host_dev`, for the development extension only, so it never takes over an installed Boltget's registration ([BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#host-manifest)); Settings, Browser repairs the same registration from a running development app.
+
 ## Reproduce a release
 
 Releases are built by [`.github/workflows/release.yml`](../.github/workflows/release.yml) from a `vX.Y.Z` tag on `main`. To build the same binary yourself:

@@ -2,7 +2,7 @@
 
 The Boltget extension catches downloads in the browser and hands them to the Boltget app together with everything the app needs to fetch the same file (cookies, referrer, headers). It also detects media on pages and offers to send the page to the app. It does no downloading itself and contains no site-specific extraction logic.
 
-- Code: `apps/extension` (planned)
+- Code: `apps/extension` (planned); the native host is `crates/native-host`, its protocol `crates/ipc/src/browser.rs`
 - Framework: [WXT](https://wxt.dev), Manifest V3, TypeScript, Svelte 5 for the popup and options UI
 - Targets: Chrome, Microsoft Edge, Firefox. Other Chromium browsers (Brave, Vivaldi, Opera) are expected to work with the Chrome build but are not tested targets for v0.3.
 - Transport to the app: [native messaging](#native-messaging), never a localhost server
@@ -87,7 +87,13 @@ Manifest V3 extensions cannot block network requests with `webRequest`, so captu
 2. The extension **pauses** the browser download immediately, then asks the app.
 3. Only after the app replies "accepted" does the extension cancel and erase the browser's download. If the app is unreachable within a timeout (design target: 3 s including app launch), the download is resumed in the browser.
 
-Caveat: by the time the extension sees the download, the browser has already sent the request. For **one-time links** (a token valid for a single request), the app's request may then be refused. In that case the app replies `rejected: link_consumed` after its probe fails, and the extension resumes the browser's paused download, which still holds the original response. The user gets the file either way; it just isn't accelerated.
+Caveat: by the time the extension sees the download, the browser has already sent the request. For **one-time links** (a token valid for a single request), the app's request may then be refused. In that case the app replies `rejected` with the reason `link_refused` after its probe fails, and the extension resumes the browser's paused download, which still holds the original response. The user gets the file either way; it just isn't accelerated.
+
+> **Implemented (v0.3 step 1, the app's side; `apps/desktop/src-tauri/src/browser.rs`).** Before it answers a `capture`, the app makes its own first request for the link with the browser's cookies and headers (the engine's probe), within 4 s. A refusal (401, 403, 404, 410, 429 and the like: `link_refused`), any other failure, or no answer in time (`failed`) is a `rejected` reply, and the browser keeps its download: losing a download is worse than not accelerating it. Otherwise the download is added to the main queue in its category's folder and the reply is `accepted` with its id. This costs one extra request per capture (the engine probes again when the download starts); folding the two together is left for later.
+>
+> **"Ask before adding browser downloads"** (Settings, Browser; off by default, which keeps "zero mandatory decisions on add") opens the add sheet with the link instead, and the reply is `accepted` with `confirm: true` at once: the browser's copy is dropped as the sheet opens, as IDM does with its dialog, because the extension cannot wait for the user. The request context waits in the app's memory, by link, for 30 minutes (at most 5000 links): the sheet's preview and its Download button use it, so the cookies and headers are the browser's. Cancelling the sheet drops the download. `add_links` ("Download all links", a selection's links) always opens the add sheet with the links, which is the picker for now.
+>
+> Browser cookies are not saved with a download (no secret is stored before DPAPI encryption arrives, [ENGINE.md](ENGINE.md#request-context)): a captured download that is resumed after Boltget restarts runs without them, and asks for a new link if the server wants them. Private-window captures are treated like any other for now (the "never in history" setting is still to do).
 
 ### Firefox
 
@@ -106,6 +112,8 @@ Whether to use blocking `webRequest` on Firefox in v0.3 or keep a single code pa
 ## Capture rules
 
 Defaults (all editable in options, synced from the app's settings on `hello` so both agree):
+
+> **Implemented (v0.3 step 1):** the app answers `hello` with these defaults as `rules` (`enabled`, `min_size` 1 MiB, `extensions`, `never_sites`, `always_sites`, `private_windows`; `CaptureRules` in `crates/ipc/src/browser.rs`). Editing them in the app, so the extension's options and the app agree, is still to do; until then the extension keeps its own edits.
 
 | Rule | Default |
 |---|---|
@@ -156,7 +164,29 @@ Nothing is sent for downloads that are not captured. Nothing is stored by the ex
 
 ### Protocol
 
-Defined in [ARCHITECTURE.md, IPC and events](ARCHITECTURE.md#2-extension-to-app-native-messaging-through-the-host). Framing (browser-defined): each message is a 32-bit length in native byte order followed by UTF-8 JSON. Chromium limits messages from the host to the browser to 1 MB; messages to the host can be much larger, but Boltget's host rejects anything over 1 MiB anyway.
+Defined in [ARCHITECTURE.md, IPC and events](ARCHITECTURE.md#2-extension-to-app-native-messaging-through-the-host). Framing (browser-defined): each message is a 32-bit length in native byte order followed by UTF-8 JSON. Chromium limits messages from the host to the browser to 1 MB and sends a host at most 64 MiB; Boltget's host rejects anything over 1 MiB.
+
+> **Implemented (v0.3 step 1), protocol version 1.** The reference is `crates/ipc/src/browser.rs`; its TypeScript types are generated into `packages/native-messaging/src/protocol.ts` (package `@boltget/native-messaging`, regenerated with `pnpm --filter @boltget/native-messaging generate`; a test of `crates/native-host` fails while it is stale), which the extension imports instead of writing message shapes by hand.
+>
+> - **Envelope.** Every message is a JSON object with `v` (the protocol version, an integer), `type` and an optional `id` (an integer up to 2^32-1) that the reply carries back. Every reply has `v`, `type` and the same `id`.
+> - **Messages** (extension to host):
+>
+>   | `type` | Fields | Reply | Starts the app |
+>   |---|---|---|---|
+>   | `hello` | `extension` (its version), `browser` (`chrome`, `edge`, `firefox`, `other`) | `hello {app, host, oldest, current, rules}`; `app` and `rules` are `null` when the app is not running | no |
+>   | `capture` | `url`; optional `final_url`, `filename`, `size`, `mime`, `referrer`, `page_url`; `incognito`, `forced` (default false); `cookies`, `headers` (default empty) | `accepted`, `rejected`, `unavailable` or `error` | yes |
+>   | `add_links` | `links` (`[{url, text?}]`, 1 to 5000), optional `page_url` (also the referrer), `incognito`, `cookies`, `headers` | `accepted {confirm: true}` | yes |
+>   | `media_page` | `page_url`, optional `media_url`, `title`, `incognito`, `cookies`, `headers` | `rejected {reason: "unsupported"}` until v0.4 | yes |
+>   | `status` | none | `status {active, queued, speed}` | no |
+>
+>   A cookie is `{name, value, domain, path = "/", host_only, secure, http_only, same_site?, expires?}` as `cookies.getAll` reports it (`same_site`: `no_restriction`, `lax`, `strict`, `unspecified`; `expires` in seconds since 1970, absent for a session cookie). Headers are `[name, value]` pairs from the allowlist below, each name at most once. The app's request goes to `final_url` when there is one, with the browser's `Referer` header, else `referrer`, as the referrer.
+> - **Replies.** Only `accepted {download, confirm}` means the app took the download (`download`: its id when it was added at once; `confirm`: the add sheet asks the user). Every other reply means the browser keeps it: `rejected {reason, message}` (`link_refused`, `unsupported`, `failed`), `unavailable {reason, message}` (`not_running` for `status`, `not_installed` when the host finds no app to start, `timeout`, `busy` when a standalone `boltget` owns the downloads, `mismatch` when the host and the app are from different releases) and `error {reason, message}` (`invalid`, `too_large`, `extension_too_old`, `app_too_old`). `message` is an English diagnostic for logs, never UI text.
+> - **Strict and bounded.** An unknown `type` or field, or any value out of its limits, refuses the whole message with `error: invalid`: URLs (`url`, `final_url`, `referrer`, `page_url`, link URLs, `media_url`) must be `http`/`https` with a host and at most 32 KiB; file names, link texts and titles at most 1 KiB, a file name without `/`, `\` or control characters; MIME types and the extension's version at most 255 printable characters; at most 300 cookies and 64 KiB of cookie names and values, without `;` or control characters, with a valid domain and a path starting with `/`; header values at most 8 KiB, without CR or LF. A message over 1 MiB is skipped unread and answered with `error: too_large`, so the session stays in step; a frame over 64 MiB, or a stream cut inside a frame, ends the host. The version is checked before the shape, so a newer extension is told `app_too_old` rather than `invalid`. The host checks all of this before relaying, and the app checks it again. The host's reader is fuzzed (`fuzz/fuzz_targets/native_message.rs`, nightly; its seed corpus runs in `cargo test`).
+> - **Versions.** A request gaining a field changes the version; a reply gaining one does not (the extension ignores what it does not know). The host and app serve `oldest` to `current` (1 to 1 today).
+> - **Timing.** With the app running, a reply takes milliseconds plus the app's first request for a captured link (at most 4 s). When the host has to start the app it waits up to 8 s for it, then up to 6 s for the reply: **the extension's timeout must be at least 15 s**, longer than the 3 s design target above, or a late `accepted` would leave the file downloaded twice. A typical cold start answers in about 2 s.
+> - **One connection per download.** A message that may add a download (`capture`, `add_links`, `media_page`) always opens a new pipe connection, so a reply lost on a stale connection can never make the app add it twice; `hello` and `status` reuse the open one.
+> - **Starting the app.** The host starts `Boltget.exe --background` from its own folder (a development build's `boltget-desktop.exe` too; `BOLTGET_NATIVE_HOST_APP` names another), detached, with `CREATE_BREAKAWAY_FROM_JOB` so a browser's job object (Firefox runs hosts in one) does not end it with the host, falling back to starting it inside the job when the job forbids that. It reaches the app on the pipe of `BOLTGET_DATA_DIR` or the default data directory, like the CLI.
+> - **Not in version 1:** `refresh_link`. Browser-assisted link refresh ([ENGINE.md](ENGINE.md#link-refresh)) needs no message of its own: the app recognises the re-captured download (same name and size) when a `capture` arrives. That matching is not built yet.
 
 The background script uses `runtime.connectNative` while it needs a session (for example while the popup is open) and `runtime.sendNativeMessage` for one-off captures, because MV3 service workers are terminated when idle and must not depend on a long-lived port.
 
@@ -195,6 +225,13 @@ Firefox manifest (`app.boltget.native_host.firefox.json`):
 
 The Firefox extension ID is fixed in the manifest (`browser_specific_settings.gecko.id = "extension@boltget.app"`). Chromium IDs are assigned by each store; the Edge Add-ons ID differs from the Chrome Web Store ID, so both are listed. Development builds use a pinned development key and register a separate host name (`app.boltget.native_host_dev`) so a development extension cannot talk to a production install.
 
+> **Implemented (v0.3 step 1).** The extension IDs live in one file, `packages/native-messaging/extensions.json`, read by the host's registration (compiled in) and later by the extension's build:
+>
+> - `release`: host `app.boltget.native_host`, Chromium IDs `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` (Chrome Web Store) and `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb` (Edge Add-ons), which are **placeholders** to replace with the store-assigned IDs before the first store release (they are well-formed, so browsers accept the manifest, and belong to no extension), and Firefox `extension@boltget.app`.
+> - `development`: host `app.boltget.native_host_dev`, Chromium ID `fckefagfbiinebmgfpgjiielmmmaggbd`, pinned by the public key in `chromiumKey` (the development extension's `manifest.json` carries it as `key`; Chromium derives the ID from it, and a test checks that they match; an unpacked extension needs no private key, and none is kept), and Firefox `extension-dev@boltget.app`.
+>
+> Debug builds of the host register the development flavor, release builds the release one. The manifests are not shipped as files: the registration writes them next to the host (`<host name>.chrome.json`, `<host name>.firefox.json`) with the host's absolute path, so writing them again repairs a moved install.
+
 ### Native messaging host registration on Windows
 
 The installer writes one registry key per browser. The key's **default value** is the full path to the manifest file.
@@ -213,11 +250,15 @@ Other Chromium browsers (Brave, Vivaldi, Opera) may read Chrome's key or their o
 
 The uninstaller removes all keys and manifest files. The app's settings page has "Repair browser integration", which rewrites keys and manifests (useful after moving the install directory) and shows per-browser status.
 
+> **Implemented (v0.3 step 1, per-user only; `crates/native-host/src/registration.rs`).** `boltget-native-host --register` writes both manifests next to itself and the three HKCU keys (Chrome and Edge share the Chromium manifest), `--unregister` removes them, `--status` prints each browser's state. The NSIS installer ships the host next to `Boltget.exe` and runs `--register` after installing (updates included) and `--unregister` before uninstalling, then deletes the keys and manifests itself in case the host is gone ([RELEASE.md](RELEASE.md#installer)). Settings, Browser, lists Chrome, Edge and Firefox as Ready, Not registered, or Needs repair (the key points to another manifest, the manifest to another or a missing host, or it names other extensions than this release's), with a Repair button that runs the same registration for the host next to the app. The registry is written through `winreg` (safe Rust). `HKCU\Software` is shared by the 32- and 64-bit views, so one write serves both. Not done: the MSI's HKLM registration, and checking which other Chromium browsers read Chrome's key.
+
 macOS and Linux (post-1.0) use manifest files in each browser's `NativeMessagingHosts` directory instead of registry keys.
 
 ### Connection status
 
 The popup shows one of: Connected (app version), App not running (it will start when needed), App not installed (link to download), App too old (update), Extension too old (update). The options page has a "Test connection" button that sends `hello`.
+
+> **Mapping (v0.3 step 1):** a `hello` reply with `app` set is Connected; with `app: null`, App not running (the host answered, so Boltget is installed); no host at all (`runtime.lastError`, "Specified native messaging host not found") is App not installed; `error: app_too_old` is App too old; `error: extension_too_old` is Extension too old; `unavailable: mismatch` asks to reinstall Boltget.
 
 ## Media detection panel
 

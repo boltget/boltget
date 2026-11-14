@@ -94,12 +94,15 @@ Scope: `apps/extension`, native host binary, installer registration. See [BROWSE
 Exit criteria:
 
 - [ ] Native host registers for Chrome, Edge and Firefox from the installer (per-user), with "Repair browser integration" in settings
+  *Progress (2026-11-14, step 1):* `crates/native-host` (`boltget-native-host.exe`) relays the extension to the app's pipe and starts the app when a download arrives; it registers itself (`--register`), the installer ships it and runs that, and Settings, Browser shows each browser's state with Repair ([BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#native-messaging-host-registration-on-windows)). Tested with unit and process-level tests and a stand-in app. Still to do: real browsers talking to it (needs the extension), the store IDs in place of the placeholders, and an installed-build check that install, repair and uninstall leave the registry as expected.
 - [ ] Capture rules, size threshold, site lists and modifier-key bypass/force work as specified
 - [ ] Failed handoff always falls back to the browser download (tested with app missing, app hung, app rejecting, one-time links)
+  *Progress (2026-11-14, step 1):* the native side answers every message, and only `accepted` lets the browser drop its copy: tested for no app to start, an app that starts late, a refused link (403, 404, 410: the app's own first request fails, so it rejects) and invalid or oversized messages. The extension's half (pausing, resuming, its timeout) is the next step.
 - [ ] Context menus: link, selection, all links (with picker in the app)
 - [ ] Browser-assisted link refresh: re-starting an expired download in the browser offers to resume the existing one
 - [ ] Playwright end-to-end tests with a stub host run in CI; manual capture matrix passes on all three browsers
 - [ ] Message schema validated on both sides; fuzzing of the host decoder in CI
+  *Progress (2026-11-14, step 1):* protocol version 1 in `crates/ipc/src/browser.rs`, strict and bounded, checked by the host and again by the app, with generated TypeScript types in `packages/native-messaging` (CI fails when they are stale); the host's decoder is the fuzz target `native_message`, run nightly with the others. The extension's side of the validation is still to do.
 - [ ] Extension submitted to Chrome Web Store, Edge Add-ons and Firefox Add-ons (listing, privacy disclosures, permission justifications) and accepted (can be unlisted until v1.0)
 
 ## v0.4: Video

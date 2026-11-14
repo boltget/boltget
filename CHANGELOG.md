@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The groundwork for the browser extension: a small helper, `boltget-native-host`, that Chrome, Edge and Firefox start to hand downloads to Boltget, with the browser's cookies and headers. The installer registers it with the three browsers for your account and removes it again on uninstall. If Boltget is not running, the first download from the browser starts it in the tray; if Boltget cannot take a download (a one-time link, a server that refuses it, no Boltget at all), the browser keeps it. The extension itself comes next.
+- Settings, Browser: "Ask before adding browser downloads" opens the add sheet first instead of starting downloads from the browser at once, and "Browser integration" shows whether each browser can reach Boltget, with a Repair button for when it cannot (for example after moving Boltget).
+
 ## [0.2.0-preview.2] - 2026-11-14
 
 The second preview of the desktop app: Boltget's new black-and-white look, an icon that follows a light or dark taskbar, and new type throughout the app.

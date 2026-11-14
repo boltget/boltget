@@ -13,7 +13,7 @@ Status: design. Names of crates, types and tables are the intended names; they m
 | CLI | `crates/cli` | Rust | `boltget.exe` | Command-line front end; embeds the engine or talks to the running app |
 | Desktop backend | `apps/desktop/src-tauri` | Rust | inside `Boltget.exe` | Hosts the engine, exposes Tauri commands/events, tray, single-instance, updater, IPC server |
 | Desktop UI | `apps/desktop/src` | Svelte 5 + TS | bundled web assets | Everything the user sees in the window |
-| Native messaging host | `apps/desktop/src-tauri` (separate `[[bin]]`) | Rust | `boltget-native-host.exe` | Bridge spawned by the browser: stdio native messaging to the app's IPC pipe |
+| Native messaging host | `crates/native-host` | Rust | `boltget-native-host.exe` | Bridge spawned by the browser: stdio native messaging to the app's IPC pipe; registers itself with the browsers |
 | Browser extension | `apps/extension` | TS (WXT) | `.zip`/`.xpi` per store | Captures downloads, detects media, forwards cookies/headers |
 | Shared UI | `packages/ui` | Svelte 5 + TS | workspace package | Components and design tokens shared by app and website |
 | Website and docs | `apps/web` | Astro + Svelte, Starlight | static site | boltget.app; see [WEBSITE.md](WEBSITE.md) |
@@ -77,6 +77,8 @@ Browsers start native messaging hosts as a **new process per connection** (`runt
 4. Forward the message, relay the reply to stdout, and repeat until stdin closes.
 
 It never touches the database or the network itself. Keeping it a separate tiny binary (rather than making `Boltget.exe` the host) means the browser does not start a full WebView process every time the extension sends a message. Details of registration: [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#native-messaging-host-registration-on-windows).
+
+> **Implemented (v0.3 step 1).** The host is its own crate, `crates/native-host` (package and binary `boltget-native-host`), not a second `[[bin]]` of the desktop crate as first planned: it then links neither Tauri nor WebView2, builds and tests on Linux CI like the CLI, and the desktop app uses its registration code as a library for Settings. It reads with blocking stdio and runs the pipe client on a single-threaded Tokio runtime. If the pipe does not answer it starts `Boltget.exe --background` and retries with backoff (50 ms doubling to 400 ms) for up to 8 s, only for messages that bring a download (`hello` and `status` never start the app). Every failure becomes a reply that lets the browser keep the download; it exits when stdin closes (code 0) or the stream breaks (code 1). It has no `unsafe` code. The same binary takes `--register`, `--unregister` and `--status` for the installer and for support.
 
 ### The CLI (`boltget.exe`)
 
@@ -187,6 +189,8 @@ Request/response JSON with a `v` (protocol version) and `type`:
 | `settings` | app → ext (reply to `hello`) | Capture rules so the extension and app agree |
 
 Versioning: the protocol version is an integer. The app supports the current and previous version; the extension shows an "update Boltget" message if the app is older.
+
+> **Implemented (v0.3 step 1), version 1** ([BROWSER-INTEGRATION.md, Protocol](BROWSER-INTEGRATION.md#protocol) has the message shapes; the reference is `crates/ipc/src/browser.rs`, its TypeScript in `packages/native-messaging`). Changes against the table: the capture rules are the `rules` field of the `hello` reply rather than a `settings` message; `refresh_link` is not a message (the app matches a re-captured download instead); every message may carry an `id` the reply echoes. The browser's version is separate from the pipe's: the host relays each message as the pipe request `browser {v, message}` and the reply as `browser {reply}`, on a connection that said hello with `"role": "browser"` (pipe protocol 3), which may send nothing else.
 
 ### 3. CLI to app (named pipe)
 
@@ -453,6 +457,7 @@ The attack surface of a download manager is real: it parses untrusted network da
 - **Native messaging only.** No localhost HTTP/WebSocket server. A localhost server can be reached by any website the user visits (CSRF, DNS rebinding); native messaging can only be used by the extension IDs we list.
 - **Allowlisted origins.** The host manifest's `allowed_origins` (Chrome/Edge) and `allowed_extensions` (Firefox) contain only the published Boltget extension IDs. Development IDs are registered only by development builds.
 - **Schema validation.** Every message is deserialized into a strict Rust type (`#[serde(deny_unknown_fields)]`), with size limits (URLs ≤ 32 KiB, cookie headers ≤ 64 KiB, whole message ≤ 1 MiB). Invalid messages are rejected and logged.
+  - *Implemented (v0.3 step 1):* `boltget_ipc::browser::decode` in the host and `Message::validate` again in the app; the full list of limits is in [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#protocol). Only `http`/`https` URLs, only the allowlisted request headers, and nothing that names a path: the app chooses the folder. Invalid messages are answered with `error: invalid` (the browser keeps the download); the host writes diagnostics to stderr, which the browsers log. The decoder is fuzzed nightly.
 - **No privileged verbs.** Messages can only *propose* downloads. There is no message that runs a command, changes the destination to an arbitrary path outside the configured folders without user confirmation, or alters settings.
 - **Named pipe hardening.** The pipe is created with a DACL granting access only to the current user's SID, with `PIPE_REJECT_REMOTE_CLIENTS`, and the server verifies the client process belongs to the same session.
   - *Implemented (v0.2, `crates/ipc/src/platform/windows.rs`):* every instance is created with the security descriptor `O:<user SID>D:P(A;;GA;;;<user SID>)` (owned by the user; a protected DACL that grants the user everything and nobody else anything) and `PIPE_REJECT_REMOTE_CLIENTS`; the first instance with `FILE_FLAG_FIRST_PIPE_INSTANCE`, so a pipe someone else created first is noticed (the app then serves no pipe) rather than joined. The server drops a client whose session (`GetNamedPipeClientSessionId`) is not its own. Because names are global, the client checks the server too: same session (`GetNamedPipeServerSessionId`) and a pipe owned by the current user (`GetSecurityInfo`), so another user who created the name first cannot receive the CLI's headers or cookies. On Unix the socket is `0600` in the user's own runtime or data directory, and the server compares the client's uid (`SO_PEERCRED`) with its own.
