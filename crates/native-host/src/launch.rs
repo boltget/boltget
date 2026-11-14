@@ -20,13 +20,26 @@ const APP_NAMES: [&str; 2] = ["boltget-desktop", "Boltget"];
 /// The app to start: [`APP_ENV`] if set, else the first of the app's names
 /// that exists in `dir` (the host's own folder, which is the install
 /// folder). `None` when there is none.
+///
+/// Names match exactly, case included: Windows would otherwise take the
+/// command-line tool, `boltget.exe`, for `Boltget.exe` in a build folder
+/// where the two sit side by side (`target/debug`), and start that.
 pub fn find_app(dir: Option<&Path>, env: Option<OsString>) -> Option<PathBuf> {
     if let Some(path) = env.filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(path));
     }
     let dir = dir?;
+    let names: Vec<OsString> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|e| e.file_name()))
+        .collect();
     APP_NAMES
         .iter()
+        .filter(|name| {
+            names
+                .iter()
+                .any(|n| n.as_os_str() == std::ffi::OsStr::new(name))
+        })
         .map(|name| dir.join(name))
         .find(|p| p.is_file())
 }
@@ -105,6 +118,19 @@ mod tests {
             find_app(Some(dir.path()), Some(OsString::new())),
             Some(dir.path().join(APP_NAMES[0])),
             "an empty variable is unset"
+        );
+    }
+
+    #[test]
+    fn the_command_line_tool_is_not_the_app() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("boltget.exe"), b"").unwrap();
+        std::fs::write(dir.path().join("boltget"), b"").unwrap();
+        assert_eq!(find_app(Some(dir.path()), None), None);
+        std::fs::write(dir.path().join(APP_NAMES[1]), b"").unwrap();
+        assert_eq!(
+            find_app(Some(dir.path()), None),
+            Some(dir.path().join(APP_NAMES[1]))
         );
     }
 
