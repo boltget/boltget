@@ -1,4 +1,9 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "mainBinaryName": "Boltget"
+  "mainBinaryName": "Boltget",
+  "bundle": {
+    "resources": {
+      "../../../target/x86_64-pc-windows-msvc/release/boltget-native-host.exe": "boltget-native-host.exe"
+    }
+  }
 }

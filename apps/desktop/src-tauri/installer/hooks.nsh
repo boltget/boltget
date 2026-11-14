@@ -5,7 +5,34 @@
 ; with Windows" writes; when "Delete the application data" is ticked, also the
 ; WebView's data and window state (%LOCALAPPDATA% and %APPDATA%
 ; \app.boltget.desktop). These hooks remove what it leaves behind. None of
-; them runs on an update (/UPDATE), which must keep everything.
+; the removals runs on an update (/UPDATE), which must keep everything.
+
+; The browsers' native messaging host (docs/BROWSER-INTEGRATION.md, "Native
+; messaging host registration on Windows") is installed next to Boltget.exe
+; (tauri.installer.conf.json) and registers itself: its two manifests beside
+; it, and one key per browser under HKCU. Uninstalling removes both, also
+; when the host itself is gone. The host name is browser::HOST_NAME in
+; crates/ipc.
+!define NATIVE_HOST "app.boltget.native_host"
+
+!macro NSIS_HOOK_POSTINSTALL
+  ; Also on an update, which may have moved the install folder.
+  nsExec::Exec '"$INSTDIR\boltget-native-host.exe" --register'
+  Pop $0
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  ${If} $UpdateMode <> 1
+    nsExec::Exec '"$INSTDIR\boltget-native-host.exe" --unregister'
+    Pop $0
+    ; The same by hand, should the host be missing or fail.
+    DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\${NATIVE_HOST}"
+    DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${NATIVE_HOST}"
+    DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\${NATIVE_HOST}"
+    Delete "$INSTDIR\${NATIVE_HOST}.chrome.json"
+    Delete "$INSTDIR\${NATIVE_HOST}.firefox.json"
+  ${EndIf}
+!macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1

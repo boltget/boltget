@@ -10,7 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "installer": "tauri build --config src-tauri/tauri.installer.conf.json --target x86_64-pc-windows-msvc",
+    "installer": "cargo build --release --locked -p boltget-native-host --target x86_64-pc-windows-msvc && tauri build --config src-tauri/tauri.installer.conf.json --target x86_64-pc-windows-msvc",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc -p tsconfig.node.json",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
