@@ -35,12 +35,17 @@
     new Date(pausedUntil).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
   );
 
+  // A click can land before the stored settings arrive; what the user set
+  // then must not be overwritten by the older stored value.
+  let touchedCapture = false;
+  let touchedPause = false;
+
   onMount(() => {
     void reportColorScheme(matchMedia("(prefers-color-scheme: dark)").matches);
     void (async () => {
       const settings = await loadSettings(localStore);
-      captureOn = settings.captureOn;
-      pausedUntil = isPaused(settings, Date.now()) ? settings.pausedUntil : 0;
+      if (!touchedCapture) captureOn = settings.captureOn;
+      if (!touchedPause) pausedUntil = isPaused(settings, Date.now()) ? settings.pausedUntil : 0;
       notice = await takeNotice();
       access = await hasSiteAccess();
       status = await checkConnection();
@@ -50,17 +55,20 @@
   });
 
   async function setCapture(on: boolean) {
+    touchedCapture = true;
     captureOn = on;
     await saveSettings(localStore, { captureOn: on });
   }
 
   async function pause() {
+    touchedPause = true;
     pausedUntil = Date.now() + PAUSE_MS;
     now = Date.now();
     await saveSettings(localStore, { pausedUntil });
   }
 
   async function resume() {
+    touchedPause = true;
     pausedUntil = 0;
     await saveSettings(localStore, { pausedUntil: 0 });
   }

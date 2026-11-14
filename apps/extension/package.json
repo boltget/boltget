@@ -1,7 +1,7 @@
 {
   "name": "@boltget/extension",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "The Boltget browser extension for Chrome, Edge and Firefox: hands downloads to the Boltget app over native messaging.",
   "license": "GPL-3.0-or-later",
   "type": "module",

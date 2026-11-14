@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The browser extension's toolbar button shows a clear arrow instead of a grid of dots, at every display scale.
+- Pausing capture from the extension's popup right after opening it no longer springs back.
 
 ## [0.3.0-preview.1] - 2026-11-14
 
