@@ -25,7 +25,7 @@ use crate::queue::{
     self, Clock, DEFAULT_QUEUE, Queue, QueueChange, QueueId, QueueProblem, Shift, to_ms,
 };
 use crate::ratelimit::RateLimiter;
-use crate::request::{RequestContext, redact_url};
+use crate::request::{RequestContext, Secrets, redact_url};
 use crate::store::{DownloadSummary, Store, records};
 
 /// Attempts [`Engine::probe`] makes before it reports a transient failure.
@@ -371,6 +371,12 @@ struct Inner {
     store: Option<Store>,
     recovered: Vec<DownloadId>,
     sched: Scheduler,
+    /// What each download's request context holds only in memory (the
+    /// browser's cookies, `Authorization`), which its database record does
+    /// not: a download that starts from its record (from a queue, or resumed)
+    /// gets it back from here. Gone when the engine closes; dropped when the
+    /// download completes or is removed.
+    secrets: Mutex<HashMap<DownloadId, Secrets>>,
 }
 
 /// The queue scheduler's state (`docs/ENGINE.md`, "Queues").
@@ -492,6 +498,7 @@ impl Engine {
                 store,
                 recovered,
                 sched: Scheduler::default(),
+                secrets: Mutex::default(),
             }),
         })
     }
@@ -657,6 +664,7 @@ impl Engine {
         let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
         if let Some(store) = &self.inner.store {
             Self::record(store, id, &req);
+            self.keep_secrets(id, &req.ctx);
         }
         let shared = self.new_shared(id, req.speed_limit);
         self.downloads().insert(id, shared.clone());
@@ -680,6 +688,7 @@ impl Engine {
         req.start_at = None;
         let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
         Self::record(store, id, &req);
+        self.keep_secrets(id, &req.ctx);
         store.send("paused on add", move |c| {
             records::set_state(c, id, State::Paused, None)
         });
@@ -714,6 +723,7 @@ impl Engine {
         req.destination = absolute(req.destination);
         let id = DownloadId(self.inner.next_id.fetch_add(1, Ordering::Relaxed));
         Self::record(&store, id, &req);
+        self.keep_secrets(id, &req.ctx);
         let _ = self.inner.events.send(EngineEvent::Added {
             id,
             url: redact_url(req.ctx.url()),
@@ -748,6 +758,31 @@ impl Engine {
                 records::set_checksum(conn, id, Some(&pair))
             });
         }
+    }
+
+    fn secrets(&self) -> std::sync::MutexGuard<'_, HashMap<DownloadId, Secrets>> {
+        self.inner
+            .secrets
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Remembers what `ctx` holds only in memory, for when the download
+    /// starts from its record.
+    fn keep_secrets(&self, id: DownloadId, ctx: &RequestContext) {
+        if let Some(s) = ctx.secrets() {
+            self.secrets().insert(id, s);
+        }
+    }
+
+    /// Gives a context rebuilt from a record the secrets kept for it, then
+    /// keeps what it now holds.
+    fn restore_secrets(&self, id: DownloadId, ctx: &mut RequestContext) {
+        let kept = self.secrets().get(&id).cloned();
+        if let Some(s) = &kept {
+            ctx.restore(s);
+        }
+        self.keep_secrets(id, ctx);
     }
 
     fn new_shared(&self, id: DownloadId, speed_limit: Option<u64>) -> Arc<Shared> {
@@ -824,6 +859,7 @@ impl Engine {
         for (name, value) in &opts.cookies {
             ctx.cookie(name, value);
         }
+        self.restore_secrets(id, &mut ctx);
         let dest = PathBuf::from(&saved.requested_dest);
         let destination = if saved.requested_kind == "file" {
             Destination::File(dest)
@@ -939,6 +975,12 @@ impl Engine {
                 Err(e) => tracing::warn!(error = %e, "could not read the saved cookie file"),
             }
         }
+        // The browser's cookies (and `Authorization`) the download had are
+        // used too; any given with the new link replace them.
+        let kept = self.secrets().get(&id).cloned();
+        if let Some(s) = &kept {
+            ctx.restore(s);
+        }
         let connector = Connector::new(
             self.inner.env.tls.clone(),
             self.config(),
@@ -969,6 +1011,7 @@ impl Engine {
         store
             .call(move |c| records::apply_refresh(c, id, &refreshed))
             .await?;
+        self.keep_secrets(id, &ctx);
         Ok(crate::refresh::RefreshOutcome {
             id,
             evidence: accepted.evidence,
@@ -1059,6 +1102,7 @@ impl Engine {
                 Ok(s)
             })
             .await?;
+        self.secrets().remove(&id);
         let mut deleted = Vec::new();
         if delete_file {
             let mut paths: Vec<PathBuf> = summary.partial_path.into_iter().collect();
@@ -1750,6 +1794,14 @@ impl Drop for Finish {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&id);
+        if self.shared.state() == State::Completed {
+            // Secrets are not kept past completion (docs/ARCHITECTURE.md).
+            self.inner
+                .secrets
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&id);
+        }
         if self.inner.sched.clock.get().is_some() {
             self.inner
                 .sched

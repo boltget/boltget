@@ -335,7 +335,22 @@ impl Job {
 /// Entry point of the download task.
 pub(crate) async fn run(shared: Arc<Shared>, env: Env, job: Job) -> Result<Completed> {
     let started = Instant::now();
-    let result = run_inner(&shared, &env, job, started).await;
+    let cookies_lost = job.req.ctx.cookies_lost();
+    let mut result = run_inner(&shared, &env, job, started).await;
+    if cookies_lost
+        && let Err(e) = &result
+        && e.kind() == ErrorKind::LinkExpired
+    {
+        // Most likely the reason (the server wants the cookies): say so,
+        // and what helps.
+        let why = match e {
+            Error::LinkExpired(why) => why.clone(),
+            other => other.to_string(),
+        };
+        result = Err(Error::LinkExpired(format!(
+            "{why}; the browser's cookies for it are not kept after Boltget closes,              so download it again from the browser or give it a new link"
+        )));
+    }
     match &result {
         Ok(c) => {
             if let Some(store) = &shared.store {

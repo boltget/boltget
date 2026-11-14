@@ -168,6 +168,11 @@ impl CookieJar {
         self.cookies.is_empty()
     }
 
+    /// The cookies, for merging one jar into another.
+    pub(crate) fn into_cookies(self) -> Vec<Cookie> {
+        self.cookies
+    }
+
     /// Adds a cookie, replacing one with the same name, domain and path.
     pub fn insert(&mut self, cookie: Cookie) {
         self.cookies.retain(|c| !c.same_slot(&cookie));
