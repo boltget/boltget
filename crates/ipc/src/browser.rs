@@ -154,6 +154,16 @@ pub struct Hello {
     pub browser: Browser,
 }
 
+impl Hello {
+    /// A hello from `extension` in `browser`.
+    pub fn new(extension: impl Into<String>, browser: Browser) -> Self {
+        Self {
+            extension: extension.into(),
+            browser,
+        }
+    }
+}
+
 /// A browser, as the extension reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typescript", derive(Type))]
@@ -308,6 +318,17 @@ pub struct AddLinks {
 }
 
 impl AddLinks {
+    /// These links, with nothing else known.
+    pub fn new(links: Vec<Link>) -> Self {
+        Self {
+            links,
+            page_url: None,
+            incognito: false,
+            cookies: Vec::new(),
+            headers: Vec::new(),
+        }
+    }
+
     fn validate(&self) -> Result<(), Invalid> {
         if self.links.is_empty() {
             return Err(Invalid::new("links", "no links"));
