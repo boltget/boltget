@@ -1,0 +1,49 @@
+---
+// Structured data for search engines on Home: the site (WebSite), who makes
+// it (Organization) and the product (SoftwareApplication), with the version
+// and installer of the latest release resolved at build time like /download.
+import { assetOf, latestRelease, RELEASES_URL } from "../../lib/releases";
+
+const site = "https://boltget.app";
+const release = await latestRelease();
+const installer = assetOf(release, "app");
+
+const ld = JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${site}/#website`,
+      url: `${site}/`,
+      name: "Boltget",
+      publisher: { "@id": `${site}/#organization` },
+    },
+    {
+      "@type": "Organization",
+      "@id": `${site}/#organization`,
+      name: "Boltget",
+      url: `${site}/`,
+      logo: `${site}/icon-512.png`,
+      sameAs: ["https://github.com/boltget/boltget"],
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${site}/#app`,
+      name: "Boltget",
+      description:
+        "A download manager built for speed. Splits every file across many connections and picks up where it stopped, even after a crash.",
+      url: `${site}/`,
+      image: `${site}/og-image.png`,
+      applicationCategory: "UtilitiesApplication",
+      operatingSystem: "Windows 10, Windows 11",
+      ...(release ? { softwareVersion: release.version } : {}),
+      downloadUrl: installer?.url ?? RELEASES_URL,
+      license: "https://www.gnu.org/licenses/gpl-3.0.html",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      publisher: { "@id": `${site}/#organization` },
+    },
+  ],
+});
+---
+
+<script type="application/ld+json" set:html={ld} />
