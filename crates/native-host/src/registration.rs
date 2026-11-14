@@ -540,7 +540,7 @@ mod tests {
         );
         assert_eq!(
             m["allowed_origins"][0],
-            "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            "chrome-extension://aeobielfcjcidnadamggpnomipkijcbj/"
         );
         assert!(m.get("allowed_extensions").is_none());
         let f: serde_json::Value =

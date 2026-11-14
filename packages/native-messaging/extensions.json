@@ -1,7 +1,7 @@
 {
   "release": {
     "host": "app.boltget.native_host",
-    "chromium": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+    "chromium": ["aeobielfcjcidnadamggpnomipkijcbj", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
     "firefox": ["extension@boltget.app"]
   },
   "development": {
