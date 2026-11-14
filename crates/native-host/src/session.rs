@@ -90,6 +90,11 @@ impl Session {
                     ),
                 ),
             };
+            // The browser logs a host's stderr. The reason only: the
+            // message's own text may quote a value, which may be a secret.
+            if let Reply::Error(e) = &reply.reply {
+                eprintln!("boltget-native-host: refused a message ({:?})", e.reason);
+            }
             stdio::write_frame(output, &reply.to_json())?;
         }
         Ok(())
