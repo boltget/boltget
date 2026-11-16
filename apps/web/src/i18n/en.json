@@ -301,7 +301,7 @@
           "body": "Checksums are computed on the way in, so a damaged file never passes as done."
         }
       },
-      "next": "Coming next: browser extension and video downloads."
+      "next": "Coming next: video downloads."
     },
     "faq": {
       "heading": "Questions, answered.",
@@ -331,7 +331,9 @@
         },
         "browser": {
           "q": "Does it catch downloads from my browser?",
-          "a": "Not yet: a browser extension is coming next, with video downloads. Until then, paste a link, or turn on Offer copied links in Settings and the app offers the links you copy."
+          "a": "Yes, with the Boltget extension for Chrome; Edge and Firefox are on the way. It hands each download to the app with the cookies it needs, so files behind a sign-in work too.",
+          "link": "Get the extension",
+          "href": "/download/#extension"
         }
       }
     },
@@ -395,6 +397,12 @@
       "step1": "Choose More info,",
       "step2": "then Run anyway.",
       "note": "While Boltget is in preview the installer isn't signed yet, so Windows asks once. Choose More info, then Run anyway."
+    },
+    "extension": {
+      "heading": "Catch downloads from your browser",
+      "body": "With the extension, downloads you start in the browser go straight to Boltget, signed-in ones included. Install the app first.",
+      "chrome": "Add to Chrome",
+      "soon": "Edge and Firefox are on the way."
     },
     "terminal": {
       "heading": "Prefer the terminal?",

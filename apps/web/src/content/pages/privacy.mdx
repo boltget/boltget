@@ -29,9 +29,9 @@ Boltget collects nothing about you by default. This page says exactly what each 
 - The command-line tool talks to the running app through a local named pipe; this does not send your download list to a Boltget server.
 - Uninstalling can remove the app's saved data if you select that option. Files you downloaded stay on your disk.
 
-## The browser extension (coming soon)
+## The browser extension
 
-The extension for Chrome, Edge and Firefox is built and will reach the browser stores soon. This is how it handles your data:
+The extension is available for Chrome, with Edge and Firefox to follow. This is how it handles your data:
 
 - It talks only to the Boltget app on your own computer, through the browser's native messaging. It has no server of its own, sends no telemetry, shows no ads and loads no remote code.
 - When it hands a download to the app, it sends what the app needs to fetch the same file: the link, the file name and size the browser reported, the page it came from, and, if you granted site access, the cookies for that link and a short list of request headers (such as the browser's user agent and the referring page). Nothing else from the page is read.

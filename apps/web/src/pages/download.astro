@@ -12,6 +12,8 @@ import SmartScreen from "../components/SmartScreen.astro";
 import { t } from "../i18n";
 import { assetOf, latestRelease, RELEASES_URL, versionParts, type Asset } from "../lib/releases";
 
+const CHROME_STORE_URL = "https://chromewebstore.google.com/detail/boltget/aeobielfcjcidnadamggpnomipkijcbj";
+
 const release = await latestRelease();
 const app = assetOf(release, "app");
 const cliWindows = assetOf(release, "cli-windows");
@@ -90,7 +92,16 @@ const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-set
       <p class="note">{t("download.smartscreen.note")}</p>
     </section>
 
-    <section class="terminal" aria-labelledby="terminal">
+    <section class="card extension" aria-labelledby="extension">
+      <h2 id="extension">{t("download.extension.heading")}</h2>
+      <p class="card-lede">{t("download.extension.body")}</p>
+      <p class="store">
+        <a class="button button-primary" href={CHROME_STORE_URL}>{t("download.extension.chrome")}</a>
+        <span>{t("download.extension.soon")}</span>
+      </p>
+    </section>
+
+    <section class="card terminal" aria-labelledby="terminal">
       <h2 id="terminal">{t("download.terminal.heading")}</h2>
       <p class="card-lede">{t("download.terminal.body")}</p>
       {
@@ -256,7 +267,19 @@ const hashFile = app?.name ?? cliWindows?.name ?? "boltget-X.Y.Z-windows-x64-set
     color: var(--text-muted);
   }
 
-  .terminal {
+  .store {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    margin-top: 1.5rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+  .card.terminal {
+    margin-top: 1.5rem;
+  }
+  .card {
     margin-top: clamp(4rem, 9vw, 6rem);
     padding: clamp(1.5rem, 4vw, 2.25rem);
     border-radius: 20px;

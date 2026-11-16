@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The browser extension is on the [Chrome Web Store](https://chromewebstore.google.com/detail/boltget/aeobielfcjcidnadamggpnomipkijcbj), linked from the download page.
+
 ### Fixed
 
 - The browser extension's toolbar button shows a clear arrow instead of a grid of dots, at every display scale.
