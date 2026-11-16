@@ -6,6 +6,7 @@
 import { t } from "@boltget/ui/messages";
 import type { AppSettings, Category as CategorySetting, CategoryId } from "../bindings";
 import { DEFAULT_CATEGORIES, extensionOf } from "../list/category";
+import { DEFAULT_CAPTURE } from "./capture";
 
 export const MIB = 1024 * 1024;
 export const MAX_CONNECTIONS = 32;
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startWithWindows: false,
   clipboard: false,
   browserAsk: false,
+  capture: DEFAULT_CAPTURE,
 };
 
 export type Check<T> = { ok: true; value: T } | { ok: false; problem: string };

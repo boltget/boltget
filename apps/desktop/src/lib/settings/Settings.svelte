@@ -42,6 +42,7 @@
     parseSpeedLimit,
   } from "./model";
   import { ROWS, SECTIONS, searchRows, type RowId, type SectionId } from "./registry";
+  import CaptureRows from "./CaptureRows.svelte";
   import SettingRow from "./SettingRow.svelte";
   import Toasts from "../Toasts.svelte";
 
@@ -721,6 +722,8 @@
                 {/if}
               </SettingRow>
             {/if}
+
+            <CaptureRows capture={s.capture} {shown} {highlighted} {problems} {problem} {save} />
 
             {#if shown.has("browser_ask")}
               <SettingRow

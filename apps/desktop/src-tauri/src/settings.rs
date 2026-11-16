@@ -12,6 +12,10 @@
 use std::path::Path;
 
 use boltget_engine::{Engine, NoProxy, Proxy, ProxyRules};
+use boltget_ipc::browser::{
+    CaptureRules, MAX_MIN_SIZE, MAX_RULE_EXTENSIONS, MAX_RULE_SITES, normalise_extension,
+    normalise_site,
+};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -138,6 +142,60 @@ pub(crate) enum ThemeSetting {
     Dark,
 }
 
+/// What the browser extension hands over (docs/BROWSER-INTEGRATION.md,
+/// "Capture rules"): the protocol's [`CaptureRules`] as the page sees them.
+/// The `hello` answer carries them to the extension. Stored as one value
+/// ([`stored_capture`] reads it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CaptureSettings {
+    /// Capture at all.
+    pub(crate) enabled: bool,
+    /// The smallest download captured when its size is known, in bytes.
+    pub(crate) min_size: u64,
+    /// File types captured, lowercase, without dots.
+    pub(crate) extensions: Vec<String>,
+    /// Sites never captured (a site includes its subdomains).
+    pub(crate) never_sites: Vec<String>,
+    /// Sites always captured, whatever the type and size.
+    pub(crate) always_sites: Vec<String>,
+    /// Capture in private windows too.
+    pub(crate) private_windows: bool,
+}
+
+impl Default for CaptureSettings {
+    fn default() -> Self {
+        Self::from(&CaptureRules::default())
+    }
+}
+
+impl From<&CaptureRules> for CaptureSettings {
+    fn from(r: &CaptureRules) -> Self {
+        Self {
+            enabled: r.enabled,
+            min_size: r.min_size,
+            extensions: r.extensions.clone(),
+            never_sites: r.never_sites.clone(),
+            always_sites: r.always_sites.clone(),
+            private_windows: r.private_windows,
+        }
+    }
+}
+
+impl CaptureSettings {
+    /// The rules as the protocol sends them.
+    pub(crate) fn rules(&self) -> CaptureRules {
+        let mut r = CaptureRules::default();
+        r.enabled = self.enabled;
+        r.min_size = self.min_size;
+        r.extensions.clone_from(&self.extensions);
+        r.never_sites.clone_from(&self.never_sites);
+        r.always_sites.clone_from(&self.always_sites);
+        r.private_windows = self.private_windows;
+        r
+    }
+}
+
 /// Every setting, as the page sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -170,6 +228,8 @@ pub(crate) struct AppSettings {
     /// starting (off by default: docs/BROWSER-INTEGRATION.md, "Capture
     /// flow").
     pub(crate) browser_ask: bool,
+    /// What the browser extension hands over.
+    pub(crate) capture: CaptureSettings,
 }
 
 impl Default for AppSettings {
@@ -186,6 +246,7 @@ impl Default for AppSettings {
             start_with_windows: false,
             clipboard: false,
             browser_ask: false,
+            capture: CaptureSettings::default(),
         }
     }
 }
@@ -206,6 +267,22 @@ pub(crate) struct SettingsPatch {
     pub(crate) start_with_windows: Option<bool>,
     pub(crate) clipboard: Option<bool>,
     pub(crate) browser_ask: Option<bool>,
+    /// Some of the capture rules.
+    pub(crate) capture: Option<CapturePatch>,
+}
+
+/// A change to some capture rules; absent fields stay as they are. The
+/// lists replace the stored ones whole, each entry as typed (normalised
+/// here, refused when it is not a file type or a site).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct CapturePatch {
+    pub(crate) enabled: Option<bool>,
+    pub(crate) min_size: Option<u64>,
+    pub(crate) extensions: Option<Vec<String>>,
+    pub(crate) never_sites: Option<Vec<String>>,
+    pub(crate) always_sites: Option<Vec<String>>,
+    pub(crate) private_windows: Option<bool>,
 }
 
 /// A change to one category.
@@ -230,6 +307,7 @@ const KEY_NOTIFICATIONS: &str = "notifications";
 const KEY_CLOSE_TO_TRAY: &str = "close_to_tray";
 const KEY_CLIPBOARD: &str = "clipboard";
 const KEY_BROWSER_ASK: &str = "browser_ask";
+const KEY_CAPTURE: &str = "capture";
 
 /// Reads one stored value; a missing or unreadable one is the default.
 async fn read<T: serde::de::DeserializeOwned>(engine: &Engine, key: &str) -> Option<T> {
@@ -290,6 +368,12 @@ pub(crate) async fn load(engine: &Engine) -> Result<AppSettings, UiError> {
     if let Some(b) = read(engine, KEY_BROWSER_ASK).await {
         s.browser_ask = b;
     }
+    if let Some(c) = read::<serde_json::Value>(engine, KEY_CAPTURE)
+        .await
+        .and_then(|v| stored_capture(&v))
+    {
+        s.capture = c;
+    }
     s.start_with_windows = platform::autostart_enabled();
     Ok(s)
 }
@@ -311,6 +395,109 @@ fn merge_categories(stored: &[Category]) -> Vec<Category> {
             c
         })
         .to_vec()
+}
+
+/// The stored capture rules, made valid: a field missing (written by an
+/// older version) is its default, one unknown (a newer version's) is
+/// ignored, and entries are normalised and cut to the limits rather than
+/// dropped. `None` when the value is not rules at all.
+fn stored_capture(stored: &serde_json::Value) -> Option<CaptureSettings> {
+    let mut value = serde_json::to_value(CaptureSettings::default()).ok()?;
+    let (Some(base), Some(fields)) = (value.as_object_mut(), stored.as_object()) else {
+        tracing::warn!("ignoring stored capture rules that are not an object");
+        return None;
+    };
+    for (key, v) in fields {
+        if let Some(slot) = base.get_mut(key) {
+            *slot = v.clone();
+        }
+    }
+    match serde_json::from_value::<CaptureSettings>(value) {
+        Ok(c) => Some(CaptureSettings::from(&c.rules().sanitised())),
+        Err(e) => {
+            tracing::warn!(error = %e, "ignoring unreadable capture rules");
+            None
+        }
+    }
+}
+
+/// Typed entries of a capture list, normalised by `normalise`, duplicates
+/// dropped; the first that is not one refuses them all, with `problem`
+/// naming it.
+fn parse_entries(
+    entries: &[String],
+    normalise: fn(&str) -> Option<String>,
+    max: usize,
+    problem: &'static str,
+    too_many: &'static str,
+) -> Result<Vec<String>, UiError> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in entries.iter().filter(|e| !e.trim().is_empty()) {
+        let Some(entry) = normalise(raw) else {
+            let shown: String = raw.trim().chars().take(64).collect();
+            return Err(UiError::with_message(problem, shown));
+        };
+        if !out.contains(&entry) {
+            out.push(entry);
+        }
+    }
+    if out.len() > max {
+        return Err(UiError::key(too_many));
+    }
+    Ok(out)
+}
+
+/// Applies a change to the capture rules, checking each field.
+fn patched_capture(
+    current: &CaptureSettings,
+    patch: &CapturePatch,
+) -> Result<CaptureSettings, UiError> {
+    let mut next = current.clone();
+    if let Some(b) = patch.enabled {
+        next.enabled = b;
+    }
+    if let Some(n) = patch.min_size {
+        if n > MAX_MIN_SIZE {
+            return Err(UiError::key("settings.problem.capture_size"));
+        }
+        next.min_size = n;
+    }
+    if let Some(list) = &patch.extensions {
+        next.extensions = parse_entries(
+            list,
+            normalise_extension,
+            MAX_RULE_EXTENSIONS,
+            "settings.problem.extension",
+            "settings.problem.capture_extensions_many",
+        )?;
+    }
+    if let Some(list) = &patch.never_sites {
+        next.never_sites = parse_entries(
+            list,
+            normalise_site,
+            MAX_RULE_SITES,
+            "settings.problem.site",
+            "settings.problem.sites_many",
+        )?;
+    }
+    if let Some(list) = &patch.always_sites {
+        next.always_sites = parse_entries(
+            list,
+            normalise_site,
+            MAX_RULE_SITES,
+            "settings.problem.site",
+            "settings.problem.sites_many",
+        )?;
+    }
+    if let Some(b) = patch.private_windows {
+        next.private_windows = b;
+    }
+    // What was checked above is what the protocol allows; this keeps the two
+    // from drifting apart.
+    next.rules()
+        .validate()
+        .map_err(|e| UiError::with_message("error.internal", e.to_string()))?;
+    Ok(next)
 }
 
 /// Splits typed extensions: spaces, commas or semicolons between them, with
@@ -449,6 +636,9 @@ pub(crate) fn patched(
     if let Some(b) = patch.browser_ask {
         next.browser_ask = b;
     }
+    if let Some(c) = &patch.capture {
+        next.capture = patched_capture(&next.capture, c)?;
+    }
     Ok(next)
 }
 
@@ -493,6 +683,9 @@ pub(crate) async fn store(
     }
     if old.browser_ask != new.browser_ask {
         write(engine, KEY_BROWSER_ASK, &new.browser_ask).await?;
+    }
+    if old.capture != new.capture {
+        write(engine, KEY_CAPTURE, &new.capture).await?;
     }
     Ok(())
 }
@@ -948,5 +1141,195 @@ mod tests {
             path("Misc")
         );
         assert_eq!(folder_for(&s, None, Some(&downloads)), path("Misc"));
+    }
+
+    fn capture(patch: CapturePatch) -> SettingsPatch {
+        SettingsPatch {
+            capture: Some(patch),
+            ..SettingsPatch::default()
+        }
+    }
+
+    fn strings(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn capture_rules_default_to_the_protocols() {
+        let s = AppSettings::default();
+        assert_eq!(s.capture.rules(), CaptureRules::default());
+        assert!(s.capture.enabled && !s.capture.private_windows);
+        assert_eq!(s.capture.min_size, 1 << 20);
+        // The page has the same defaults (DEFAULT_CAPTURE in capture.ts, which
+        // its own test holds to DEFAULT_EXTENSIONS).
+        let json = serde_json::to_value(&s.capture).unwrap();
+        assert_eq!(
+            json.as_object().unwrap().keys().collect::<Vec<_>>(),
+            [
+                "alwaysSites",
+                "enabled",
+                "extensions",
+                "minSize",
+                "neverSites",
+                "privateWindows"
+            ]
+        );
+    }
+
+    #[test]
+    fn capture_patches_normalise_and_check_each_field() {
+        let s = AppSettings::default();
+        let next = patched(
+            &s,
+            &capture(CapturePatch {
+                enabled: Some(false),
+                min_size: Some(0),
+                extensions: Some(strings(&[".ZIP", "*.7z", "zip", " ", "pdf"])),
+                never_sites: Some(strings(&["https://Bank.example/login", "*.corp.example"])),
+                always_sites: Some(strings(&["cdn.example:8443"])),
+                private_windows: Some(true),
+            }),
+        )
+        .unwrap();
+        let c = &next.capture;
+        assert!(!c.enabled && c.private_windows);
+        assert_eq!(c.min_size, 0);
+        assert_eq!(c.extensions, ["zip", "7z", "pdf"]);
+        assert_eq!(c.never_sites, ["bank.example", "corp.example"]);
+        assert_eq!(c.always_sites, ["cdn.example"]);
+        assert_eq!(
+            next.capture.rules().validate(),
+            Ok(()),
+            "the hello answer is valid"
+        );
+
+        // Absent fields stay.
+        let only = patched(
+            &next,
+            &capture(CapturePatch {
+                min_size: Some(5 << 20),
+                ..CapturePatch::default()
+            }),
+        )
+        .unwrap();
+        assert_eq!(only.capture.min_size, 5 << 20);
+        assert_eq!(only.capture.never_sites, c.never_sites);
+
+        // Refusals, each with the words for its field.
+        let refused = |p: CapturePatch| patched(&s, &capture(p)).unwrap_err().key;
+        assert_eq!(
+            refused(CapturePatch {
+                min_size: Some(MAX_MIN_SIZE + 1),
+                ..CapturePatch::default()
+            }),
+            "settings.problem.capture_size"
+        );
+        assert_eq!(
+            refused(CapturePatch {
+                extensions: Some(strings(&["tar.gz"])),
+                ..CapturePatch::default()
+            }),
+            "settings.problem.extension"
+        );
+        assert_eq!(
+            refused(CapturePatch {
+                extensions: Some((0..=MAX_RULE_EXTENSIONS).map(|i| format!("e{i}")).collect()),
+                ..CapturePatch::default()
+            }),
+            "settings.problem.capture_extensions_many"
+        );
+        let err = patched(
+            &s,
+            &capture(CapturePatch {
+                always_sites: Some(strings(&["ok.example", "not a site"])),
+                ..CapturePatch::default()
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(err.key, "settings.problem.site");
+        assert_eq!(err.message.as_deref(), Some("not a site"));
+        assert_eq!(
+            refused(CapturePatch {
+                never_sites: Some(
+                    (0..=MAX_RULE_SITES)
+                        .map(|i| format!("s{i}.example"))
+                        .collect()
+                ),
+                ..CapturePatch::default()
+            }),
+            "settings.problem.sites_many"
+        );
+        // A refused patch changes nothing, the other fields included.
+        assert!(
+            patched(
+                &s,
+                &SettingsPatch {
+                    browser_ask: Some(true),
+                    capture: Some(CapturePatch {
+                        never_sites: Some(strings(&["?"])),
+                        ..CapturePatch::default()
+                    }),
+                    ..SettingsPatch::default()
+                }
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn capture_rules_are_stored_and_read_back() {
+        let data = tempfile::tempdir().unwrap();
+        let engine = Engine::open(boltget_engine::EngineConfig::default(), data.path()).unwrap();
+
+        // Nothing stored (a settings file from before): the defaults.
+        let before = load(&engine).await.unwrap();
+        assert_eq!(before.capture, CaptureSettings::default());
+
+        let after = patched(
+            &before,
+            &capture(CapturePatch {
+                min_size: Some(8 << 20),
+                never_sites: Some(strings(&["bank.example"])),
+                ..CapturePatch::default()
+            }),
+        )
+        .unwrap();
+        store(&engine, &before, &after).await.unwrap();
+        let read = load(&engine).await.unwrap();
+        assert_eq!(read.capture, after.capture);
+
+        // A value another version wrote: a field missing, one unknown, an
+        // entry not normalised, too many sites. Kept, made valid.
+        let sites: Vec<String> = (0..600).map(|i| format!("S{i}.example")).collect();
+        engine
+            .set_app_setting(
+                KEY_CAPTURE,
+                Some(serde_json::json!({
+                    "enabled": false,
+                    "extensions": ["ISO", ".zip", "bad ext"],
+                    "neverSites": sites,
+                    "futureField": 1,
+                })),
+            )
+            .await
+            .unwrap();
+        let c = load(&engine).await.unwrap().capture;
+        assert!(!c.enabled);
+        assert_eq!(c.min_size, 1 << 20, "missing: the default");
+        assert_eq!(c.extensions, ["iso", "zip"]);
+        assert_eq!(c.never_sites.len(), MAX_RULE_SITES);
+        assert_eq!(c.never_sites[0], "s0.example");
+        c.rules().validate().unwrap();
+
+        // An unreadable value: the defaults.
+        engine
+            .set_app_setting(KEY_CAPTURE, Some(serde_json::json!("garbage")))
+            .await
+            .unwrap();
+        assert_eq!(
+            load(&engine).await.unwrap().capture,
+            CaptureSettings::default()
+        );
+        engine.shutdown().await;
     }
 }

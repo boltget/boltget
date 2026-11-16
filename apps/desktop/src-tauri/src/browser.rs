@@ -35,8 +35,8 @@ use boltget_engine::{
 };
 use boltget_ipc::BrowserReply;
 use boltget_ipc::browser::{
-    Accepted, AddLinks, Capture, CaptureRules, ErrorReason, HelloReply, MAX_LINKS, Message,
-    RejectReason, Reply, StatusReply,
+    Accepted, AddLinks, Capture, ErrorReason, HelloReply, MAX_LINKS, Message, RejectReason, Reply,
+    StatusReply,
 };
 use boltget_native_host::registration::{self, Flavor, Registration, State as RegState};
 use serde::Serialize;
@@ -292,9 +292,11 @@ pub(crate) fn reply(app: AppHandle, engine: Engine, message: Message) -> Browser
 
 pub(crate) async fn handle(host: &Host<'_>, engine: &Engine, message: Message) -> Reply {
     match message {
+        // The rules as saved in Settings, Browser: the extension takes them
+        // (docs/BROWSER-INTEGRATION.md, "Capture rules").
         Message::Hello(_) => Reply::Hello(HelloReply::new(
             Some(format!("Boltget {}", env!("CARGO_PKG_VERSION"))),
-            Some(CaptureRules::default()),
+            Some(host.settings.capture.rules()),
         )),
         Message::Capture(c) => capture(host, engine, &c).await,
         Message::AddLinks(a) => add_links(host, &a),
@@ -683,15 +685,20 @@ mod tests {
         }
 
         async fn send(&self, ask: bool, message: Message) -> Reply {
+            let settings = AppSettings {
+                browser_ask: ask,
+                ..AppSettings::default()
+            };
+            self.send_with(settings, message).await
+        }
+
+        async fn send_with(&self, settings: AppSettings, message: Message) -> Reply {
             let open_sheet = |links: String| self.sheet.lock().unwrap().push(links);
             let offer = |o: &ResumeOffer| self.offers.lock().unwrap().push(o.clone());
             let host = Host {
                 bridge: &self.bridge,
                 captured: &self.captured,
-                settings: AppSettings {
-                    browser_ask: ask,
-                    ..AppSettings::default()
-                },
+                settings,
                 downloads: Some(self.downloads.path().to_path_buf()),
                 open_sheet: &open_sheet,
                 offer: &offer,
@@ -880,7 +887,27 @@ https://x.test/b.zip"
             panic!("a hello")
         };
         assert!(h.app.unwrap().starts_with("Boltget "));
-        assert_eq!(h.rules, Some(CaptureRules::default()));
+        assert_eq!(
+            h.rules,
+            Some(boltget_ipc::browser::CaptureRules::default()),
+            "nothing changed in Settings: the defaults"
+        );
+        // The rules saved in Settings are the ones the extension gets.
+        let mut settings = AppSettings::default();
+        settings.capture.min_size = 0;
+        settings.capture.extensions = vec!["pdf".into()];
+        settings.capture.never_sites = vec!["bank.example".into()];
+        settings.capture.private_windows = true;
+        let hello =
+            boltget_ipc::browser::Hello::new("0.3.0", boltget_ipc::browser::Browser::Chrome);
+        let Reply::Hello(h) = f.send_with(settings, Message::Hello(hello)).await else {
+            panic!("a hello")
+        };
+        let rules = h.rules.expect("rules");
+        assert_eq!(rules.min_size, 0);
+        assert_eq!(rules.extensions, ["pdf"]);
+        assert_eq!(rules.never_sites, ["bank.example"]);
+        assert!(rules.enabled && rules.private_windows);
         assert!(matches!(
             f.send(false, Message::Status(boltget_ipc::browser::Status {})).await,
             Reply::Status(s) if s.active == 0

@@ -10,6 +10,9 @@ describe("settings search", () => {
     expect(ids("dark")).toEqual(["theme"]);
     expect(ids("startup")).toEqual(["autostart"]);
     expect(ids("CLIPBOARD")).toContain("clipboard");
+    expect(ids("incognito")).toEqual(["capture_private"]);
+    expect(ids("never sites")).toEqual(["capture_sites"]);
+    expect(ids("threshold")).toEqual(["capture_size"]);
     // Every word must match.
     expect(ids("proxy socks")).toEqual(["proxy"]);
     expect(ids("proxy zebra")).toEqual([]);

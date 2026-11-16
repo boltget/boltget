@@ -35,6 +35,12 @@ export type RowId =
   | "connections"
   | "limit"
   | "proxy"
+  | "capture"
+  | "capture_size"
+  | "capture_types"
+  | "capture_sites"
+  | "capture_private"
+  | "capture_defaults"
   | "browser_ask"
   | "browser_integration"
   | "shortcuts"
@@ -118,6 +124,48 @@ export const ROWS: readonly Row[] = [
     label: "settings.proxy",
     description: "settings.proxy.description",
     keywords: "keywords.proxy",
+  },
+  {
+    id: "capture",
+    section: "browser",
+    label: "settings.capture",
+    description: "settings.capture.description",
+    keywords: "keywords.capture",
+  },
+  {
+    id: "capture_size",
+    section: "browser",
+    label: "settings.capture_size",
+    description: "settings.capture_size.description",
+    keywords: "keywords.capture_size",
+  },
+  {
+    id: "capture_types",
+    section: "browser",
+    label: "settings.capture_types",
+    description: "settings.capture_types.description",
+    keywords: "keywords.capture_types",
+  },
+  {
+    id: "capture_sites",
+    section: "browser",
+    label: "settings.capture_sites",
+    description: "settings.capture_sites.description",
+    keywords: "keywords.capture_sites",
+  },
+  {
+    id: "capture_private",
+    section: "browser",
+    label: "settings.capture_private",
+    description: "settings.capture_private.description",
+    keywords: "keywords.capture_private",
+  },
+  {
+    id: "capture_defaults",
+    section: "browser",
+    label: "settings.capture_defaults",
+    description: "settings.capture_defaults.description",
+    keywords: "keywords.capture_defaults",
   },
   {
     id: "browser_ask",

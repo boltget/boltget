@@ -553,6 +553,17 @@ export function mockEngineApi(search: string): EngineApi {
         if (patch.startWithWindows != null) next.startWithWindows = patch.startWithWindows;
         if (patch.clipboard != null) next.clipboard = patch.clipboard;
         if (patch.browserAsk != null) next.browserAsk = patch.browserAsk;
+        if (patch.capture) {
+          const c = patch.capture;
+          next.capture = {
+            enabled: c.enabled ?? settings.capture.enabled,
+            minSize: c.minSize ?? settings.capture.minSize,
+            extensions: c.extensions ?? settings.capture.extensions,
+            neverSites: c.neverSites ?? settings.capture.neverSites,
+            alwaysSites: c.alwaysSites ?? settings.capture.alwaysSites,
+            privateWindows: c.privateWindows ?? settings.capture.privateWindows,
+          };
+        }
         settings = next;
         emit({ type: "settings", settings });
         return ok(settings);

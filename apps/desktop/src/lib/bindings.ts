@@ -262,6 +262,8 @@ export type AppSettings = {
 	 *  flow").
 	 */
 	browserAsk: boolean,
+	/**  What the browser extension hands over. */
+	capture: CaptureSettings,
 };
 
 /**  What Settings shows about the browsers. */
@@ -296,6 +298,41 @@ export type CaptionRect = {
 	top: number | null,
 	width: number | null,
 	height: number | null,
+};
+
+/**
+ *  A change to some capture rules; absent fields stay as they are. The
+ *  lists replace the stored ones whole, each entry as typed (normalised
+ *  here, refused when it is not a file type or a site).
+ */
+export type CapturePatch = {
+	enabled?: boolean | null,
+	minSize?: number | null,
+	extensions?: string[] | null,
+	neverSites?: string[] | null,
+	alwaysSites?: string[] | null,
+	privateWindows?: boolean | null,
+};
+
+/**
+ *  What the browser extension hands over (docs/BROWSER-INTEGRATION.md,
+ *  "Capture rules"): the protocol's [`CaptureRules`] as the page sees them.
+ *  The `hello` answer carries them to the extension. Stored as one value
+ *  ([`stored_capture`] reads it).
+ */
+export type CaptureSettings = {
+	/**  Capture at all. */
+	enabled: boolean,
+	/**  The smallest download captured when its size is known, in bytes. */
+	minSize: number,
+	/**  File types captured, lowercase, without dots. */
+	extensions: string[],
+	/**  Sites never captured (a site includes its subdomains). */
+	neverSites: string[],
+	/**  Sites always captured, whatever the type and size. */
+	alwaysSites: string[],
+	/**  Capture in private windows too. */
+	privateWindows: boolean,
 };
 
 /**
@@ -703,6 +740,8 @@ export type SettingsPatch = {
 	startWithWindows?: boolean | null,
 	clipboard?: boolean | null,
 	browserAsk?: boolean | null,
+	/**  Some of the capture rules. */
+	capture?: CapturePatch | null,
 };
 
 /**  What the page is asked to do from outside it. */
