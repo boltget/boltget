@@ -393,6 +393,43 @@ async fn redirects_are_followed_and_recorded() {
 }
 
 #[tokio::test]
+async fn allowed_hosts_pin_requests_and_redirects() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = cfg();
+    c.allowed_hosts = Some(vec!["127.0.0.1".into()]);
+    let engine = Engine::new(c).unwrap();
+    // On the allowed host, redirects included: fine.
+    let target = percent_encode(&srv.url("/data?size=65536&seed=5"));
+    let done = get(
+        &engine,
+        &srv.url(&format!("/redirect?hops=1&to={target}")),
+        dir.path(),
+    )
+    .await
+    .unwrap();
+    assert_content(&done, 5, 64 * KIB);
+    // A redirect to another name for the same server is refused before connecting.
+    let elsewhere = srv
+        .url("/data?size=65536&seed=6")
+        .replace("127.0.0.1", "localhost");
+    let before = srv.requests().len();
+    let err = get(
+        &engine,
+        &srv.url(&format!(
+            "/redirect?hops=1&to={}",
+            percent_encode(&elsewhere)
+        )),
+        dir.path(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, Error::InvalidUrl(_)), "{err}");
+    assert_eq!(err.kind(), ErrorKind::Permanent);
+    assert_eq!(srv.requests().len(), before + 1, "only the redirect itself");
+}
+
+#[tokio::test]
 async fn too_many_redirects_fail() {
     let srv = TestServer::start().await;
     let dir = tempfile::tempdir().unwrap();

@@ -109,6 +109,12 @@ pub struct EngineConfig {
     /// test server's. Empty by default. [`parse_certificates`] reads them from
     /// PEM or DER files.
     pub extra_root_certificates: Vec<Vec<u8>>,
+    /// When set, the only hosts the engine connects to (compared without regard
+    /// to case): a request or redirect to any other host fails with
+    /// [`Error::InvalidUrl`](crate::Error::InvalidUrl) before a connection is
+    /// made. `None` (the default) allows every host. Sidecar installs pin their
+    /// release hosts with it (`docs/VIDEO.md`, "Verification").
+    pub allowed_hosts: Option<Vec<String>>,
     /// A slow connection that is the last one still transferring is reconnected
     /// after this long instead of `slow_window` (1 s; a starved connection while
     /// others are healthy gets 3 x this).
@@ -173,6 +179,7 @@ impl Default for EngineConfig {
             write_window: 64 * 1024 * 1024,
             force_write_window: false,
             extra_root_certificates: Vec::new(),
+            allowed_hosts: None,
         }
     }
 }

@@ -396,6 +396,14 @@ impl Connector {
     }
 
     pub(crate) async fn connect(&self, origin: &Origin) -> Result<Conn> {
+        if let Some(hosts) = &self.cfg.allowed_hosts
+            && !hosts.iter().any(|h| h.eq_ignore_ascii_case(&origin.host))
+        {
+            return Err(Error::InvalidUrl(format!(
+                "host {} is not allowed here",
+                origin.host
+            )));
+        }
         let (io, h2, forward) = self.open_stream(origin).await?;
         let io = TokioIo::new(io);
         let (sender, task) = if h2 {
