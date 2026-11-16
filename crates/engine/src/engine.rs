@@ -1683,14 +1683,21 @@ impl Engine {
     async fn schedule_pass(&self, clock: &dyn Clock) -> Result<Option<i64>> {
         let store = self.store()?.clone();
         let _one_at_a_time = self.inner.sched.lock.lock().await;
-        let ended = std::mem::take(
-            &mut *self
-                .inner
-                .sched
-                .ended
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
+        // What ended and what still runs, read together under the running
+        // list's lock (`Finish` records an end under it too).
+        let (ended, running) = {
+            let downloads = self.downloads();
+            let ended = std::mem::take(
+                &mut *self
+                    .inner
+                    .sched
+                    .ended
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner),
+            );
+            let running: HashSet<DownloadId> = downloads.keys().copied().collect();
+            (ended, running)
+        };
         let now_at = clock.now();
         let now = to_ms(now_at);
         let offset = clock.utc_offset(now_at);
@@ -1708,7 +1715,6 @@ impl Engine {
                 Ok((records::queues(c)?, records::plan_rows(c)?, finished_in))
             })
             .await?;
-        let running: HashSet<DownloadId> = self.downloads().keys().copied().collect();
         let plan = queue::plan(&queues, &rows, &running, now, offset);
         let mut changed = false;
         if !plan.windows.is_empty() {
@@ -1789,11 +1795,25 @@ struct Finish {
 impl Drop for Finish {
     fn drop(&mut self) {
         let id = self.shared.id;
-        self.inner
+        let mut downloads = self
+            .inner
             .downloads
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&id);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        downloads.remove(&id);
+        // Recorded as ended under the same lock that took it off the running
+        // list, so a scheduler pass never sees it gone without seeing it end
+        // (which announced a finished queue twice, or not at all).
+        let scheduled = self.inner.sched.clock.get().is_some();
+        if scheduled {
+            self.inner
+                .sched
+                .ended
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push((id, self.shared.state()));
+        }
+        drop(downloads);
         if self.shared.state() == State::Completed {
             // Secrets are not kept past completion (docs/ARCHITECTURE.md).
             self.inner
@@ -1802,13 +1822,7 @@ impl Drop for Finish {
                 .unwrap_or_else(PoisonError::into_inner)
                 .remove(&id);
         }
-        if self.inner.sched.clock.get().is_some() {
-            self.inner
-                .sched
-                .ended
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((id, self.shared.state()));
+        if scheduled {
             self.inner.sched.wake.notify_one();
         }
         self.shared.done.cancel();
