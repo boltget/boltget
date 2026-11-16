@@ -1,8 +1,8 @@
 // The newest published release, resolved at build time from the GitHub REST
 // API for /download (docs/WEBSITE.md, Download page). `/releases/latest`
 // skips pre-releases, so this lists releases and takes the first one that is
-// not a draft. SHA-256 sums come from the release's SHA256SUMS file (falling
-// back to the digest GitHub records per asset).
+// not a draft. SHA-256 sums are the digests GitHub records per asset; the
+// SHA256SUMS file is linked but never fetched, so builds don't count as downloads.
 //
 // The site must build without the network: if the API is unreachable,
 // rate-limited or returns something unexpected, this logs a warning and
@@ -80,16 +80,6 @@ export function assetOf(release: Release | null, kind: Kind): Asset | undefined 
   return release?.assets.find((a) => a.kind === kind);
 }
 
-/** Parses `sha256sum` output: `<64 hex>  [*]<file name>` per line. */
-export function parseSums(text: string): Map<string, string> {
-  const sums = new Map<string, string>();
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^([0-9a-fA-F]{64}) [ *](.+)$/.exec(line.trim());
-    if (m?.[1] && m[2]) sums.set(m[2].trim(), m[1].toLowerCase());
-  }
-  return sums;
-}
-
 function headers(): Record<string, string> {
   const h: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -101,7 +91,7 @@ function headers(): Record<string, string> {
   return h;
 }
 
-async function get(url: string, init: RequestInit = {}): Promise<Response> {
+async function get(url: string, init: RequestInit): Promise<Response> {
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!res.ok) {
     const left = res.headers.get("x-ratelimit-remaining");
@@ -120,15 +110,6 @@ async function resolve(): Promise<Release | null> {
   if (!latest) throw new Error("no published release");
 
   const sumsAsset = latest.assets.find((a) => a.name === "SHA256SUMS");
-  let sums = new Map<string, string>();
-  if (sumsAsset) {
-    try {
-      sums = parseSums(await (await get(sumsAsset.browser_download_url)).text());
-    } catch (err) {
-      console.warn(`[releases] could not read SHA256SUMS, using GitHub's digests: ${String(err)}`);
-    }
-  }
-
   const assets = latest.assets
     .filter((a) => a !== sumsAsset)
     .map((a): Asset => {
@@ -138,7 +119,7 @@ async function resolve(): Promise<Release | null> {
         kind: kindOf(a.name),
         url: a.browser_download_url,
         size: a.size,
-        sha256: sums.get(a.name) ?? digest,
+        sha256: digest,
       };
     })
     .sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
