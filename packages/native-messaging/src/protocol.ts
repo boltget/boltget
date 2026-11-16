@@ -90,7 +90,10 @@ export type Capture = {
 
 /**
  *  What the extension captures (docs/BROWSER-INTEGRATION.md, "Capture
- *  rules"). The app owns them; the extension applies them.
+ *  rules"). The app owns them (Settings, Browser); the extension applies
+ *  them. Every entry is normalised ([`normalise_extension`],
+ *  [`normalise_site`]) and the lists are bounded, so a `hello` carrying them
+ *  stays far below [`MAX_REPLY`].
  */
 export type CaptureRules = {
 	/**  Capture at all. */
@@ -190,8 +193,9 @@ export type HelloReply = {
 	/**  The newest protocol version served. */
 	current: number,
 	/**
-	 *  The app's capture rules; `null` when the app is not running (keep
-	 *  the last ones it sent).
+	 *  The app's capture rules, as the user set them in the app's Settings
+	 *  (always within [`CaptureRules::validate`]'s limits); `null` when the
+	 *  app is not running (keep the last ones it sent).
 	 */
 	rules: CaptureRules | null,
 };

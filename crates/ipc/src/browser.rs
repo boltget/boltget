@@ -624,8 +624,9 @@ pub struct HelloReply {
     pub oldest: u32,
     /// The newest protocol version served.
     pub current: u32,
-    /// The app's capture rules; `null` when the app is not running (keep
-    /// the last ones it sent).
+    /// The app's capture rules, as the user set them in the app's Settings
+    /// (always within [`CaptureRules::validate`]'s limits); `null` when the
+    /// app is not running (keep the last ones it sent).
     pub rules: Option<CaptureRules>,
 }
 
@@ -644,7 +645,10 @@ impl HelloReply {
 }
 
 /// What the extension captures (docs/BROWSER-INTEGRATION.md, "Capture
-/// rules"). The app owns them; the extension applies them.
+/// rules"). The app owns them (Settings, Browser); the extension applies
+/// them. Every entry is normalised ([`normalise_extension`],
+/// [`normalise_site`]) and the lists are bounded, so a `hello` carrying them
+/// stays far below [`MAX_REPLY`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typescript", derive(Type))]
 #[non_exhaustive]
@@ -683,6 +687,148 @@ impl Default for CaptureRules {
             private_windows: false,
         }
     }
+}
+
+/// The most file types in [`CaptureRules::extensions`].
+pub const MAX_RULE_EXTENSIONS: usize = 200;
+/// The most sites in each of [`CaptureRules::never_sites`] and
+/// [`CaptureRules::always_sites`].
+pub const MAX_RULE_SITES: usize = 500;
+/// The largest [`CaptureRules::min_size`]: 1 TiB.
+pub const MAX_MIN_SIZE: u64 = 1 << 40;
+/// The longest file type in the rules.
+pub const MAX_RULE_EXTENSION: usize = 16;
+/// The longest site in the rules (a DNS name's limit).
+pub const MAX_RULE_SITE: usize = 253;
+
+impl CaptureRules {
+    /// Checks that every entry is normalised and every list and value within
+    /// its limit. The app refuses rules that fail this before storing them.
+    pub fn validate(&self) -> Result<(), Invalid> {
+        if self.min_size > MAX_MIN_SIZE {
+            return Err(Invalid::new("min_size", "more than 1 TiB"));
+        }
+        if self.extensions.len() > MAX_RULE_EXTENSIONS {
+            return Err(Invalid::new(
+                "extensions",
+                format!("more than {MAX_RULE_EXTENSIONS}"),
+            ));
+        }
+        normalised_list("extensions", &self.extensions, normalise_extension)?;
+        for (field, list) in [
+            ("never_sites", &self.never_sites),
+            ("always_sites", &self.always_sites),
+        ] {
+            if list.len() > MAX_RULE_SITES {
+                return Err(Invalid::new(field, format!("more than {MAX_RULE_SITES}")));
+            }
+            normalised_list(field, list, normalise_site)?;
+        }
+        Ok(())
+    }
+
+    /// These rules made valid without refusing anything: entries normalised,
+    /// what cannot be dropped, duplicates removed, lists cut to their limits,
+    /// the size capped. For rules read back from storage, which an older or
+    /// newer version may have written.
+    #[must_use]
+    pub fn sanitised(&self) -> Self {
+        Self {
+            enabled: self.enabled,
+            min_size: self.min_size.min(MAX_MIN_SIZE),
+            extensions: clean_list(&self.extensions, normalise_extension, MAX_RULE_EXTENSIONS),
+            never_sites: clean_list(&self.never_sites, normalise_site, MAX_RULE_SITES),
+            always_sites: clean_list(&self.always_sites, normalise_site, MAX_RULE_SITES),
+            private_windows: self.private_windows,
+        }
+    }
+}
+
+fn normalised_list(
+    field: &'static str,
+    list: &[String],
+    normalise: fn(&str) -> Option<String>,
+) -> Result<(), Invalid> {
+    for (i, entry) in list.iter().enumerate() {
+        if normalise(entry).as_deref() != Some(entry.as_str()) {
+            return Err(Invalid::new(field, "an entry that is not normalised"));
+        }
+        if list[..i].contains(entry) {
+            return Err(Invalid::new(field, "an entry twice"));
+        }
+    }
+    Ok(())
+}
+
+fn clean_list(list: &[String], normalise: fn(&str) -> Option<String>, max: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for entry in list.iter().filter_map(|e| normalise(e)) {
+        if out.len() == max {
+            break;
+        }
+        if !out.contains(&entry) {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// A file type as the rules keep it: lowercase, without a leading `.` or
+/// `*.`, 1 to 16 ASCII letters and digits; `None` when it is not one. The
+/// extension's `normaliseExtension` (`apps/extension/lib/rules.ts`) is the
+/// same function; `browser/rules-cases.json` holds both to it.
+pub fn normalise_extension(raw: &str) -> Option<String> {
+    let lower = raw.trim().to_ascii_lowercase();
+    let ext = lower
+        .strip_prefix("*.")
+        .or_else(|| lower.strip_prefix('.'))
+        .unwrap_or(&lower);
+    let valid = (1..=MAX_RULE_EXTENSION).contains(&ext.len())
+        && ext
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+    valid.then(|| ext.to_owned())
+}
+
+/// A site as the lists keep it: a lowercase host name, from whatever was
+/// typed (`https://Example.com/path`, `*.example.com`, `.example.com`,
+/// `example.com:8080`); `None` when it is not one. A site matches itself and
+/// its subdomains. The extension's `normaliseSite` is the same function.
+pub fn normalise_site(raw: &str) -> Option<String> {
+    let mut site = raw.trim().to_ascii_lowercase();
+    // A scheme: a letter, then letters, digits, `+`, `.` or `-`, then `://`.
+    if let Some(i) = site.find("://") {
+        let scheme = &site[..i];
+        let mut chars = scheme.chars();
+        if chars.next().is_some_and(|c| c.is_ascii_lowercase())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "+.-".contains(c))
+        {
+            site.drain(..i + 3);
+        }
+    }
+    if let Some(i) = site.find(['/', '?', '#']) {
+        site.truncate(i);
+    }
+    if let Some((host, port)) = site.rsplit_once(':')
+        && !port.is_empty()
+        && port.bytes().all(|b| b.is_ascii_digit())
+    {
+        site.truncate(host.len());
+    }
+    // `*.example.com` and `.example.com`, not `*example.com`.
+    let site = if site.starts_with("*.") {
+        &site[1..]
+    } else {
+        &site
+    };
+    let site = site.trim_start_matches('.').trim_end_matches('.');
+    let valid = !site.is_empty()
+        && site.len() <= MAX_RULE_SITE
+        && !site.contains("..")
+        && site
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-');
+    valid.then(|| site.to_owned())
 }
 
 /// [`Reply::Accepted`].

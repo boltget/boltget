@@ -409,6 +409,103 @@ fn default_rules_follow_the_docs() {
 }
 
 #[test]
+fn rule_entries_normalise_as_the_shared_cases_say() {
+    let cases: Value = serde_json::from_str(include_str!("rules-cases.json")).unwrap();
+    let check = |list: &str, f: fn(&str) -> Option<String>| {
+        let entries = cases[list].as_array().unwrap();
+        assert!(entries.len() > 10);
+        for case in entries {
+            let typed = case[0].as_str().unwrap();
+            let kept = case[1].as_str();
+            assert_eq!(f(typed).as_deref(), kept, "{list}: {typed:?}");
+            // What is kept is kept as it is.
+            if let Some(k) = kept {
+                assert_eq!(f(k).as_deref(), Some(k));
+            }
+        }
+    };
+    check("sites", normalise_site);
+    check("extensions", normalise_extension);
+    let long = cases["sites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c[0].as_str().unwrap())
+        .max_by_key(|s| s.len())
+        .unwrap();
+    assert!(long.len() > MAX_RULE_SITE, "a case over the limit");
+}
+
+#[test]
+fn rules_are_validated_and_sanitised() {
+    let ok = CaptureRules::default();
+    ok.validate().unwrap();
+    assert_eq!(ok.sanitised(), ok);
+
+    let mut r = CaptureRules {
+        never_sites: vec!["https://Bank.example/x".into()],
+        ..CaptureRules::default()
+    };
+    assert_eq!(r.validate().unwrap_err().field, "never_sites");
+    r.never_sites = vec!["bank.example".into(), "bank.example".into()];
+    assert_eq!(r.validate().unwrap_err().field, "never_sites");
+    r.never_sites = vec!["bank.example".into()];
+    r.always_sites = (0..=MAX_RULE_SITES)
+        .map(|i| format!("s{i}.example"))
+        .collect();
+    assert_eq!(r.validate().unwrap_err().field, "always_sites");
+    r.always_sites.clear();
+    r.extensions.push("MP4".into());
+    assert_eq!(r.validate().unwrap_err().field, "extensions");
+    r.extensions.pop();
+    r.min_size = MAX_MIN_SIZE + 1;
+    assert_eq!(r.validate().unwrap_err().field, "min_size");
+    r.min_size = MAX_MIN_SIZE;
+    r.validate().unwrap();
+
+    // Read back from storage: made valid, nothing refused.
+    let stored = CaptureRules {
+        enabled: false,
+        min_size: u64::MAX,
+        extensions: (0..300)
+            .map(|i| format!(".E{i}"))
+            .chain(["bad ext".into()])
+            .collect(),
+        never_sites: vec!["*.Bank.example".into(), "bank.example".into(), "?".into()],
+        always_sites: vec!["https://cdn.example:8443/x".into()],
+        private_windows: true,
+    };
+    let clean = stored.sanitised();
+    clean.validate().unwrap();
+    assert!(!clean.enabled && clean.private_windows);
+    assert_eq!(clean.min_size, MAX_MIN_SIZE);
+    assert_eq!(clean.extensions.len(), MAX_RULE_EXTENSIONS);
+    assert_eq!(clean.extensions[0], "e0");
+    assert_eq!(clean.never_sites, ["bank.example"]);
+    assert_eq!(clean.always_sites, ["cdn.example"]);
+    assert_eq!(clean.sanitised(), clean);
+}
+
+#[test]
+fn the_largest_rules_fit_in_a_reply() {
+    let site = |i: usize| format!("{}{i:04}.example", "a".repeat(MAX_RULE_SITE - 12));
+    let rules = CaptureRules {
+        enabled: true,
+        min_size: MAX_MIN_SIZE,
+        extensions: (0..MAX_RULE_EXTENSIONS)
+            .map(|i| format!("{}{i:03}", "x".repeat(MAX_RULE_EXTENSION - 3)))
+            .collect(),
+        never_sites: (0..MAX_RULE_SITES).map(site).collect(),
+        always_sites: (MAX_RULE_SITES..2 * MAX_RULE_SITES).map(site).collect(),
+        private_windows: true,
+    };
+    rules.validate().unwrap();
+    let env = ReplyEnvelope::new(1, Some(1), Reply::Hello(HelloReply::new(None, Some(rules))));
+    let json: Value = serde_json::from_slice(&env.to_json()).unwrap();
+    assert_eq!(json["type"], "hello", "not cut to an error");
+}
+
+#[test]
 fn the_fuzz_seed_corpus_passes() {
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus/native_message");
