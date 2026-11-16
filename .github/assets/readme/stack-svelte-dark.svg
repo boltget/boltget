@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="82" height="28" viewBox="0 0 82 28" role="img" aria-label="Svelte">
+<defs>
+  <linearGradient id="p-svelte-fill" x1="0" y1="0" x2="0" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2E3033"/><stop offset="1" stop-color="#111213"/></linearGradient>
+  <linearGradient id="p-svelte-edge" x1="0" y1="0" x2="0" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#46484C"/><stop offset="1" stop-color="#1C1D1F"/></linearGradient>
+  <linearGradient id="p-svelte-ink" x1="0" y1="0" x2="0" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0.2" stop-color="#FFFFFF"/><stop offset="0.85" stop-color="#C4C6C9"/></linearGradient>
+</defs>
+<radialGradient id="p-svelte-dot" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff" stop-opacity="0.55"/><stop offset="0.5" stop-color="#FF3E00" stop-opacity="0"/></radialGradient>
+<rect x="0.5" y="0.5" width="81" height="27" rx="7.5" fill="url(#p-svelte-fill)" stroke="url(#p-svelte-edge)"/>
+<circle cx="14.5" cy="14" r="3.5" fill="#FF3E00"/>
+<circle cx="14.5" cy="14" r="3.5" fill="url(#p-svelte-dot)"/>
+<path fill="url(#p-svelte-ink)" stroke="url(#p-svelte-ink)" stroke-width="0.4" stroke-linejoin="round" d="M29.15 17.71Q28.33 17.71 27.63 17.42Q26.93 17.12 26.28 16.52L26.75 15.96Q27.38 16.55 27.93 16.8Q28.49 17.05 29.17 17.05Q29.71 17.05 30.13 16.87Q30.56 16.68 30.8 16.36Q31.04 16.04 31.04 15.63Q31.04 15.1 30.69 14.83Q30.34 14.55 29.48 14.4L28.35 14.21Q27.39 14.04 26.95 13.63Q26.5 13.21 26.5 12.51Q26.5 11.92 26.8 11.47Q27.11 11.01 27.65 10.75Q28.19 10.49 28.9 10.49Q29.68 10.49 30.35 10.71Q31.02 10.92 31.67 11.38L31.27 11.98Q30.73 11.57 30.13 11.36Q29.53 11.14 28.91 11.14Q28.42 11.14 28.05 11.31Q27.67 11.48 27.45 11.77Q27.24 12.06 27.24 12.43Q27.24 12.89 27.55 13.15Q27.86 13.41 28.56 13.52L29.68 13.71Q30.8 13.91 31.3 14.36Q31.81 14.8 31.81 15.59Q31.81 16.2 31.46 16.68Q31.12 17.16 30.52 17.44Q29.92 17.71 29.15 17.71ZM36.46 17.6L33.72 10.6L34.54 10.6L36.94 16.86L39.35 10.6L40.14 10.6L37.38 17.6ZM42.52 17.6L42.52 10.6L47.3 10.6L47.3 11.28L43.29 11.28L43.29 13.73L46.07 13.73L46.07 14.4L43.29 14.4L43.29 16.92L47.34 16.92L47.34 17.6ZM50.11 17.6L50.11 10.6L50.88 10.6L50.88 16.92L54.83 16.92L54.83 17.6ZM59.39 17.6L59.39 11.28L56.97 11.28L56.97 10.6L62.58 10.6L62.58 11.28L60.16 11.28L60.16 17.6ZM65.15 17.6L65.15 10.6L69.93 10.6L69.93 11.28L65.92 11.28L65.92 13.73L68.7 13.73L68.7 14.4L65.92 14.4L65.92 16.92L69.97 16.92L69.97 17.6Z"/>
+</svg>

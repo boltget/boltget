@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="28" viewBox="0 0 72 28" role="img" aria-label="Tauri">
+<defs>
+  <linearGradient id="p-tauri-fill" x1="0" y1="0" x2="0" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#EEEFF0"/></linearGradient>
+  <linearGradient id="p-tauri-edge" x1="0" y1="0" x2="0" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#DEDFE1"/><stop offset="1" stop-color="#C4C6C9"/></linearGradient>
+  <linearGradient id="p-tauri-ink" x1="0" y1="0" x2="0" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0.2" stop-color="#46484C"/><stop offset="0.85" stop-color="#0A0A0B"/></linearGradient>
+</defs>
+<radialGradient id="p-tauri-dot" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff" stop-opacity="0.55"/><stop offset="0.5" stop-color="#FFC131" stop-opacity="0"/></radialGradient>
+<rect x="0.5" y="0.5" width="71" height="27" rx="7.5" fill="url(#p-tauri-fill)" stroke="url(#p-tauri-edge)"/>
+<circle cx="14.5" cy="14" r="3.5" fill="#FFC131"/>
+<circle cx="14.5" cy="14" r="3.5" fill="url(#p-tauri-dot)"/>
+<path fill="url(#p-tauri-ink)" stroke="url(#p-tauri-ink)" stroke-width="0.4" stroke-linejoin="round" d="M28.7 17.6L28.7 11.28L26.28 11.28L26.28 10.6L31.89 10.6L31.89 11.28L29.47 11.28L29.47 17.6ZM33.66 17.6L36.43 10.6L37.35 10.6L40.08 17.6L39.25 17.6L38.42 15.4L35.3 15.4L34.47 17.6ZM35.54 14.79L38.19 14.79L36.86 11.3ZM45.13 17.71Q44.27 17.71 43.63 17.34Q43 16.96 42.66 16.27Q42.32 15.58 42.32 14.64L42.32 10.6L43.09 10.6L43.09 14.64Q43.09 15.36 43.34 15.89Q43.59 16.42 44.05 16.71Q44.51 17.01 45.13 17.01Q45.75 17.01 46.21 16.71Q46.67 16.42 46.92 15.89Q47.17 15.36 47.17 14.64L47.17 10.6L47.94 10.6L47.94 14.64Q47.94 15.58 47.6 16.27Q47.26 16.96 46.63 17.34Q46 17.71 45.13 17.71ZM50.98 17.6L50.98 10.6L53.85 10.6Q54.52 10.6 55.02 10.86Q55.52 11.11 55.8 11.56Q56.08 12.01 56.08 12.62Q56.08 13.32 55.69 13.82Q55.3 14.31 54.62 14.51L56.11 17.6L55.26 17.6L53.84 14.61L51.75 14.61L51.75 17.6ZM51.75 13.97L53.79 13.97Q54.48 13.97 54.9 13.61Q55.31 13.24 55.31 12.63Q55.31 12.01 54.9 11.65Q54.48 11.28 53.79 11.28L51.75 11.28ZM58.84 17.6L58.84 10.6L59.61 10.6L59.61 17.6Z"/>
+</svg>

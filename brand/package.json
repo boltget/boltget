@@ -6,7 +6,8 @@
   "type": "module",
   "license": "SEE LICENSE IN ../LICENSE",
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "readme": "node scripts/readme.mjs"
   },
   "devDependencies": {
     "@resvg/resvg-js": "2.6.2",
