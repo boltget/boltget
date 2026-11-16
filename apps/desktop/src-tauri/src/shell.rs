@@ -12,6 +12,7 @@ use tauri_specta::Event as _;
 
 use crate::bridge::Bridge;
 use crate::bridge::dto::DownloadId;
+use crate::browser::ResumeOffer;
 use crate::{MAIN_WINDOW, commands};
 
 /// What the page is asked to do from outside it.
@@ -27,6 +28,9 @@ pub(crate) enum ShellRequest {
     /// Select a download and show it (a notification was clicked); with
     /// `fix`, also offer what fixes it (a new link, say).
     Select { id: DownloadId, fix: bool },
+    /// Offer to resume a download waiting for a new link with one the
+    /// browser handed over (`resume_offers` lists the offers waiting).
+    ResumeOffer { offer: ResumeOffer },
 }
 
 /// The command line: links to add, and `--background` (start in the tray,

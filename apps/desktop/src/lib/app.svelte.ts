@@ -1,10 +1,11 @@
 // The window's own state, outside the engine: which screen (the downloads
 // or Settings), view and search, the selection, density, the details pane,
-// the command palette, quiet notices (toasts), the one confirmation the app
-// asks for, and the actions every surface shares (row buttons, the context
+// the command palette, quiet notices (toasts), the confirmations the app
+// asks for (deleting files, resuming with a link from the browser), and the
+// actions every surface shares (row buttons, the context
 // menu, shortcuts, the palette and the details pane).
 import { t } from "@boltget/ui/messages";
-import type { DownloadId, QueueId, QueueInfo } from "./bindings";
+import type { DownloadId, QueueId, QueueInfo, ResumeOffer } from "./bindings";
 import { downloads, errorText } from "./engine";
 import { canPause, canRestart, canResume, toggleIntent, type ActionId } from "./list/actions";
 import { queueView, type Sort, type View } from "./list/model";
@@ -13,6 +14,8 @@ import type { RowId, SectionId } from "./settings/registry";
 import { sectionOf } from "./settings/registry";
 import { EMPTY, type Selection } from "./list/selection";
 import { displayName } from "./format";
+import { answerResumeOffer } from "./native";
+import { answerNotice, dropOffer, offerTitle, queueOffer } from "./offers";
 
 export type Density = "comfortable" | "compact";
 export type Screen = "downloads" | "settings";
@@ -28,6 +31,15 @@ export interface Confirmation {
   body: string;
   confirm: string;
   run: () => void;
+  /** The other button's label; "Cancel" by default. */
+  cancel?: string;
+  /** Called on the other button, Esc, or the dialog closing. */
+  onCancel?: () => void;
+  /**
+   * `danger` (the default): a red confirm button, and Cancel has focus.
+   * `primary`: the confirm button is the recommended answer and has focus.
+   */
+  tone?: "danger" | "primary";
 }
 
 /** How long "Removed … Undo" stays before the removal is made. */
@@ -70,6 +82,8 @@ class AppState {
   hidden = $state.raw<ReadonlySet<DownloadId>>(new Set());
   toasts = $state<Toast[]>([]);
   confirmation = $state<Confirmation | null>(null);
+  /** Resume offers waiting to be asked, oldest first (lib/offers.ts). */
+  offers = $state.raw<ResumeOffer[]>([]);
   /** Polite announcements for screen readers (completions, failures). */
   announcement = $state("");
   /** The download whose "Refresh link" field should take focus. */
@@ -364,6 +378,45 @@ class AppState {
       for (const id of ids) void downloads.remove(id, false);
       unhide();
     }, UNDO_MS);
+  }
+
+  // Resume offers ------------------------------------------------------------
+
+  /** The browser handed over a download waiting for a new link. */
+  offerResume(offer: ResumeOffer): void {
+    this.offers = queueOffer(this.offers, offer);
+  }
+
+  /** Asks the oldest waiting offer, when nothing else is being asked. */
+  askNextOffer(): void {
+    const offer = this.offers[0];
+    if (!offer || this.confirmation || this.adding) return;
+    const answer = (resume: boolean) => {
+      // A newer capture of the same download may have replaced it.
+      const current = this.offers.find((o) => o.id === offer.id) ?? offer;
+      this.offers = dropOffer(this.offers, current);
+      void this.#answerOffer(current, resume);
+    };
+    this.confirmation = {
+      title: offerTitle(offer),
+      body: t("offer.resume.body"),
+      confirm: t("offer.resume.action"),
+      cancel: t("offer.resume.new"),
+      tone: "primary",
+      run: () => answer(true),
+      onCancel: () => answer(false),
+    };
+  }
+
+  async #answerOffer(offer: ResumeOffer, resume: boolean): Promise<void> {
+    const result = await answerResumeOffer(offer.offer, resume);
+    if (result.status === "error") {
+      this.toast(errorText(result.error));
+      return;
+    }
+    const notice = answerNotice(result.data, offer.name, errorText);
+    if (notice) this.toast(notice);
+    if (result.data.outcome === "resumed") this.reveal(offer.id);
   }
 
   #confirmDelete(ids: DownloadId[]): void {

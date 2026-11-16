@@ -1,8 +1,10 @@
 <!--
-  The one confirmation the list asks for: deleting files from disk, which
-  cannot be undone (DESIGN-PRINCIPLES #6, #7). A native <dialog> shown modally
-  inside the window: it traps focus, Esc cancels, and Cancel has focus first
-  so Enter never deletes by accident.
+  The confirmations the app asks for: deleting files from disk, which cannot
+  be undone (DESIGN-PRINCIPLES #6, #7), and resuming a download with a link
+  the browser handed over. A native <dialog> shown modally inside the window:
+  it traps focus and Esc cancels. For deleting, Cancel has focus first so
+  Enter never deletes by accident; for a primary question, the recommended
+  answer has focus.
 -->
 <script lang="ts">
   import { trapTab } from "./focus";
@@ -12,19 +14,29 @@
 
   let dialog: HTMLDialogElement | undefined = $state();
   let cancel: HTMLButtonElement | undefined = $state();
+  let ok: HTMLButtonElement | undefined = $state();
   const request = $derived(app.confirmation);
 
   $effect(() => {
     if (!dialog) return;
     if (request && !dialog.open) {
       dialog.showModal();
-      cancel?.focus();
+      (request.tone === "primary" ? ok : cancel)?.focus();
     } else if (!request && dialog.open) dialog.close();
   });
 
   function confirm() {
-    request?.run();
+    const r = app.confirmation;
     app.confirmation = null;
+    r?.run();
+  }
+
+  /** The other button, Esc, or the dialog closing while it still asks. */
+  function dismiss() {
+    const r = app.confirmation;
+    if (!r) return;
+    app.confirmation = null;
+    r.onCancel?.();
   }
 </script>
 
@@ -34,16 +46,16 @@
   class="dialog"
   aria-labelledby="confirm-title"
   aria-describedby="confirm-body"
-  onclose={() => (app.confirmation = null)}
+  onclose={dismiss}
 >
   {#if request}
     <h2 id="confirm-title" class="title">{request.title}</h2>
     <p id="confirm-body" class="body">{request.body}</p>
     <div class="buttons">
-      <Button bind:ref={cancel} onclick={() => (app.confirmation = null)}
-        >{t("action.cancel")}</Button
+      <Button bind:ref={cancel} onclick={dismiss}>{request.cancel ?? t("action.cancel")}</Button>
+      <Button bind:ref={ok} variant={request.tone ?? "danger"} onclick={confirm}
+        >{request.confirm}</Button
       >
-      <Button variant="danger" onclick={confirm}>{request.confirm}</Button>
     </div>
   {/if}
 </dialog>

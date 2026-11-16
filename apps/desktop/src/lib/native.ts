@@ -10,13 +10,16 @@ import {
   events,
   type AppInfo,
   type CaptionMaximize,
+  type OfferAnswer,
+  type ResumeOffer,
   type ShellRequest,
+  type UiError,
 } from "./bindings";
 import type { CaptionRect } from "./caption";
 
 export const inTauri = isTauri();
 
-export type { AppInfo, ShellRequest };
+export type { AppInfo, OfferAnswer, ResumeOffer, ShellRequest };
 
 export async function appInfo(): Promise<AppInfo> {
   if (!inTauri) {
@@ -81,6 +84,23 @@ export async function onShellRequest(
 export async function onClipboardOffer(handler: (links: string) => void): Promise<() => void> {
   if (!inTauri) return () => {};
   return events.clipboardOffer.listen((event) => handler(event.payload.links));
+}
+
+/**
+ * Resume offers waiting for an answer: one can arrive before the page
+ * listens for them.
+ */
+export async function resumeOffers(): Promise<ResumeOffer[]> {
+  return inTauri ? commands.resumeOffers() : [];
+}
+
+/** Resumes the offered download with the browser's link, or adds it as new. */
+export async function answerResumeOffer(
+  offer: number,
+  resume: boolean,
+): Promise<{ status: "ok"; data: OfferAnswer } | { status: "error"; error: UiError }> {
+  if (!inTauri) return { status: "ok", data: { outcome: "added", refused: null } };
+  return commands.answerResumeOffer(offer, resume);
 }
 
 /** The links Boltget was started with (`Boltget.exe <url>`), once. */

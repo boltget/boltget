@@ -135,6 +135,16 @@ export const commands = {
 	 *  again for this install, then says how each browser stands.
 	 */
 	repairBrowserIntegration: () => typedError<BrowserIntegration, UiError>(__TAURI_INVOKE("repair_browser_integration")),
+	/**
+	 *  Resume offers waiting for an answer, oldest first: the page asks when it
+	 *  starts, since an offer can arrive before it listens.
+	 */
+	resumeOffers: () => __TAURI_INVOKE<ResumeOffer[]>("resume_offers"),
+	/**
+	 *  Answers "Use this link to resume …?": `resume` with the captured link,
+	 *  or not (the capture is added as usual).
+	 */
+	answerResumeOffer: (offer: number, resume: boolean) => typedError<OfferAnswer, UiError>(__TAURI_INVOKE("answer_resume_offer", { offer, resume })),
 	/**  Opens the default download folder in Explorer (the palette, the tray). */
 	openDownloadsFolder: () => typedError<null, UiError>(__TAURI_INVOKE("open_downloads_folder")),
 	/**  The file map of a running download, now (`null` if it is not running). */
@@ -517,6 +527,26 @@ export type LinkSource = {
 	role: string,
 };
 
+/**  The answer to [`answer_resume_offer`]. */
+export type OfferAnswer = {
+	outcome: OfferOutcome,
+	/**
+	 *  Why the download could not take the new link (another file, say),
+	 *  when the user asked to resume and the capture went the usual way
+	 *  instead.
+	 */
+	refused: UiError | null,
+};
+
+/**  What became of a captured download after its resume offer. */
+export type OfferOutcome = 
+/**  The download continues with the new link. */
+"resumed" | 
+/**  Added as a new download. */
+"added" | 
+/**  The add sheet opened with it ("Ask before adding" is on). */
+"sheet";
+
 /**  What a link points at, for the add sheet's preview. */
 export type ProbePreview = {
 	/**  Where the link led after redirects, redacted. */
@@ -616,6 +646,23 @@ export type RegistrationState =
 "outdated";
 
 /**
+ *  "Use this link to resume `name` (`percent`% done)?": a capture that is
+ *  the download `id`, waiting for a new link.
+ */
+export type ResumeOffer = {
+	/**
+	 *  Names the offer in [`answer_resume_offer`]; the link itself stays in
+	 *  the backend.
+	 */
+	offer: number,
+	id: DownloadId,
+	/**  The download's file name. */
+	name: string,
+	/**  How much of it is downloaded, 0 to 99. */
+	percent: number,
+};
+
+/**
  *  A byte range of a download and how far it has been received: one run of
  *  squares in the details pane's file map.
  */
@@ -674,7 +721,12 @@ export type ShellRequest =
  *  Select a download and show it (a notification was clicked); with
  *  `fix`, also offer what fixes it (a new link, say).
  */
-{ kind: "select"; id: DownloadId; fix: boolean };
+{ kind: "select"; id: DownloadId; fix: boolean } | 
+/**
+ *  Offer to resume a download waiting for a new link with one the
+ *  browser handed over (`resume_offers` lists the offers waiting).
+ */
+{ kind: "resumeOffer"; offer: ResumeOffer };
 
 /**  Where to move a download within its queue. */
 export type ShiftDirection = "up" | "down" | "top" | "bottom";

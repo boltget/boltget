@@ -27,6 +27,7 @@
   import {
     onClipboardOffer,
     onShellRequest,
+    resumeOffers,
     takeLaunchLinks,
     type ShellRequest,
   } from "./lib/native";
@@ -70,6 +71,10 @@
     const stopOffers = onClipboardOffer(offer);
     void takeLaunchLinks().then((links) => {
       if (links) incoming = links;
+    });
+    // Offers made before the page listened.
+    void resumeOffers().then((offers) => {
+      for (const offer of offers) app.offerResume(offer);
     });
     return () => {
       stopErrors();
@@ -125,6 +130,14 @@
     }
   });
 
+  // A resume offer is asked once nothing else is (the add sheet, another
+  // question) and the engine is ready.
+  $effect(() => {
+    if (status.state !== "ready" || app.offers.length === 0) return;
+    if (app.confirmation || app.adding) return;
+    app.askNextOffer();
+  });
+
   function onRequest(request: ShellRequest) {
     switch (request.kind) {
       case "add":
@@ -140,6 +153,9 @@
         if (request.fix && d?.state === "needs_new_link") app.run("refresh", [request.id]);
         break;
       }
+      case "resumeOffer":
+        app.offerResume(request.offer);
+        break;
     }
   }
 

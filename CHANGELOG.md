@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Resume expired downloads from the browser: when a download's link has expired, start it again on the website and Boltget asks "Use this link to resume *file* (73% done)?" instead of downloading it all over again. It checks that the new link is the same file before continuing, and uses the browser's fresh sign-in cookies. If you say no, or the link turns out to be a different file, it is added as a new download as usual.
 - The browser extension is on the [Chrome Web Store](https://chromewebstore.google.com/detail/boltget/aeobielfcjcidnadamggpnomipkijcbj), linked from the download page.
 
 ### Fixed

@@ -71,6 +71,7 @@ export interface MessageParams {
   "error.link_expired": never;
   "error.proxy_auth": never;
   "error.refresh_rejected": never;
+  "error.offer_gone": never;
   "unit.b": { value: string | number };
   "unit.kib": { value: string | number };
   "unit.mib": { value: string | number };
@@ -447,6 +448,13 @@ export interface MessageParams {
   "notify.offer": { name: string | number };
   "notify.offer.many": { count: number };
   "notify.offer.add": never;
+  "offer.resume.title": { name: string | number; percent: string | number };
+  "offer.resume.body": never;
+  "offer.resume.action": never;
+  "offer.resume.new": never;
+  "offer.resumed": { name: string | number };
+  "offer.refused.added": { name: string | number; reason: string | number };
+  "offer.refused.sheet": { name: string | number; reason: string | number };
   "add.folder.category": { category: string | number };
   "sidebar.queues": never;
   "queue.main": never;

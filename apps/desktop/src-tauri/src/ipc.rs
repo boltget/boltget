@@ -52,6 +52,8 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             engine::system_proxy,
             browser::browser_integration,
             browser::repair_browser_integration,
+            browser::resume_offers,
+            browser::answer_resume_offer,
             engine::open_downloads_folder,
             engine::download_segments,
             engine::download_details,
