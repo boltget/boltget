@@ -21,7 +21,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "e2e": "wxt build --mode e2e && playwright test"
+    "e2e": "wxt build --mode e2e && playwright test",
+    "e2e:real": "wxt build --mode development && wxt build --mode e2e && playwright test -c playwright.real.config.ts"
   },
   "dependencies": {
     "@boltget/native-messaging": "workspace:*",

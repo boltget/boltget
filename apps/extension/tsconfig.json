@@ -10,5 +10,12 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": [".wxt/wxt.d.ts", "entrypoints/**/*", "lib/**/*", "e2e/**/*", "*.config.ts"]
+  "include": [
+    ".wxt/wxt.d.ts",
+    "entrypoints/**/*",
+    "lib/**/*",
+    "e2e/**/*",
+    "e2e-real/**/*",
+    "*.config.ts"
+  ]
 }

@@ -22,7 +22,14 @@ export default defineConfig(
   svelte.configs.recommended,
   { languageOptions: { globals: { ...globals.browser, ...globals.webextensions } } },
   {
-    files: ["*.config.js", "*.config.ts", "scripts/**", "store/scripts/**", "e2e/**"],
+    files: [
+      "*.config.js",
+      "*.config.ts",
+      "scripts/**",
+      "store/scripts/**",
+      "e2e/**",
+      "e2e-real/**",
+    ],
     languageOptions: { globals: { ...globals.node } },
   },
   {
