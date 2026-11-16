@@ -3,6 +3,7 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
+import { SPECULATION } from "./src/lib/speculation.mjs";
 
 export default defineConfig({
   site: "https://boltget.app",
@@ -12,9 +13,12 @@ export default defineConfig({
   redirects: {
     "/compare/idm": "/benchmarks/",
   },
-  // Links are prefetched on hover, so the cross-document view transition has
-  // the next page ready (docs/WEBSITE.md, Character).
-  prefetch: { prefetchAll: true, defaultStrategy: "hover" },
+  // No Astro prefetch script: links are prefetched on hover by the browser's
+  // speculation rules instead (SPECULATION, also in layouts/Base.astro), so
+  // the cross-document view transition has the next page ready without
+  // shipping JavaScript (docs/WEBSITE.md, Character and Performance budget).
+  // Explicitly off: Starlight turns Astro's prefetch on when it is unset.
+  prefetch: false,
   integrations: [
     // Added explicitly; Starlight would add it otherwise.
     sitemap(),
@@ -34,9 +38,11 @@ export default defineConfig({
         { tag: "meta", attrs: { name: "theme-color", content: "#0A0A0B" } },
         { tag: "meta", attrs: { property: "og:image", content: "https://boltget.app/og-image.png" } },
         { tag: "meta", attrs: { name: "twitter:card", content: "summary_large_image" } },
+        { tag: "script", attrs: { type: "speculationrules" }, content: SPECULATION },
       ],
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/boltget/boltget" },
+        { icon: "discord", label: "Discord", href: "https://discord.gg/F8Cr6Whhnt" },
       ],
       editLink: {
         baseUrl: "https://github.com/boltget/boltget/edit/main/apps/web/",

@@ -1,0 +1,78 @@
+# Website deploy: builds boltget.app and deploys it to Cloudflare Workers
+# static assets, the same as `pnpm --filter @boltget/web build` then
+# `pnpm --filter @boltget/web run deploy` by hand (docs/WEBSITE.md, Hosting).
+#
+# Runs when a GitHub Release is published (the download and changelog pages
+# read release data and CHANGELOG.md at build time) and by hand. Not on every
+# push to main, because main can describe features that are not released yet.
+#
+# Needs the repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+# (token permissions: docs/WEBSITE.md, Hosting). Without them the job skips
+# the deploy with a notice instead of failing.
+name: Web deploy
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer one waits rather than cancelling a running one.
+concurrency:
+  group: web-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets
+        id: secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice title=Website not deployed::The CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets are not set, so the deploy is skipped. See docs/WEBSITE.md, Hosting."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.secrets.outputs.ready == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Version from "packageManager" in the root package.json.
+      - if: steps.secrets.outputs.ready == 'true'
+        uses: pnpm/action-setup@v6
+
+      - if: steps.secrets.outputs.ready == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install
+        if: steps.secrets.outputs.ready == 'true'
+        # Only the site and its workspace dependencies (Wrangler included).
+        run: pnpm install --frozen-lockfile --filter "@boltget/web..."
+
+      - name: Build
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          # Release data comes from the GitHub API at build time; the token
+          # lifts the anonymous rate limit (src/lib/releases.ts).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm --filter @boltget/web build
+
+      - name: Deploy
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter @boltget/web run deploy

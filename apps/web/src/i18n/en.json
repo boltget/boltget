@@ -4,6 +4,7 @@
     "description": "A download manager built for speed. Splits every file across many connections and picks up where it stopped, even after a crash.",
     "skip": "Skip to content",
     "repo": "https://github.com/boltget/boltget",
+    "discord": "https://discord.gg/F8Cr6Whhnt",
     "repoTree": "https://github.com/boltget/boltget/tree/main/{path}",
     "repoBlob": "https://github.com/boltget/boltget/blob/main/{path}"
   },
@@ -29,6 +30,7 @@
     "scripting": "Exit codes and JSON",
     "project": "Project",
     "source": "Open source on GitHub",
+    "discord": "Discord",
     "security": "Security",
     "privacy": "Privacy",
     "credit": "© 2026 Boltget"

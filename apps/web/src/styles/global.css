@@ -676,24 +676,6 @@ table.data .r {
   white-space: nowrap;
 }
 
-/* Lenis (src/lib/smooth.ts): the rules from its lenis.css that apply here. */
-html.lenis,
-html.lenis body {
-  height: auto;
-}
-
-.lenis.lenis-stopped {
-  overflow: clip;
-}
-
-.lenis [data-lenis-prevent] {
-  overscroll-behavior: contain;
-}
-
-.lenis.lenis-smooth iframe {
-  pointer-events: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

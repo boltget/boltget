@@ -2,7 +2,8 @@
 // Site footer, the same on every marketing page: the foot of the frame, light
 // and quiet (docs/WEBSITE.md, Character). The logo with one line, three short
 // link columns, and the copyright. The source link here is the page's only
-// mention of the project being open source.
+// mention of the project being open source; Discord, the community link, sits
+// beside it.
 import lockup from "../../../../brand/svg/lockup-header-on-light.svg";
 import lockup2x from "../../../../brand/svg/lockup-header-on-light@2x.svg";
 import { t } from "../i18n";
@@ -28,6 +29,7 @@ const groups = [
     heading: t("footer.project"),
     links: [
       { href: t("site.repo"), label: t("footer.source") },
+      { href: t("site.discord"), label: t("footer.discord") },
       { href: t("site.repoBlob", { path: "SECURITY.md" }), label: t("footer.security") },
       { href: "/privacy/", label: t("footer.privacy") },
     ],
