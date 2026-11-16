@@ -16,8 +16,12 @@ export const E2E_HOST_NAME = "app.boltget.native_host_e2e";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 
-/** Registry paths (under HKCU\Software) of the browsers the tests may run. */
-const WINDOWS_VENDORS = [
+/**
+ * Registry paths (under HKCU\Software) of the browsers the tests may run.
+ * BOLTGET_E2E_VENDORS (semicolon-separated) replaces them, to find out which
+ * key a browser reads (docs/BROWSER-INTEGRATION.md, other Chromium browsers).
+ */
+const WINDOWS_VENDORS = process.env.BOLTGET_E2E_VENDORS?.split(";").filter(Boolean) ?? [
   "Chromium",
   "Google\\Chrome for Testing",
   "Google\\Chrome",
