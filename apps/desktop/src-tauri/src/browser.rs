@@ -18,6 +18,11 @@
 //! then has the download (resumed with the new link, or added as a new one,
 //! also when the new link turns out to be another file), so nothing is lost.
 //!
+//! A capture from a private window (`incognito`) adds a download marked
+//! private, also through the add sheet and a declined resume offer: with
+//! "Forget private-window downloads" on, the list forgets it once it
+//! completes (docs/BROWSER-INTEGRATION.md, "What is never captured").
+//!
 //! Before it answers, the app makes its own first request for the link
 //! (with the browser's cookies and headers). If the server refuses it (a
 //! one-time link the browser has used) or does not answer within
@@ -59,12 +64,22 @@ const KEEP: Duration = Duration::from_secs(30 * 60);
 
 /// Request contexts of links the browser handed over for the add sheet, by
 /// link, oldest first, so the sheet's preview and its Download button make
-/// the browser's request; and captures waiting for the answer to a resume
-/// offer. Never saved; cookies stay in memory only.
+/// the browser's request, with whether they came from a private window; and
+/// captures waiting for the answer to a resume offer. Never saved; cookies
+/// stay in memory only.
 #[derive(Debug, Default)]
 pub(crate) struct Captured {
-    links: Mutex<VecDeque<(String, RequestContext, Instant)>>,
+    links: Mutex<VecDeque<CapturedLink>>,
     offers: Mutex<Offers>,
+}
+
+#[derive(Debug)]
+struct CapturedLink {
+    url: String,
+    ctx: RequestContext,
+    /// From a private window.
+    private: bool,
+    at: Instant,
 }
 
 /// Captures waiting for the answer to "Use this link to resume …?".
@@ -81,6 +96,8 @@ struct PendingOffer {
     ctx: RequestContext,
     /// The captured file's name, for its folder if it is added after all.
     name: String,
+    /// From a private window.
+    private: bool,
     at: Instant,
 }
 
@@ -103,36 +120,53 @@ pub(crate) struct ResumeOffer {
 }
 
 impl Captured {
-    fn remember(&self, url: String, ctx: RequestContext) {
+    fn remember(&self, url: String, ctx: RequestContext, private: bool) {
         let mut list = self.links.lock().unwrap_or_else(PoisonError::into_inner);
-        list.retain(|(u, _, at)| *u != url && at.elapsed() < KEEP);
+        list.retain(|l| l.url != url && l.at.elapsed() < KEEP);
         while list.len() >= MAX_LINKS {
             list.pop_front();
         }
-        list.push_back((url, ctx, Instant::now()));
+        list.push_back(CapturedLink {
+            url,
+            ctx,
+            private,
+            at: Instant::now(),
+        });
     }
 
     /// The context for `url`, if the browser handed it over lately.
     pub(crate) fn get(&self, url: &str) -> Option<RequestContext> {
+        self.get_link(url).map(|(ctx, _)| ctx)
+    }
+
+    /// The context for `url` and whether it came from a private window, if
+    /// the browser handed it over lately.
+    pub(crate) fn get_link(&self, url: &str) -> Option<(RequestContext, bool)> {
         let list = self.links.lock().unwrap_or_else(PoisonError::into_inner);
         list.iter()
-            .find(|(u, _, at)| u == url && at.elapsed() < KEEP)
-            .map(|(_, ctx, _)| ctx.clone())
+            .find(|l| l.url == url && l.at.elapsed() < KEEP)
+            .map(|l| (l.ctx.clone(), l.private))
     }
 
     /// The context for `url`, once: the download now has it.
     pub(crate) fn take(&self, url: &str) -> Option<RequestContext> {
         let mut list = self.links.lock().unwrap_or_else(PoisonError::into_inner);
-        let i = list.iter().position(|(u, _, _)| u == url)?;
+        let i = list.iter().position(|l| l.url == url)?;
         list.remove(i)
-            .filter(|(_, _, at)| at.elapsed() < KEEP)
-            .map(|(_, ctx, _)| ctx)
+            .filter(|l| l.at.elapsed() < KEEP)
+            .map(|l| l.ctx)
     }
 
     /// Keeps a capture that is the download `waiting` until the user
     /// answers the offer it returns. A newer capture of the same download
     /// replaces an older one.
-    fn offer(&self, waiting: &Candidate, ctx: RequestContext, name: &str) -> ResumeOffer {
+    fn offer(
+        &self,
+        waiting: &Candidate,
+        ctx: RequestContext,
+        name: &str,
+        private: bool,
+    ) -> ResumeOffer {
         let mut offers = self.offers.lock().unwrap_or_else(PoisonError::into_inner);
         offers.next = offers.next.wrapping_add(1);
         let offer = ResumeOffer {
@@ -152,6 +186,7 @@ impl Captured {
             offer: offer.clone(),
             ctx,
             name: name.to_owned(),
+            private,
             at: Instant::now(),
         });
         offer
@@ -347,13 +382,13 @@ async fn capture(host: &Host<'_>, engine: &Engine, c: &Capture) -> Reply {
     if let Some(p) = &probe {
         let name = c.filename.as_deref().unwrap_or(&p.filename);
         if let Some(d) = waiting_match(&waiting, name, p.size.or(c.size)) {
-            let offer = host.captured.offer(d, ctx, name);
+            let offer = host.captured.offer(d, ctx, name, c.incognito);
             (host.offer)(&offer);
             return Reply::Accepted(Accepted::confirming());
         }
     }
     if ask {
-        host.captured.remember(link.clone(), ctx);
+        host.captured.remember(link.clone(), ctx, c.incognito);
         (host.open_sheet)(link);
         return Reply::Accepted(Accepted::confirming());
     }
@@ -362,7 +397,7 @@ async fn capture(host: &Host<'_>, engine: &Engine, c: &Capture) -> Reply {
         return Reply::rejected(RejectReason::Failed, "the link was not checked");
     };
     let name = c.filename.as_deref().unwrap_or(&probe.filename).to_owned();
-    match add_new(host, engine, ctx, &name).await {
+    match add_new(host, engine, ctx, &name, c.incognito).await {
         Ok(id) => Reply::Accepted(Accepted::added(id.0)),
         Err(e) => Reply::rejected(RejectReason::Failed, e),
     }
@@ -389,19 +424,23 @@ async fn first_request(engine: &Engine, ctx: &RequestContext) -> Result<ProbeRes
     }
 }
 
-/// Adds a captured download to the main queue, in its category's folder.
+/// Adds a captured download to the main queue, in its category's folder;
+/// `private` when it came from a private window.
 async fn add_new(
     host: &Host<'_>,
     engine: &Engine,
     ctx: RequestContext,
     name: &str,
+    private: bool,
 ) -> Result<boltget_engine::DownloadId, String> {
     let dir = settings::folder_for(&host.settings, Some(name), host.downloads.as_deref())
         .ok_or("no download folder")?;
     let url = redact_url(ctx.url());
-    let req = AddRequest::new(ctx, Destination::Directory(dir)).queue(DEFAULT_QUEUE);
+    let req = AddRequest::new(ctx, Destination::Directory(dir))
+        .queue(DEFAULT_QUEUE)
+        .private(private);
     let id = engine.enqueue(req).await.map_err(|e| e.to_string())?;
-    host.bridge.added(id.into(), url);
+    host.bridge.added(id.into(), url, private);
     Ok(id)
 }
 
@@ -467,11 +506,12 @@ pub(crate) async fn answer(
     }
     let outcome = if host.settings.browser_ask {
         let link = pending.ctx.url().as_str().to_owned();
-        host.captured.remember(link.clone(), pending.ctx);
+        host.captured
+            .remember(link.clone(), pending.ctx, pending.private);
         (host.open_sheet)(link);
         OfferOutcome::Sheet
     } else {
-        add_new(host, engine, pending.ctx, &pending.name)
+        add_new(host, engine, pending.ctx, &pending.name, pending.private)
             .await
             .map_err(|e| UiError::with_message("error.internal", e))?;
         OfferOutcome::Added
@@ -514,7 +554,7 @@ fn add_links(host: &Host<'_>, a: &AddLinks) -> Reply {
         match a.context(&l.url) {
             Ok(ctx) => {
                 let link = ctx.url().as_str().to_owned();
-                host.captured.remember(link.clone(), ctx);
+                host.captured.remember(link.clone(), ctx, a.incognito);
                 links.push(link);
             }
             Err(e) => return Reply::error(ErrorReason::Invalid, e.to_string()),
@@ -844,6 +884,48 @@ mod tests {
         f.engine.shutdown().await;
     }
 
+    /// A capture from a private window adds a download marked private, also
+    /// through the add sheet; one from a usual window does not.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_private_capture_is_marked_private_all_the_way() {
+        let srv = TestServer::start().await;
+        let f = Fixture::new();
+        let mut ids = Vec::new();
+        for (seed, incognito) in [(81, true), (82, false)] {
+            let mut c = capture_of(srv.url(&format!("/data?size=1000&seed={seed}")));
+            c.incognito = incognito;
+            let reply = f.send(false, Message::Capture(c)).await;
+            let Reply::Accepted(a) = reply else {
+                panic!("{reply:?}")
+            };
+            ids.push((a.download.expect("added"), incognito));
+        }
+        let list = f.engine.list().await.unwrap();
+        for (id, incognito) in ids {
+            let s = list.iter().find(|s| s.id.0 == id).expect("listed");
+            assert_eq!(s.private, incognito, "{id}");
+        }
+
+        // With "Ask before adding", the mark waits with the link for the
+        // sheet, as do the links of "Download all links".
+        let mut c = capture_of("http://127.0.0.1:9/p.iso".into());
+        c.incognito = true;
+        f.send(true, Message::Capture(c)).await;
+        let (_, private) = f.captured.get_link("http://127.0.0.1:9/p.iso").unwrap();
+        assert!(private);
+        let mut links = AddLinks::new(vec![Link::new("https://x.test/p.zip")]);
+        links.incognito = true;
+        f.send(false, Message::AddLinks(links)).await;
+        assert!(f.captured.get_link("https://x.test/p.zip").unwrap().1);
+        f.send(
+            true,
+            Message::Capture(capture_of("http://127.0.0.1:9/u.iso".into())),
+        )
+        .await;
+        assert!(!f.captured.get_link("http://127.0.0.1:9/u.iso").unwrap().1);
+        f.engine.shutdown().await;
+    }
+
     #[tokio::test]
     async fn asking_first_opens_the_sheet_with_the_context_waiting() {
         let f = Fixture::new();
@@ -926,7 +1008,7 @@ https://x.test/b.zip"
     fn captured_contexts_wait_for_the_sheet_once() {
         let captured = Captured::default();
         let ctx = RequestContext::new("https://x.test/a.iso").unwrap();
-        captured.remember("https://x.test/a.iso".into(), ctx);
+        captured.remember("https://x.test/a.iso".into(), ctx, false);
         assert!(
             captured.get("https://x.test/a.iso").is_some(),
             "the preview"
@@ -945,7 +1027,7 @@ https://x.test/b.zip"
         let captured = Captured::default();
         for i in 0..=MAX_LINKS {
             let url = format!("https://x.test/{i}");
-            captured.remember(url.clone(), RequestContext::new(&url).unwrap());
+            captured.remember(url.clone(), RequestContext::new(&url).unwrap(), false);
         }
         assert_eq!(captured.links.lock().unwrap().len(), MAX_LINKS);
         assert!(
@@ -1021,8 +1103,8 @@ https://x.test/b.zip"
         let captured = Captured::default();
         let d = candidate(7, State::NeedsNewLink, "disc.iso", Some(100));
         let ctx = |u: &str| RequestContext::new(u).unwrap();
-        let first = captured.offer(&d, ctx("https://x.test/1"), "disc.iso");
-        let second = captured.offer(&d, ctx("https://x.test/2"), "disc.iso");
+        let first = captured.offer(&d, ctx("https://x.test/1"), "disc.iso", false);
+        let second = captured.offer(&d, ctx("https://x.test/2"), "disc.iso", false);
         assert_ne!(first.offer, second.offer);
         assert_eq!(captured.offers(), std::slice::from_ref(&second));
         assert!(captured.take_offer(first.offer).is_none(), "replaced");
@@ -1031,7 +1113,7 @@ https://x.test/b.zip"
         assert!(captured.take_offer(second.offer).is_none(), "once");
         for i in 0..=MAX_OFFERS as u64 {
             let d = candidate(i, State::NeedsNewLink, "disc.iso", Some(100));
-            captured.offer(&d, ctx("https://x.test/a"), "disc.iso");
+            captured.offer(&d, ctx("https://x.test/a"), "disc.iso", false);
         }
         assert_eq!(captured.offers().len(), MAX_OFFERS);
     }

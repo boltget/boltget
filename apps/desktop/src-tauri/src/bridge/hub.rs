@@ -6,7 +6,10 @@
 //! subscriber's first message is a snapshot taken here, so nothing that
 //! happens between the snapshot and the first batch can be lost.
 
+use std::collections::VecDeque;
 use std::future::pending;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use boltget_engine::{Engine, EngineEvent};
@@ -69,6 +72,14 @@ pub(crate) enum Request {
     List(oneshot::Sender<Vec<DownloadRow>>),
 }
 
+/// How many forgotten private downloads keep their path for their
+/// notification's buttons.
+const FORGOTTEN_PATHS: usize = 32;
+
+/// Paths of private downloads the list forgot as they completed, newest
+/// last; in memory only.
+type Forgotten = Arc<Mutex<VecDeque<(DownloadId, PathBuf)>>>;
+
 /// Sends requests to the hub task. Cheap to clone.
 #[derive(Debug, Clone)]
 pub(crate) struct HubHandle {
@@ -76,6 +87,7 @@ pub(crate) struct HubHandle {
     activity: watch::Sender<Activity>,
     notices: broadcast::Sender<Notice>,
     finishes: broadcast::Sender<(QueueId, FinishAction)>,
+    forgotten: Forgotten,
 }
 
 impl HubHandle {
@@ -85,10 +97,13 @@ impl HubHandle {
         let (activity, _) = watch::channel(Activity::default());
         let (notices, _) = broadcast::channel(64);
         let (finishes, _) = broadcast::channel(16);
+        let forgotten = Forgotten::default();
         let outputs = Outputs {
             activity: activity.clone(),
             notices: notices.clone(),
             finishes: finishes.clone(),
+            forgotten: forgotten.clone(),
+            hub: tx.downgrade(),
         };
         (
             Self {
@@ -96,6 +111,7 @@ impl HubHandle {
                 activity,
                 notices,
                 finishes,
+                forgotten,
             },
             run(rx, tick, outputs),
         )
@@ -126,6 +142,17 @@ impl HubHandle {
         self.send(Request::List(tx));
         rx.await.unwrap_or_default()
     }
+
+    /// Where a private download the list forgot was saved.
+    pub(crate) fn forgotten_path(&self, id: DownloadId) -> Option<PathBuf> {
+        self.forgotten
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .rev()
+            .find(|(i, _)| *i == id)
+            .map(|(_, p)| p.clone())
+    }
 }
 
 fn now_ms() -> u64 {
@@ -155,6 +182,7 @@ pub(crate) fn new_row(id: DownloadId, url: String) -> DownloadRow {
         // Last until the queues are read again (within a tick).
         queue_position: i64::MAX,
         start_at: None,
+        private: false,
     }
 }
 
@@ -163,6 +191,10 @@ struct Outputs {
     activity: watch::Sender<Activity>,
     notices: broadcast::Sender<Notice>,
     finishes: broadcast::Sender<(QueueId, FinishAction)>,
+    forgotten: Forgotten,
+    /// The hub itself, for what a task it starts finds out later; weak, so
+    /// the hub still stops when the bridge goes.
+    hub: mpsc::WeakUnboundedSender<Request>,
 }
 
 struct Hub {
@@ -362,6 +394,9 @@ impl Hub {
                 let previous = self.model.row(id).map(|r| r.state);
                 self.model.completed(id, path_string(path), now_ms());
                 self.track(id, previous);
+                if self.settings.forget_private && self.model.row(id).is_some_and(|r| r.private) {
+                    self.forget(id, path.clone());
+                }
             }
             EngineEvent::QueuesChanged => self.queues_dirty = true,
             EngineEvent::QueueFinished { queue, action } => {
@@ -385,9 +420,59 @@ impl Hub {
         if previous == Some(row.state) && !row.state.is_active() {
             return;
         }
-        if let Some(notice) = self.tracker.state_changed(row, previous, Instant::now()) {
+        if let Some(mut notice) = self.tracker.state_changed(row, previous, Instant::now()) {
+            // Only a download the list forgets is announced without its name.
+            if let Notice::Completed { private, .. } = &mut notice {
+                *private &= self.settings.forget_private;
+            }
             let _ = self.outputs.notices.send(notice);
         }
+    }
+
+    /// A private download completed with "Forget private-window downloads"
+    /// on: its record goes (the file stays), then its row. The notice for
+    /// it went out first. Its path stays in memory for the notification.
+    fn forget(&self, id: DownloadId, path: PathBuf) {
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        {
+            let mut paths = self
+                .outputs
+                .forgotten
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            paths.retain(|(i, _)| *i != id);
+            while paths.len() >= FORGOTTEN_PATHS {
+                paths.pop_front();
+            }
+            paths.push_back((id, path));
+        }
+        let hub = self.outputs.hub.clone();
+        tokio::spawn(async move {
+            // The database decides: only a completed private download goes.
+            let forget = engine.list().await.is_ok_and(|list| {
+                list.iter().any(|s| {
+                    DownloadId::from(s.id) == id
+                        && s.private
+                        && s.state == boltget_engine::State::Completed
+                })
+            });
+            if !forget {
+                return;
+            }
+            match engine.remove(id.into(), false).await {
+                Ok(_) => {
+                    tracing::info!(id = id.0, "forgot a completed private download");
+                    if let Some(hub) = hub.upgrade() {
+                        let _ = hub.send(Request::Removed(id));
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(id = id.0, error = %e, "could not forget a private download");
+                }
+            }
+        });
     }
 
     /// Reads the queues and every download's place in them again, after

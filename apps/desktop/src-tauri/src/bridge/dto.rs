@@ -193,6 +193,9 @@ pub(crate) struct DownloadRow {
     /// When it starts on its own (Unix milliseconds), if the user chose a
     /// time.
     pub(crate) start_at: Option<u64>,
+    /// From a private browser window: with "Forget private-window
+    /// downloads" on, it leaves the list once it completes.
+    pub(crate) private: bool,
 }
 
 pub(crate) fn path_string(p: &Path) -> String {
@@ -219,6 +222,7 @@ impl From<&engine::DownloadSummary> for DownloadRow {
             queue: s.queue.into(),
             queue_position: s.queue_position,
             start_at: s.start_at,
+            private: s.private,
         }
     }
 }

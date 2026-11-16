@@ -263,6 +263,8 @@ export interface MessageParams {
   "notify.batch.more": { count: number; names: string | number };
   "notify.attention.batch": { count: number };
   "notify.fix": never;
+  "notify.private": never;
+  "notify.private.name": never;
   "notify.background.title": never;
   "notify.background": never;
   "shortcut.palette": never;
@@ -332,6 +334,8 @@ export interface MessageParams {
   "settings.capture_sites.placeholder": never;
   "settings.capture_private": never;
   "settings.capture_private.description": never;
+  "settings.forget_private": never;
+  "settings.forget_private.description": never;
   "settings.capture_defaults": never;
   "settings.capture_defaults.description": never;
   "settings.capture_defaults.restore": never;
@@ -459,6 +463,7 @@ export interface MessageParams {
   "keywords.capture_types": never;
   "keywords.capture_sites": never;
   "keywords.capture_private": never;
+  "keywords.forget_private": never;
   "keywords.capture_defaults": never;
   "keywords.browser_ask": never;
   "keywords.browser_integration": never;

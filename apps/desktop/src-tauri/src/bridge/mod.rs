@@ -140,8 +140,16 @@ impl Bridge {
 
     /// A download added outside the page (the browser): its first row, so
     /// the list shows it before the engine's first event.
-    pub(crate) fn added(&self, id: DownloadId, url: String) {
-        self.upsert(hub::new_row(id, url));
+    pub(crate) fn added(&self, id: DownloadId, url: String, private: bool) {
+        let mut row = hub::new_row(id, url);
+        row.private = private;
+        self.upsert(row);
+    }
+
+    /// Where a private download the list forgot was saved, while Boltget
+    /// runs: its notification's Open and Show in folder use it.
+    pub(crate) fn forgotten_path(&self, id: DownloadId) -> Option<PathBuf> {
+        self.hub.forgotten_path(id)
     }
 
     pub(crate) fn set_state(&self, id: DownloadId, state: DownloadState) {
@@ -189,6 +197,12 @@ impl Bridge {
         let old = self.settings();
         let new = settings::patched(&old, patch)?;
         settings::store(engine, &old, &new).await?;
+        if new.forget_private && !old.forget_private {
+            // Private downloads that completed before go now too.
+            for id in forget_completed_private(engine).await {
+                self.removed(id);
+            }
+        }
         if old.proxy != new.proxy {
             apply_proxy(engine, &new);
         }
@@ -359,6 +373,16 @@ impl Bridge {
             }
         };
         prefs.speed_limit = settings.speed_limit;
+        // Private downloads that completed while the app could not forget
+        // them (it quit first, or a CLI ran them) leave the list now.
+        let rows = if prefs.forget_private {
+            let forgotten = forget_completed_private(&engine).await;
+            rows.into_iter()
+                .filter(|r| !forgotten.contains(&r.id))
+                .collect()
+        } else {
+            rows
+        };
         apply_proxy(&engine, &prefs);
         engine.set_max_connections(prefs.max_connections);
         self.settings.send_replace(prefs.clone());
@@ -492,6 +516,38 @@ impl Bridge {
             Err(e) => tracing::warn!(error = %e, "could not change the speed limit"),
         }
     }
+}
+
+/// Removes every completed private download from the list, keeping its file
+/// (docs/BROWSER-INTEGRATION.md, "What is never captured"). Returns the ids
+/// removed.
+pub(crate) async fn forget_completed_private(engine: &Engine) -> Vec<DownloadId> {
+    let list = match engine.list().await {
+        Ok(list) => list,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not list the downloads to forget");
+            return Vec::new();
+        }
+    };
+    let mut forgotten = Vec::new();
+    for s in list
+        .iter()
+        .filter(|s| s.private && s.state == State::Completed)
+    {
+        match engine.remove(s.id, false).await {
+            Ok(_) => forgotten.push(s.id.into()),
+            Err(e) => {
+                tracing::warn!(id = s.id.0, error = %e, "could not forget a private download");
+            }
+        }
+    }
+    if !forgotten.is_empty() {
+        tracing::info!(
+            count = forgotten.len(),
+            "forgot completed private downloads"
+        );
+    }
+    forgotten
 }
 
 /// Gives the engine the proxy rules of `prefs` (reading Windows' settings

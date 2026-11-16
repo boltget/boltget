@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   clipboard: false,
   browserAsk: false,
   capture: DEFAULT_CAPTURE,
+  forgetPrivate: false,
 };
 
 export type Check<T> = { ok: true; value: T } | { ok: false; problem: string };

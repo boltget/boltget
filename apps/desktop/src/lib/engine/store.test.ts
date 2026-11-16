@@ -31,6 +31,7 @@ function row(id: number, extra: Partial<DownloadRow> = {}): DownloadRow {
     queue: 1,
     queuePosition: id,
     startAt: null,
+    private: false,
     ...extra,
   };
 }

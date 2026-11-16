@@ -10,7 +10,8 @@ describe("settings search", () => {
     expect(ids("dark")).toEqual(["theme"]);
     expect(ids("startup")).toEqual(["autostart"]);
     expect(ids("CLIPBOARD")).toContain("clipboard");
-    expect(ids("incognito")).toEqual(["capture_private"]);
+    expect(ids("incognito")).toEqual(["capture_private", "forget_private"]);
+    expect(ids("history")).toEqual(["forget_private"]);
     expect(ids("never sites")).toEqual(["capture_sites"]);
     expect(ids("threshold")).toEqual(["capture_size"]);
     // Every word must match.

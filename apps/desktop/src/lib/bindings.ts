@@ -264,6 +264,12 @@ export type AppSettings = {
 	browserAsk: boolean,
 	/**  What the browser extension hands over. */
 	capture: CaptureSettings,
+	/**
+	 *  A download from a private browser window leaves the list once it
+	 *  completes; the file stays (off by default:
+	 *  docs/BROWSER-INTEGRATION.md, "What is never captured").
+	 */
+	forgetPrivate: boolean,
 };
 
 /**  What Settings shows about the browsers. */
@@ -481,6 +487,11 @@ export type DownloadRow = {
 	 *  time.
 	 */
 	startAt: number | null,
+	/**
+	 *  From a private browser window: with "Forget private-window
+	 *  downloads" on, it leaves the list once it completes.
+	 */
+	private: boolean,
 };
 
 /**
@@ -742,6 +753,7 @@ export type SettingsPatch = {
 	browserAsk?: boolean | null,
 	/**  Some of the capture rules. */
 	capture?: CapturePatch | null,
+	forgetPrivate?: boolean | null,
 };
 
 /**  What the page is asked to do from outside it. */

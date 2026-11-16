@@ -156,9 +156,11 @@ impl Planner {
 }
 
 fn names(notices: &[&Notice]) -> String {
+    let private = catalog::t("notify.private.name");
     let all: Vec<&str> = notices
         .iter()
         .map(|n| match n {
+            Notice::Completed { private: true, .. } => private.as_str(),
             Notice::Completed { name, .. } | Notice::Attention { name, .. } => name.as_str(),
         })
         .collect();
@@ -200,11 +202,25 @@ fn reason(state: DownloadState, key: Option<&str>) -> String {
 
 fn one(notice: &Notice) -> Toast {
     match notice {
+        // A private download the list forgot: no name, no size, since
+        // Windows keeps notifications after they are shown.
+        Notice::Completed {
+            id, private: true, ..
+        } => Toast {
+            title: catalog::t("notify.private"),
+            body: None,
+            click: Action::Show,
+            buttons: vec![
+                (catalog::t("action.open"), Action::Open(*id)),
+                (catalog::t("action.show"), Action::Reveal(*id)),
+            ],
+        },
         Notice::Completed {
             id,
             name,
             size,
             elapsed,
+            ..
         } => {
             let body = match (size, elapsed) {
                 (Some(size), Some(elapsed)) => Some(catalog::tr(
@@ -298,11 +314,22 @@ fn act(app: &AppHandle, action: Action) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 let bridge = app.state::<Bridge>();
-                let Ok(engine) = bridge.engine() else { return };
-                let done = if matches!(action, Action::Open(_)) {
-                    crate::bridge::commands::open_file(engine, id).await
+                let open = matches!(action, Action::Open(_));
+                // A private download the list forgot is found by the path
+                // kept for it while Boltget runs.
+                let done = if let Some(path) = bridge.forgotten_path(id) {
+                    if open {
+                        crate::bridge::commands::open_path(&path)
+                    } else {
+                        crate::bridge::commands::reveal_path(&path)
+                    }
                 } else {
-                    crate::bridge::commands::reveal_file(engine, id).await
+                    let Ok(engine) = bridge.engine() else { return };
+                    if open {
+                        crate::bridge::commands::open_file(engine, id).await
+                    } else {
+                        crate::bridge::commands::reveal_file(engine, id).await
+                    }
                 };
                 if let Err(e) = done {
                     tracing::warn!(id = id.0, error = ?e, "a notification's action failed");
@@ -457,7 +484,42 @@ mod tests {
             name: name.into(),
             size: Some(420 * 1024 * 1024),
             elapsed: Some(Duration::from_millis(7900)),
+            private: false,
         }
+    }
+
+    #[test]
+    fn a_forgotten_private_download_is_not_named() {
+        let private = Notice::Completed {
+            id: DownloadId(9),
+            name: "secret.iso".into(),
+            size: Some(1024),
+            elapsed: None,
+            private: true,
+        };
+        let toasts = Planner::default().plan(std::slice::from_ref(&private), Instant::now());
+        assert_eq!(
+            toasts,
+            [Toast {
+                title: "Private download finished".into(),
+                body: None,
+                click: Action::Show,
+                buttons: vec![
+                    ("Open".into(), Action::Open(DownloadId(9))),
+                    ("Show in folder".into(), Action::Reveal(DownloadId(9))),
+                ],
+            }]
+        );
+        // In a batch summary, it is not named either.
+        let toasts = Planner::default().plan(
+            &[done(1, "a.iso"), private, done(2, "b.iso")],
+            Instant::now(),
+        );
+        assert_eq!(toasts.len(), 1, "{toasts:?}");
+        assert_eq!(
+            toasts[0].body.as_deref(),
+            Some("a.iso, a private download and 1 more")
+        );
     }
 
     #[test]

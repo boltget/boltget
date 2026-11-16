@@ -40,6 +40,7 @@ export type RowId =
   | "capture_types"
   | "capture_sites"
   | "capture_private"
+  | "forget_private"
   | "capture_defaults"
   | "browser_ask"
   | "browser_integration"
@@ -159,6 +160,13 @@ export const ROWS: readonly Row[] = [
     label: "settings.capture_private",
     description: "settings.capture_private.description",
     keywords: "keywords.capture_private",
+  },
+  {
+    id: "forget_private",
+    section: "browser",
+    label: "settings.forget_private",
+    description: "settings.forget_private.description",
+    keywords: "keywords.forget_private",
   },
   {
     id: "capture_defaults",

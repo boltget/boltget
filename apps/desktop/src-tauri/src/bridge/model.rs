@@ -261,19 +261,21 @@ impl Model {
         }
     }
 
-    /// A download's queue, place and start time, read again after the
-    /// queues changed; the row goes out only if one of them did.
+    /// A download's queue, place, start time and private mark, read again
+    /// after the queues changed; the row goes out only if one of them did.
     pub(crate) fn set_queue_fields(&mut self, from: &DownloadRow) {
         let Some(e) = self.rows.get_mut(&from.id) else {
             return;
         };
         let row = &mut e.row;
-        if (row.queue, row.queue_position, row.start_at)
-            != (from.queue, from.queue_position, from.start_at)
+        if (row.queue, row.queue_position, row.start_at, row.private)
+            != (from.queue, from.queue_position, from.start_at, from.private)
         {
             row.queue = from.queue;
             row.queue_position = from.queue_position;
             row.start_at = from.start_at;
+            // A row the engine announced before it was read knows it now.
+            row.private = from.private;
             self.dirty.insert(from.id);
         }
     }
@@ -395,6 +397,7 @@ mod tests {
             queue: super::super::dto::QueueId(1),
             queue_position: i64::try_from(id).unwrap(),
             start_at: None,
+            private: false,
         }
     }
 

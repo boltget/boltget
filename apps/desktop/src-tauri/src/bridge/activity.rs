@@ -61,6 +61,9 @@ pub(crate) enum Notice {
         size: Option<u64>,
         /// How long it took, when this session saw all of it.
         elapsed: Option<Duration>,
+        /// From a private window, and the list forgets it: announced
+        /// without its name.
+        private: bool,
     },
     /// A download stopped and needs the user: it failed, its link expired,
     /// or its checksum does not match.
@@ -132,6 +135,7 @@ impl Tracker {
                 name: display_name(row),
                 size: row.total,
                 elapsed: started.and_then(|(at, whole)| whole.then(|| now - at)),
+                private: row.private,
             });
         }
         if needs_attention(row.state) && previous != Some(row.state) {
@@ -253,6 +257,7 @@ mod tests {
             queue: crate::bridge::dto::QueueId(1),
             queue_position: 0,
             start_at: None,
+            private: false,
         }
     }
 
@@ -384,6 +389,7 @@ mod tests {
                 name: "ubuntu.iso".into(),
                 size: Some(1000),
                 elapsed: Some(Duration::from_secs(8)),
+                private: false,
             })
         );
 

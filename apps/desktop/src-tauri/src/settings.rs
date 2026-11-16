@@ -230,6 +230,10 @@ pub(crate) struct AppSettings {
     pub(crate) browser_ask: bool,
     /// What the browser extension hands over.
     pub(crate) capture: CaptureSettings,
+    /// A download from a private browser window leaves the list once it
+    /// completes; the file stays (off by default:
+    /// docs/BROWSER-INTEGRATION.md, "What is never captured").
+    pub(crate) forget_private: bool,
 }
 
 impl Default for AppSettings {
@@ -247,6 +251,7 @@ impl Default for AppSettings {
             clipboard: false,
             browser_ask: false,
             capture: CaptureSettings::default(),
+            forget_private: false,
         }
     }
 }
@@ -269,6 +274,7 @@ pub(crate) struct SettingsPatch {
     pub(crate) browser_ask: Option<bool>,
     /// Some of the capture rules.
     pub(crate) capture: Option<CapturePatch>,
+    pub(crate) forget_private: Option<bool>,
 }
 
 /// A change to some capture rules; absent fields stay as they are. The
@@ -308,6 +314,7 @@ const KEY_CLOSE_TO_TRAY: &str = "close_to_tray";
 const KEY_CLIPBOARD: &str = "clipboard";
 const KEY_BROWSER_ASK: &str = "browser_ask";
 const KEY_CAPTURE: &str = "capture";
+const KEY_FORGET_PRIVATE: &str = "forget_private";
 
 /// Reads one stored value; a missing or unreadable one is the default.
 async fn read<T: serde::de::DeserializeOwned>(engine: &Engine, key: &str) -> Option<T> {
@@ -373,6 +380,9 @@ pub(crate) async fn load(engine: &Engine) -> Result<AppSettings, UiError> {
         .and_then(|v| stored_capture(&v))
     {
         s.capture = c;
+    }
+    if let Some(b) = read(engine, KEY_FORGET_PRIVATE).await {
+        s.forget_private = b;
     }
     s.start_with_windows = platform::autostart_enabled();
     Ok(s)
@@ -639,6 +649,9 @@ pub(crate) fn patched(
     if let Some(c) = &patch.capture {
         next.capture = patched_capture(&next.capture, c)?;
     }
+    if let Some(b) = patch.forget_private {
+        next.forget_private = b;
+    }
     Ok(next)
 }
 
@@ -686,6 +699,9 @@ pub(crate) async fn store(
     }
     if old.capture != new.capture {
         write(engine, KEY_CAPTURE, &new.capture).await?;
+    }
+    if old.forget_private != new.forget_private {
+        write(engine, KEY_FORGET_PRIVATE, &new.forget_private).await?;
     }
     Ok(())
 }
@@ -1274,6 +1290,27 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn forgetting_private_downloads_is_off_until_turned_on() {
+        let data = tempfile::tempdir().unwrap();
+        let engine = Engine::open(boltget_engine::EngineConfig::default(), data.path()).unwrap();
+        let before = load(&engine).await.unwrap();
+        assert!(!before.forget_private);
+        let after = patched(
+            &before,
+            &SettingsPatch {
+                forget_private: Some(true),
+                ..SettingsPatch::default()
+            },
+        )
+        .unwrap();
+        assert!(after.forget_private);
+        assert_eq!(after.capture, before.capture, "not a capture rule");
+        store(&engine, &before, &after).await.unwrap();
+        assert!(load(&engine).await.unwrap().forget_private);
+        engine.shutdown().await;
     }
 
     #[tokio::test]

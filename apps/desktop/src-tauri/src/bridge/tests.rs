@@ -665,3 +665,199 @@ async fn the_pipe_learns_who_owns_the_engine() {
         boltget_ipc::Ownership::NotOwner
     ));
 }
+
+/// Adds a download as a browser capture does: marked private or not, and
+/// its first row given to the bridge.
+fn add_captured(bridge: &Bridge, url: &str, dir: &Path, private: bool) -> DownloadHandle {
+    let engine = bridge.engine().unwrap();
+    let h = engine.add(
+        AddRequest::new(
+            RequestContext::new(url).unwrap(),
+            Destination::Directory(dir.to_path_buf()),
+        )
+        .private(private),
+    );
+    bridge.added(h.id().into(), url.to_owned(), private);
+    h
+}
+
+async fn forget_private(bridge: &Bridge, on: bool) {
+    let patch = crate::settings::SettingsPatch {
+        forget_private: Some(on),
+        ..crate::settings::SettingsPatch::default()
+    };
+    assert_eq!(
+        bridge.update_settings(&patch).await.unwrap().forget_private,
+        on
+    );
+}
+
+/// Waits until the list has no row `id`.
+async fn until_gone(bridge: &Bridge, id: DownloadId) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    while bridge.list().await.iter().any(|r| r.id == id) {
+        assert!(tokio::time::Instant::now() < deadline, "still listed");
+        tokio::time::sleep(TEST_TICK).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn private_downloads_leave_the_list_once_complete_and_keep_their_file() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let bridge = bridge();
+    let mut notices = bridge.notices();
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    forget_private(&bridge, true).await;
+    let mut rx = subscribe(&bridge);
+
+    let private = add_captured(
+        &bridge,
+        &srv.url("/data?size=300000&seed=71&throttle=1048576"),
+        dir.path(),
+        true,
+    );
+    let usual = add_captured(
+        &bridge,
+        &srv.url("/data?size=300000&seed=72&throttle=1048576"),
+        dir.path(),
+        false,
+    );
+    let (pid, uid) = (DownloadId::from(private.id()), DownloadId::from(usual.id()));
+    let file = private.wait().await.unwrap().path;
+    usual.wait().await.unwrap();
+    until_gone(&bridge, pid).await;
+    until(
+        &mut rx,
+        |m| matches!(m, EngineMessage::Batch { removed, .. } if removed.contains(&pid)),
+    )
+    .await;
+
+    assert!(file.is_file(), "the file stays");
+    assert_eq!(std::fs::metadata(&file).unwrap().len(), 300_000);
+    let engine = bridge.engine().unwrap().clone();
+    let ids: Vec<DownloadId> = engine
+        .list()
+        .await
+        .unwrap()
+        .iter()
+        .map(|s| s.id.into())
+        .collect();
+    assert_eq!(ids, [uid], "only the usual download is kept");
+    let rows = bridge.list().await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].state, DownloadState::Completed);
+    // Its notification names nothing, and its buttons find the file.
+    let mut private_notice = None;
+    while let Ok(n) = notices.try_recv() {
+        if let super::activity::Notice::Completed { id, private, .. } = n {
+            if id == pid {
+                private_notice = Some(private);
+            } else {
+                assert!(!private, "the usual download is named");
+            }
+        }
+    }
+    assert_eq!(private_notice, Some(true));
+    assert_eq!(bridge.forgotten_path(pid), Some(file));
+    assert_eq!(bridge.forgotten_path(uid), None);
+    bridge.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn with_the_setting_off_private_downloads_stay_until_it_is_turned_on() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let bridge = bridge();
+    let mut notices = bridge.notices();
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let h = add_captured(
+        &bridge,
+        &srv.url("/data?size=200000&seed=73"),
+        dir.path(),
+        true,
+    );
+    let id = DownloadId::from(h.id());
+    let file = h.wait().await.unwrap().path;
+    tokio::time::sleep(TEST_TICK * 6).await;
+    let rows = bridge.list().await;
+    assert_eq!(rows.len(), 1, "kept");
+    assert!(rows[0].private && rows[0].state == DownloadState::Completed);
+    let notice = tokio::time::timeout(Duration::from_secs(10), notices.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(
+            notice,
+            super::activity::Notice::Completed { private: false, .. }
+        ),
+        "named as usual: {notice:?}"
+    );
+
+    // Turning the setting on forgets it now, and the file stays.
+    forget_private(&bridge, true).await;
+    until_gone(&bridge, id).await;
+    assert!(bridge.engine().unwrap().list().await.unwrap().is_empty());
+    assert!(file.is_file());
+    bridge.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn on_start_completed_private_downloads_go_and_unfinished_ones_wait() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+
+    // A run that quit before it could forget a completed private download
+    // (or a CLI that ran it), with another private download paused.
+    let engine = Engine::open(cfg(), state.path()).unwrap();
+    let private = |seed: u32, throttle: &str| {
+        AddRequest::new(
+            RequestContext::new(&srv.url(&format!("/data?size={}&seed={seed}{throttle}", 2 * MIB)))
+                .unwrap(),
+            Destination::Directory(dir.path().to_path_buf()),
+        )
+        .private(true)
+    };
+    let done = engine.add(private(74, "")).wait().await.unwrap();
+    let paused = engine.add(private(75, "&throttle=262144"));
+    let pid = paused.id();
+    until_durable(&paused, 64 * KIB).await;
+    engine.pause(pid).await.unwrap();
+    let _ = paused.wait().await;
+    engine
+        .set_app_setting("forget_private", Some(serde_json::json!(true)))
+        .await
+        .unwrap();
+    engine.shutdown().await;
+
+    let bridge = bridge();
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let rows = bridge.list().await;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].id, DownloadId::from(pid));
+    assert!(rows[0].private && rows[0].state == DownloadState::Paused);
+    assert!(done.path.is_file(), "the file stays");
+    assert_eq!(bridge.engine().unwrap().list().await.unwrap().len(), 1);
+
+    // Resumed, it goes once it completes.
+    let engine = bridge.engine().unwrap().clone();
+    let h = engine
+        .resume(pid, boltget_engine::ResumeOptions::default())
+        .await
+        .unwrap();
+    let file = h.wait().await.unwrap().path;
+    until_gone(&bridge, pid.into()).await;
+    assert!(file.is_file());
+    assert!(engine.list().await.unwrap().is_empty());
+    bridge.shutdown().await;
+}

@@ -180,6 +180,7 @@ export function mockEngineApi(search: string): EngineApi {
         queue: 1,
         queuePosition: id,
         startAt: null,
+        private: false,
       },
       segments: segs,
       rate: (6 + random() * 40) * MIB,
@@ -553,6 +554,7 @@ export function mockEngineApi(search: string): EngineApi {
         if (patch.startWithWindows != null) next.startWithWindows = patch.startWithWindows;
         if (patch.clipboard != null) next.clipboard = patch.clipboard;
         if (patch.browserAsk != null) next.browserAsk = patch.browserAsk;
+        if (patch.forgetPrivate != null) next.forgetPrivate = patch.forgetPrivate;
         if (patch.capture) {
           const c = patch.capture;
           next.capture = {

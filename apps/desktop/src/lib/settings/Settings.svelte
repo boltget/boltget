@@ -723,7 +723,15 @@
               </SettingRow>
             {/if}
 
-            <CaptureRows capture={s.capture} {shown} {highlighted} {problems} {problem} {save} />
+            <CaptureRows
+              capture={s.capture}
+              forgetPrivate={s.forgetPrivate}
+              {shown}
+              {highlighted}
+              {problems}
+              {problem}
+              {save}
+            />
 
             {#if shown.has("browser_ask")}
               <SettingRow

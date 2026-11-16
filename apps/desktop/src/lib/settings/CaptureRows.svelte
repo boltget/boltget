@@ -4,7 +4,9 @@
   changes, like the rest of Settings: switches and checkboxes at once, typed
   values on Enter (Ctrl+Enter in a site list) or when the field is left,
   after a check that says what is wrong under the field. The extension
-  takes the saved rules with its next `hello`.
+  takes the saved rules with its next `hello`. "Forget private-window
+  downloads" sits by "Private windows" but is the app's own setting, not a
+  rule: the extension never sees it, and Restore defaults leaves it.
 -->
 <script lang="ts">
   import Button from "@boltget/ui/components/Button.svelte";
@@ -33,6 +35,8 @@
 
   interface Props {
     capture: CaptureSettings;
+    /** "Forget private-window downloads" (an app setting, not a rule). */
+    forgetPrivate: boolean;
     /** The rows on show (the section's, or what a search found). */
     shown: Set<RowId>;
     highlighted: RowId | null;
@@ -41,7 +45,7 @@
     save: (field: string, patch: SettingsPatch) => Promise<boolean>;
   }
 
-  let { capture, shown, highlighted, problems, problem, save }: Props = $props();
+  let { capture, forgetPrivate, shown, highlighted, problems, problem, save }: Props = $props();
 
   type Draft = "minSize" | "other" | "never" | "always";
   let editing = $state<Draft | null>(null);
@@ -338,6 +342,31 @@
         aria-labelledby="setting-capture_private"
         aria-describedby={describedBy("capture_private")}
         onchange={onswitch("capture_private", (privateWindows) => ({ privateWindows }))}
+      />
+    {/snippet}
+  </SettingRow>
+{/if}
+
+{#if shown.has("forget_private")}
+  <SettingRow
+    id="forget_private"
+    label={t("settings.forget_private")}
+    description={t("settings.forget_private.description")}
+    target={highlighted === "forget_private"}
+    problem={problems.forget_private}
+  >
+    {#snippet control()}
+      <Switch
+        checked={forgetPrivate}
+        aria-labelledby="setting-forget_private"
+        aria-describedby={describedBy("forget_private")}
+        onchange={(event: Event) => {
+          const input = event.currentTarget as HTMLInputElement;
+          const on = input.checked;
+          void save("forget_private", { forgetPrivate: on }).then((saved) => {
+            if (!saved) input.checked = !on;
+          });
+        }}
       />
     {/snippet}
   </SettingRow>

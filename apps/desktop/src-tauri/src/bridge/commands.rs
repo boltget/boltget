@@ -83,10 +83,11 @@ pub(crate) async fn add_download(
 ) -> Result<DownloadRow, UiError> {
     let engine = bridge.engine()?;
     // A link the browser handed over keeps its cookies and headers (and
-    // gives them up once it is added).
-    let ctx = match captured.get(request.url.trim()) {
-        Some(ctx) => ctx,
-        None => RequestContext::new(request.url.trim())?,
+    // gives them up once it is added), and whether it came from a private
+    // window.
+    let (ctx, private) = match captured.get_link(request.url.trim()) {
+        Some((ctx, private)) => (ctx, private),
+        None => (RequestContext::new(request.url.trim())?, false),
     };
     let dir = match request.directory.as_deref().map(str::trim) {
         Some(d) if !d.is_empty() => PathBuf::from(d),
@@ -97,7 +98,9 @@ pub(crate) async fn add_download(
         _ => Destination::Directory(dir.clone()),
     };
     let url = redact_url(ctx.url());
-    let mut req = AddRequest::new(ctx, destination).speed_limit(request.speed_limit);
+    let mut req = AddRequest::new(ctx, destination)
+        .speed_limit(request.speed_limit)
+        .private(private);
     if let Some(n) = request.connections {
         req = req.connections(n);
     }
@@ -127,6 +130,7 @@ pub(crate) async fn add_download(
     let mut row = new_row(id.into(), url);
     row.speed_limit = request.speed_limit.filter(|&r| r > 0);
     row.queue = queue;
+    row.private = private;
     if paused {
         row.state = DownloadState::Paused;
     } else {
@@ -134,7 +138,10 @@ pub(crate) async fn add_download(
     }
     bridge.upsert(row.clone());
     captured.take(request.url.trim());
-    remember_folder(engine, &dir).await;
+    // A private download leaves no trace among the add sheet's folders.
+    if !private {
+        remember_folder(engine, &dir).await;
+    }
     Ok(row)
 }
 
@@ -602,11 +609,29 @@ pub(crate) async fn open_file(
     if summary.state != boltget_engine::State::Completed {
         return Err(UiError::key("error.invalid_state"));
     }
-    let path = summary
-        .path
-        .filter(|p| p.is_file())
-        .ok_or_else(|| UiError::key("error.file_missing"))?;
-    tauri_plugin_opener::open_path(&path, None::<&str>)
+    open_path(
+        &summary
+            .path
+            .ok_or_else(|| UiError::key("error.file_missing"))?,
+    )
+}
+
+/// Opens a downloaded file by its path (a notification of a private
+/// download the list forgot; the page never names a path).
+pub(crate) fn open_path(path: &Path) -> Result<(), UiError> {
+    if !path.is_file() {
+        return Err(UiError::key("error.file_missing"));
+    }
+    tauri_plugin_opener::open_path(path, None::<&str>)
+        .map_err(|e| UiError::with_message("error.open_failed", e.to_string()))
+}
+
+/// Shows a downloaded file in its folder by its path, as [`open_path`].
+pub(crate) fn reveal_path(path: &Path) -> Result<(), UiError> {
+    if !path.is_file() {
+        return Err(UiError::key("error.file_missing"));
+    }
+    tauri_plugin_opener::reveal_item_in_dir(path)
         .map_err(|e| UiError::with_message("error.open_failed", e.to_string()))
 }
 
