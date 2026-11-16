@@ -9,6 +9,7 @@
 //! boltget refresh <id> <new-url> [-H ...]
 //! boltget config list|get|set|unset [limit] [<value>]
 //! boltget bench [<url>...] [--targets bench/targets.toml] [--runs 5] [-c auto,8] [--json]
+//! boltget media status|install|update|check|rollback|channel
 //! ```
 //!
 //! Downloads are kept in a database (`--state`, default `%LOCALAPPDATA%\Boltget`)
@@ -22,6 +23,7 @@ mod bench;
 mod display;
 mod json;
 mod list;
+mod media;
 mod remote;
 mod settings;
 
@@ -170,6 +172,9 @@ enum Command {
     /// Measure download times: repeated, interleaved runs with statistics.
     #[command(after_long_help = bench::HELP)]
     Bench(bench::BenchArgs),
+    /// Install, update and check the video tools (yt-dlp and FFmpeg).
+    #[command(after_long_help = media::HELP)]
+    Media(media::MediaArgs),
 }
 
 /// Options shared by the commands that run a download.
@@ -964,7 +969,7 @@ async fn remove(args: &RemoveArgs, state: Option<&Path>) -> u8 {
 fn uses_database(command: &Command) -> bool {
     match command {
         Command::Get(a) => !a.no_state,
-        Command::Bench(_) => false,
+        Command::Bench(_) | Command::Media(_) => false,
         _ => true,
     }
 }
@@ -980,7 +985,12 @@ fn wants_detach(command: &Command) -> bool {
 }
 
 /// Runs a command in the app over its pipe.
-async fn run_remote(conn: remote::Connection, command: Command, verbose: u8) -> u8 {
+async fn run_remote(
+    conn: remote::Connection,
+    command: Command,
+    verbose: u8,
+    state: Option<&Path>,
+) -> u8 {
     match command {
         Command::Get(args) => remote::get(conn, args, verbose).await,
         Command::List(args) => remote::list(conn, &args).await,
@@ -990,6 +1000,7 @@ async fn run_remote(conn: remote::Connection, command: Command, verbose: u8) -> 
         Command::Remove(args) => remote::remove(conn, &args).await,
         Command::Config(args) => remote::config(conn, &args).await,
         Command::Bench(args) => bench::run(args).await,
+        Command::Media(args) => media::run(args, state).await,
     }
 }
 
@@ -1001,7 +1012,7 @@ async fn main() -> ExitCode {
     if !cli.standalone && uses_database(&cli.command) {
         match remote::connect(state).await {
             Ok(Some(conn)) => {
-                return ExitCode::from(run_remote(conn, cli.command, cli.verbose).await);
+                return ExitCode::from(run_remote(conn, cli.command, cli.verbose, state).await);
             }
             Ok(None) => {}
             Err(code) => return ExitCode::from(code),
@@ -1030,6 +1041,7 @@ async fn main() -> ExitCode {
         Command::Remove(args) => remove(&args, state).await,
         Command::Config(args) => settings::run(&args, state).await,
         Command::Bench(args) => bench::run(args).await,
+        Command::Media(args) => media::run(args, state).await,
     };
     ExitCode::from(code)
 }

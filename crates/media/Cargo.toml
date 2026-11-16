@@ -1,0 +1,48 @@
+[package]
+name = "boltget-media"
+description = "Boltget media sidecars: on-demand, verified installs of yt-dlp and FFmpeg, and a guarded process runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# A stand-in for yt-dlp and FFmpeg in this crate's tests (never shipped).
+[[bin]]
+name = "boltget-fake-sidecar"
+path = "tests/support/fake_sidecar.rs"
+test = false
+doc = false
+
+[dependencies]
+boltget-engine.workspace = true
+# RSA signature verification for yt-dlp's signed checksum files; already in the
+# tree as rustls' crypto provider.
+ring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process"] }
+tracing.workspace = true
+url.workspace = true
+zip.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

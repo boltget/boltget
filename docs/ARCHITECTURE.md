@@ -10,6 +10,7 @@ Status: design. Names of crates, types and tables are the intended names; they m
 |---|---|---|---|---|
 | Engine | `crates/engine` | Rust | library crate `boltget-engine` | Probing, segmentation, connections, disk I/O, rate limiting, persistence, integrity, events |
 | IPC | `crates/ipc` | Rust | library crate `boltget-ipc` | The named pipe between the engine's owner and its clients: framing, messages, server, client, the pipe's security |
+| Media | `crates/media` | Rust | library crate `boltget-media` | Installs, verifies, updates and rolls back the sidecars; starts them with allowlisted arguments in a Job Object |
 | CLI | `crates/cli` | Rust | `boltget.exe` | Command-line front end; embeds the engine or talks to the running app |
 | Desktop backend | `apps/desktop/src-tauri` | Rust | inside `Boltget.exe` | Hosts the engine, exposes Tauri commands/events, tray, single-instance, updater, IPC server |
 | Desktop UI | `apps/desktop/src` | Svelte 5 + TS | bundled web assets | Everything the user sees in the window |
@@ -94,6 +95,8 @@ Two modes, chosen automatically:
 ### Sidecars
 
 `yt-dlp.exe` and `ffmpeg.exe` are child processes started by the engine with an explicit argument vector (never through a shell), with stdout parsed for progress. They are installed on demand and verified before first use. See [VIDEO.md](VIDEO.md) and [Security](#security).
+
+> **Implemented (v0.4 step 1).** Not by the engine itself: by `crates/media` (`boltget-media`), which the CLI and the app use next to the engine. It downloads the tools with the engine and starts them with `boltget_media::runner`. See [VIDEO.md, As built](VIDEO.md#install-verification-and-updates-as-built).
 
 ### Single owner rule
 
@@ -485,6 +488,10 @@ The attack surface of a download manager is real: it parses untrusted network da
 - They are started with an explicit argument vector (`std::process::Command`, never `cmd /c`), a fixed working directory, a sanitized environment, and inside a Windows **Job Object** with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` so they cannot outlive Boltget.
 - User-supplied values passed to yt-dlp (URLs, output templates) are validated and passed after `--` where applicable. Options that execute commands (`--exec`, and similar) are never passed.
 - "Sandboxed" in v1 means the above isolation, not an OS sandbox. Running sidecars in an AppContainer or with a restricted token is a post-1.0 hardening item.
+- *Implemented (v0.4 step 1, `crates/media/src/runner.rs`, `args.rs`, `platform/windows.rs`):*
+  - Only an absolute path is started, and on Windows only an `.exe` (the standard library would run `.bat` and `.cmd` through `cmd.exe`). The working directory is the program's own unless the caller names one; the environment is emptied except for `SYSTEMROOT`, `SYSTEMDRIVE`, `WINDIR`, `TEMP`, `TMP`, `TMPDIR`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `HOME`, `LANG`, `LC_ALL` and `TZ` (no `PATH`, `PYTHONPATH`, proxy variables or `FFREPORT`); stdin is closed and no console window opens.
+  - On Windows the process starts suspended, is put into a new Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and `JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION`, and only then resumed, so nothing it starts escapes the job; dropping the handle, Boltget exiting or crashing ends the whole tree. A timeout (10 min by default) ends it too. Elsewhere it gets its own process group and only the direct child is stopped (post-1.0 platforms).
+  - Every argument passes an allowlist first: only exact option names (no abbreviations, no `-xVALUE`, no unknown options), values only where the option takes one. yt-dlp always gets `--ignore-config --no-plugin-dirs --no-update` first (no configuration files, no plugins, no update check) and URLs only after `--`, as `http`/`https`. The lists leave out everything that runs commands or loads code (`--exec`, `--netrc-cmd`, `--external-downloader`/`--downloader` and their arguments, `--use-postprocessor`, `--postprocessor-args`, `--js-runtimes`, `--extractor-args`, `--plugin-dirs`, `--config-locations`, `--alias`, `--remote-components`), updates (`-U`, `--update-to`), reads browser profiles, credentials or arbitrary files (`--cookies-from-browser`, `--batch-file`, `--load-info-json`, `--netrc`, `--username`/`--password`, client certificates), weakens TLS (`--no-check-certificates`, `--legacy-server-connect`) or writes where Boltget does not choose (`--cache-dir`, `--print-to-file`, `--download-archive`); `--ffmpeg-location` is set by Boltget to the verified FFmpeg. For ffmpeg and ffprobe: no filters (`-vf`, `-af`, `-filter_complex`, `-lavfi`), no protocol lists, attachments, reports or progress URLs, `-f` only for plain containers, and inputs and outputs only as local paths (no `proto:` prefix, no UNC path); every `-i` is preceded by `-protocol_whitelist file`. The forbidden options are listed in `args.rs` and a test checks each is refused.
 
 ### Updates and binaries
 

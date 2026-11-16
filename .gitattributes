@@ -28,3 +28,6 @@ pnpm-lock.yaml  linguist-generated=true -diff
 
 # Fuzz seed corpora: byte-exact inputs, never converted.
 fuzz/corpus/** -text
+
+# Signed and binary test fixtures of the media crate: byte-exact, never converted.
+crates/media/tests/fixtures/** -text

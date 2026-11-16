@@ -63,6 +63,46 @@ Nothing is executed until it is verified:
 - yt-dlp's Windows executable is a self-extracting bundle; its startup is slower than a native binary and some antivirus products flag such bundles. Boltget evaluates an unpacked (one-directory) build if upstream provides one for Windows, and documents how to report false positives.
 - Some sites need additional components for full support (for example, upstream has introduced a requirement for an external JavaScript runtime for some YouTube formats). Boltget treats such components as additional sidecars with the same install/verify/update rules, decided case by case and documented here.
 
+### Install, verification and updates: as built
+
+*v0.4 step 1 (2026-11-16).* The decisions this section left open, and how the sidecar manager works.
+
+**Where the code lives.** A crate of its own, `crates/media` (`boltget-media`), used by the CLI (`boltget media`) and, from step 3, by the app. Not part of the engine: the engine stays a download library, while this crate starts processes and unpacks archives. It downloads through the engine (an in-memory `Engine` per install: segmented and retried, not resumable across restarts) and builds and tests on Linux like the engine.
+
+**Layout.** As sketched above, with these details:
+
+```
+%LOCALAPPDATA%\Boltget\tools\          (the CLI: <--state>\tools)
+├── manifest.json        format 1; per tool: active, previous, channel, last_check,
+│                        last_failure_check, rejected, and per version its URL,
+│                        SHA-256, size, install time and program paths
+├── .lock                held while installing, updating, rolling back or pruning
+├── .downloads\          downloads in progress; removed after every install
+├── yt-dlp\2026.10.26\yt-dlp.exe, _internal\...
+└── ffmpeg\n9.0.2-39-g7adfbe40dc\bin\ffmpeg.exe, ffprobe.exe, *.dll
+```
+
+- The manifest is the "active" pointer: it is rewritten to a temporary file, flushed, and renamed over the old one, so the switch is atomic. A manifest that cannot be parsed is moved aside (`manifest.json.bad`) and treated as empty, so the tools are installed again rather than never. A second process that wants the lock gets "busy" (CLI exit code 7).
+- Version directory names come from the release (yt-dlp's tag) and must match `[A-Za-z0-9._-]{1,64}`, not starting with a dot.
+
+**Trust model.**
+
+- **Hosts:** HTTPS only, to `api.github.com`, `github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com`. The engine enforces the list for every request, redirects included (`EngineConfig::allowed_hosts`, [ENGINE.md, Redirects](ENGINE.md#redirects)), and the manager refuses a release whose asset URL points elsewhere before fetching anything.
+- **yt-dlp:** the latest release comes from the GitHub releases API (`yt-dlp/yt-dlp`, or `yt-dlp/yt-dlp-nightly-builds` on the nightly channel; both are signed with the same key). The release must have `SHA2-256SUMS` and `SHA2-256SUMS.sig`. The signature is a binary OpenPGP version 4 signature by yt-dlp's release key, "Simon Sawicki (yt-dlp signing key)", RSA 4096, created 2023-02-26, fingerprint `AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581` (`public.key` in yt-dlp's repository). Boltget pins the key's modulus, exponent and creation time in `crates/media/src/sources.rs`; a test recomputes the fingerprint from them. The binary's SHA-256 must then match its single line in the verified file (checked by the engine on completion, and again before unpacking).
+- **Why no OpenPGP library:** one signature format from one pinned key needs a few hundred lines; `crates/media/src/pgp.rs` parses exactly one version 4 signature packet over a binary document (RSA, SHA-256/384/512) and refuses anything else (armor, other packet or signature types, unknown critical subpackets, an issuer other than the pinned key, an expired signature), and `ring`, already Boltget's crypto provider, does the RSA verification. A full OpenPGP implementation (rPGP, Sequoia) would add a large dependency tree for this. The parser is tested with yt-dlp 2026.10.26's real signed checksums (every changed byte fails) and with signatures made by an independent test signer.
+- **No fallback:** a yt-dlp release without a valid signature is not installed. The Boltget-signed manifest this section mentions as a fallback is not built (nor needed so far).
+- **FFmpeg:** the builder is BtbN's FFmpeg-Builds (now published as `FFmpeg-Builds/FFmpeg-Builds` on GitHub), release branch 9.0, GPL, **shared** libraries (an 86 MB zip instead of 195 MB for the static build), from a month-end autobuild (`autobuild-2026-10-31-12-59`, n9.0.2-39-g7adfbe40dc): the builder prunes daily builds but keeps month-end ones. Windows x64 and Arm64 are pinned by URL, size and SHA-256 in `sources.rs`; this compiled-in pin is the "Boltget sidecar manifest" for now, as trustworthy as the Boltget binary that carries it (Authenticode and the updater's signature). Other platforms have no pin yet (BtbN ships `.tar.xz` there; the system's FFmpeg through custom paths is the plan). The separately signed manifest for out-of-band FFmpeg updates, with its own key, is still to come; until then FFmpeg changes with Boltget releases.
+- **Windows build of yt-dlp:** the unpacked "onedir" build (`yt-dlp_win.zip`, `yt-dlp_win_arm64.zip`), which upstream now publishes: it starts faster than the self-extracting `yt-dlp.exe` and is flagged less often (see Known operational issues). Linux and macOS use the single-file builds.
+- **No Mark of the Web** on these downloads: they are verified and never opened by the user, and a zip's mark would not reach the unpacked files anyway.
+
+**Install.** Download, verify, unpack (zip only, with the pure-Rust `zip` crate: entries that would leave the directory, symbolic links, more than 20,000 entries or more than 2 GiB unpacked are refused; FFmpeg keeps only `bin/`) into a staging directory, rename it to the version directory, then the **smoke test**: yt-dlp `--ignore-config --no-plugin-dirs --no-update --version` must print exactly the release tag; `ffmpeg -version` and `ffprobe -version` must start with `ffmpeg version` / `ffprobe version` and name the pinned version; 120 s at most each. Only then is the version made active. A version that fails is deleted and the active one stays as it was.
+
+**Rollback.** The previous version is kept; every other version (and any leftover staging directory) is pruned after each switch; a directory still in use is left for the next prune. `verify_active` (CLI: `boltget media check`) smoke-tests the active version; if it fails and the previous one passes, the previous one becomes active again and the failed version is recorded as rejected: it is never installed again automatically (a newer release is). `boltget media rollback <tool>` does the same by hand.
+
+**Updates.** `update_if_due` checks yt-dlp at most once every 24 hours, and FFmpeg when Boltget's pin differs from the active version (no network check). The app calls it while video features are in use (step 3). `on_extractor_failure` checks yt-dlp at once, at most once an hour; step 6's error mapping calls it for "the site changed". A job that is running keeps using its version's files: versions live in separate directories. `--no-update` is always passed (yt-dlp versions without it fail the smoke test; they are older than anything Boltget installs), and `-U` and `--update-to` are refused by the argument allowlist ([ARCHITECTURE.md, Sidecars](ARCHITECTURE.md#sidecars-1)). The channel is chosen with `boltget media channel stable|nightly` (in the app: Settings, Video, step 3).
+
+**Not yet built:** custom paths (Settings, Video), the first-use install sheet, the signed FFmpeg manifest, FFmpeg pins for Linux and macOS.
+
 ## How a media download flows
 
 ```mermaid

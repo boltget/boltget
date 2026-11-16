@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/engine",
     "crates/ipc",
+    "crates/media",
     "crates/cli",
     "crates/native-host",
     "crates/testserver",
@@ -25,6 +26,7 @@ publish = false
 [workspace.dependencies]
 boltget-engine = { path = "crates/engine" }
 boltget-ipc = { path = "crates/ipc" }
+boltget-media = { path = "crates/media" }
 boltget-native-host = { path = "crates/native-host" }
 boltget-testserver = { path = "crates/testserver" }
 
@@ -45,6 +47,7 @@ md-5 = "0.10"
 percent-encoding = "2.3"
 proptest = "1.8"
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+ring = "0.17.14"
 rusqlite = { version = "0.41", default-features = false, features = ["bundled", "cache"] }
 rustls = { version = "0.23.31", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-platform-verifier = "0.6"
@@ -61,6 +64,7 @@ tokio-util = "0.7.16"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 url = "2.5"
+zip = { version = "9.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl", "Win32_Storage_FileSystem"] }
 
 [workspace.lints.rust]

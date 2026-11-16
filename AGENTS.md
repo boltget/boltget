@@ -14,6 +14,7 @@ Current stage: v0.1 (Rust engine and CLI) is released; next is v0.2, the desktop
 |---|---|
 | `crates/engine` | `boltget-engine` library: probing, segmentation, I/O, persistence |
 | `crates/ipc` | `boltget-ipc`: the named pipe (a Unix socket elsewhere) between the engine's owner (the app) and its clients (the CLI): framing, messages, server and client |
+| `crates/media` | `boltget-media`: the video sidecars (yt-dlp, FFmpeg): verified on-demand installs, updates and rollback in the tools directory, and the guarded process runner (argument allowlist, Job Object). `boltget media` in the CLI. [docs/VIDEO.md](docs/VIDEO.md#install-verification-and-updates-as-built) |
 | `crates/cli` | `boltget-cli` package, `boltget` binary |
 | `crates/native-host` | `boltget-native-host`: the binary browsers start for the extension (stdio native messaging relayed to the app's pipe) and its registration with the browsers. The protocol is `crates/ipc/src/browser.rs` |
 | `crates/testserver` | `boltget-testserver`: local HTTP server that simulates misbehaving servers for tests |
@@ -53,7 +54,7 @@ Website (pnpm workspace at the root, Node from `.node-version`): `pnpm install`,
 ## Rust rules
 
 - Toolchain: stable via `rust-toolchain.toml`, edition 2024. Workspace lints (pedantic-lite clippy) are in the root `Cargo.toml`; don't relax them crate-wide, use a targeted `#[expect(..., reason = "...")]`.
-- `unsafe_code` is denied. The only exceptions are `crates/engine/src/platform/windows.rs`, `crates/ipc/src/platform/windows.rs` (the pipe's ACL and session checks) and `apps/desktop/src-tauri/src/platform/windows.rs`, and every `unsafe` block there needs a `// SAFETY:` comment.
+- `unsafe_code` is denied. The only exceptions are `crates/engine/src/platform/windows.rs`, `crates/ipc/src/platform/windows.rs` (the pipe's ACL and session checks), `crates/media/src/platform/windows.rs` (the sidecars' Job Object) and `apps/desktop/src-tauri/src/platform/windows.rs`, and every `unsafe` block there needs a `// SAFETY:` comment.
 - Library code: errors via `thiserror`, no `unwrap()`/`expect()` on paths that can fail at runtime, rustdoc on public items. The CLI may use `anyhow`.
 - Dependencies must be GPL-3.0-compatible and pass `cargo-deny` (`deny.toml`). Prefer pure-Rust crates that build on Windows without extra tools (this is why rustls uses the `ring` provider).
 

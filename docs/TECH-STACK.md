@@ -163,6 +163,8 @@ Details: [BROWSER-INTEGRATION.md](BROWSER-INTEGRATION.md#native-messaging).
 - **Rust reimplementations of site extractors:** perpetual maintenance race with much smaller coverage.
 - **Embedding Python:** large, complex, and still needs yt-dlp updates.
 
+**As built (v0.4 step 1).** The sidecar manager is the crate `crates/media`. Sidecar downloads and their metadata go through the Boltget engine (with its host allowlist), not reqwest as ADR-002 sketched for auxiliary requests. yt-dlp's OpenPGP signature is checked by a small strict parser with `ring` doing the RSA verification rather than by an OpenPGP library; archives are unpacked with the `zip` crate (MIT, deflate through the pure-Rust `zlib-rs`). The Job Object is a few Win32 calls through `windows-sys` in `crates/media/src/platform/windows.rs` rather than a wrapper crate.
+
 Details: [VIDEO.md](VIDEO.md).
 
 ## ADR-009: One engine crate shared by app and CLI
