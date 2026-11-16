@@ -5,6 +5,9 @@ import {
   DEFAULT_RULES,
   hostMatches,
   hostOf,
+  MAX_MIN_SIZE,
+  MAX_RULE_EXTENSIONS,
+  MAX_RULE_SITES,
   normaliseExtension,
   normaliseRules,
   normaliseSite,
@@ -62,6 +65,26 @@ describe("normalising", () => {
     expect(normaliseSite(raw)).toBe(site);
   });
 
+  it("agrees with the app (crates/ipc/src/browser/rules-cases.json)", () => {
+    const cases = JSON.parse(
+      readFileSync(
+        new URL("../../../crates/ipc/src/browser/rules-cases.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { sites: [string, string | null][]; extensions: [string, string | null][] };
+    for (const [typed, kept] of cases.sites) expect(normaliseSite(typed), typed).toBe(kept);
+    for (const [typed, kept] of cases.extensions) {
+      expect(normaliseExtension(typed), typed).toBe(kept);
+    }
+    const rust = readFileSync(
+      new URL("../../../crates/ipc/src/browser.rs", import.meta.url),
+      "utf8",
+    );
+    expect(rust).toContain(`MAX_RULE_EXTENSIONS: usize = ${MAX_RULE_EXTENSIONS};`);
+    expect(rust).toContain(`MAX_RULE_SITES: usize = ${MAX_RULE_SITES};`);
+    expect(rust).toContain("MAX_MIN_SIZE: u64 = 1 << 40;");
+  });
+
   it("splits lists on spaces, commas, semicolons and lines", () => {
     expect(splitList("zip, rar;7z\n iso\t\tmp4")).toEqual(["zip", "rar", "7z", "iso", "mp4"]);
     expect(splitList("   ")).toEqual([]);
@@ -90,6 +113,15 @@ describe("normalising", () => {
     expect(normaliseRules({ min_size: -1 }).min_size).toBe(DEFAULT_RULES.min_size);
     expect(normaliseRules({ min_size: Number.NaN }).min_size).toBe(DEFAULT_RULES.min_size);
     expect(normaliseRules({ extensions: [] }).extensions).toEqual([]);
+    // Cut to the app's limits.
+    const many = normaliseRules({
+      min_size: 2 ** 50,
+      extensions: Array.from({ length: 300 }, (_, i) => `e${i}`),
+      never_sites: Array.from({ length: 600 }, (_, i) => `s${i}.example`),
+    });
+    expect(many.min_size).toBe(MAX_MIN_SIZE);
+    expect(many.extensions).toHaveLength(MAX_RULE_EXTENSIONS);
+    expect(many.never_sites).toHaveLength(MAX_RULE_SITES);
   });
 });
 

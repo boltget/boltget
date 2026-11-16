@@ -28,7 +28,8 @@ import {
   setToolbarIcon,
 } from "../lib/platform";
 import { onAnySite } from "../lib/rules";
-import { adoptAppRules, captureSettings, loadSettings } from "../lib/settings";
+import { captureSettings, loadSettings } from "../lib/settings";
+import { RulesSync } from "../lib/sync";
 
 /** Sites where the store builds offer no page or media actions (store policy). */
 const MEDIA_EXCLUDED = ["youtube.com", "youtu.be", "youtube-nocookie.com"];
@@ -54,6 +55,16 @@ export default defineBackground({
     const modifiers = new ModifierLog();
     const client = nativeClient();
     const seen = new Set<number>();
+    // The app's rules: asked for at start and before a download when stale.
+    const rules = new RulesSync(
+      () =>
+        client.request({
+          type: "hello",
+          extension: extensionVersion(),
+          browser: detectBrowser(),
+        }),
+      localStore,
+    );
 
     // --- Observed request headers (only with site access) -----------------
 
@@ -81,6 +92,8 @@ export default defineBackground({
       seen.add(item.id);
       if (seen.size > 1000) seen.clear();
 
+      // A change made in the app applies to this download.
+      await rules.fresh(Date.now());
       const now = Date.now();
       const settings = await loadSettings(localStore);
       const observed = headers.take([item.finalUrl, item.url], now);
@@ -340,13 +353,7 @@ export default defineBackground({
 
     /** Asks the host who is there; takes the app's rules when it is running. */
     async function hello() {
-      const result = await client.request({
-        type: "hello",
-        extension: extensionVersion(),
-        browser: detectBrowser(),
-      });
-      if (result.type === "hello" && result.rules) await adoptAppRules(localStore, result.rules);
-      log("hello", result);
+      log("hello", await rules.now(Date.now()));
     }
 
     async function start() {

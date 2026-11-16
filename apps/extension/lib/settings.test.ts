@@ -34,18 +34,51 @@ describe("settings", () => {
     ).toEqual({ ...DEFAULT_SETTINGS, rules: DEFAULT_RULES });
   });
 
-  it("take the app's rules until the user edits them", async () => {
+  it("take the app's rules, and keep edits made here while the app's stay the same", async () => {
     const store = memory();
     await adoptAppRules(store, appRules);
     expect((await loadSettings(store)).rules).toEqual(appRules);
 
     const mine = { ...appRules, min_size: 0 };
     await editRules(store, mine);
-    await adoptAppRules(store, { ...appRules, min_size: 9 });
+    // The same rules again (every hello): the edits stay.
+    await adoptAppRules(store, { ...appRules });
     const s = await loadSettings(store);
     expect(s.rules).toEqual(mine);
     expect(s.rulesEdited).toBe(true);
-    expect(s.appRules?.min_size).toBe(9);
+    expect(s.appRules).toEqual(appRules);
+  });
+
+  it("let a change made in the app replace edits made here: the latest change wins", async () => {
+    const store = memory();
+    await adoptAppRules(store, appRules);
+    await editRules(store, { ...appRules, min_size: 0 });
+    const changed = { ...appRules, min_size: 9, always_sites: ["cdn.example"] };
+    await adoptAppRules(store, changed);
+    const s = await loadSettings(store);
+    expect(s.rules).toEqual(changed);
+    expect(s.rulesEdited).toBe(false);
+    expect(s.appRules).toEqual(changed);
+  });
+
+  it("keep edits made before the app was ever reached", async () => {
+    const store = memory();
+    const mine = { ...DEFAULT_RULES, enabled: false };
+    await editRules(store, mine);
+    await adoptAppRules(store, appRules);
+    const s = await loadSettings(store);
+    expect(s.rules).toEqual(mine);
+    expect(s.rulesEdited).toBe(true);
+    expect(s.appRules).toEqual(appRules);
+  });
+
+  it("compare the app's rules as normalised", async () => {
+    const store = memory();
+    await adoptAppRules(store, appRules);
+    await editRules(store, { ...appRules, enabled: false });
+    // The same rules, written differently.
+    await adoptAppRules(store, { ...appRules, never_sites: ["Bank.example", "bank.example"] });
+    expect((await loadSettings(store)).rulesEdited).toBe(true);
   });
 
   it("reset goes back to the app's last rules, or the defaults", async () => {

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Resume expired downloads from the browser: when a download's link has expired, start it again on the website and Boltget asks "Use this link to resume *file* (73% done)?" instead of downloading it all over again. It checks that the new link is the same file before continuing, and uses the browser's fresh sign-in cookies. If you say no, or the link turns out to be a different file, it is added as a new download as usual.
+- Settings, Browser now holds the rules for what the browser extension hands to Boltget: turn it on or off, set the smallest file, pick file types by group (archives, disc images, programs, video, audio, data files, and documents if you want them) or add your own, list sites to never or always take downloads from, and choose whether private windows count. Restore defaults puts them back, with Undo. The extension picks up a change by the next download, and a change made in Boltget replaces edits made earlier in the extension's own options.
 - The browser extension is on the [Chrome Web Store](https://chromewebstore.google.com/detail/boltget/aeobielfcjcidnadamggpnomipkijcbj), linked from the download page.
 
 ### Fixed

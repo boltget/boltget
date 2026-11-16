@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { fileByte } from "./server";
 import {
   browserDownloads,
+  EXTENSION_ID,
   eventually,
   expect,
   test,
@@ -211,6 +212,58 @@ test.describe("the app's rules", () => {
     await page.click("#big");
     await completedInBrowser(worker, `${server.origin}/files/big.zip`, 4 * MIB);
     noCapture(stub);
+  });
+
+  test("changed in the app, they replace edits made in options", async ({
+    context,
+    worker,
+    server,
+    stub,
+  }) => {
+    await eventually(() =>
+      worker.evaluate(async () => {
+        const { appRules } = await chrome.storage.local.get("appRules");
+        return (appRules as { min_size?: number } | undefined)?.min_size === 8 * 1024 * 1024;
+      }),
+    );
+    // The user edits the rules in options: nothing goes to Boltget.
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${EXTENSION_ID}/options.html`);
+    await options.getByRole("switch", { name: "Send downloads to Boltget" }).click({ force: true });
+    await eventually(() =>
+      worker.evaluate(async () => (await chrome.storage.local.get("rulesEdited")).rulesEdited),
+    );
+    // The same rules from the app again: the edit stays.
+    await options.getByRole("button", { name: "Test connection" }).click();
+    await expect(options.getByText("You changed these rules here.")).toBeVisible();
+
+    // Then the user lowers the size in the app's Settings.
+    stub.set({
+      capture: "accept",
+      rules: {
+        enabled: true,
+        min_size: MIB,
+        extensions: ["zip"],
+        never_sites: [],
+        always_sites: [],
+        private_windows: false,
+      },
+    });
+    await options.getByRole("button", { name: "Test connection" }).click();
+    await expect(options.getByText("These are Boltget’s rules.")).toBeVisible();
+    const stored = await worker.evaluate(async () =>
+      chrome.storage.local.get(["rules", "rulesEdited"]),
+    );
+    expect(stored.rulesEdited).toBe(false);
+    expect((stored.rules as { enabled: boolean; min_size: number }).enabled).toBe(true);
+    expect((stored.rules as { min_size: number }).min_size).toBe(MIB);
+
+    // 4 MiB is now over the app's 1 MiB.
+    const page = await context.newPage();
+    await openPage(page, server.origin);
+    await page.click("#big");
+    const capture = await eventually(() => stub.messages("capture")[0]);
+    expect(capture.message).toMatchObject({ url: `${server.origin}/files/big.zip` });
   });
 });
 

@@ -10,12 +10,15 @@ export interface Settings {
   /** The rules in force. */
   rules: CaptureRules;
   /**
-   * The user edited the rules in options: keep them instead of the app's
-   * (until the app can edit them itself, BROWSER-INTEGRATION.md, "Capture
+   * The user edited the rules in options: keep them instead of the app's,
+   * until the app's own rules change (BROWSER-INTEGRATION.md, "Capture
    * rules").
    */
   rulesEdited: boolean;
-  /** The last rules the app sent, for "Use Boltget's rules". */
+  /**
+   * The last rules the app sent: for "Use Boltget's rules", and to tell
+   * when they change.
+   */
   appRules: CaptureRules | null;
   /** The popup's capture switch. */
   captureOn: boolean;
@@ -69,14 +72,28 @@ export async function saveSettings(store: Store, change: Partial<Settings>): Pro
   await store.set(change);
 }
 
+function sameRules(a: CaptureRules, b: CaptureRules): boolean {
+  return JSON.stringify(normaliseRules(a)) === JSON.stringify(normaliseRules(b));
+}
+
 /**
- * The app answered `hello` with its rules: remember them, and use them unless
- * the user has edited the rules here.
+ * The app answered `hello` with its rules: remember them, and use them. Edits
+ * made here are kept while the app's rules stay as they were when the
+ * extension last saw them; once they change (the user changed them in the
+ * app's Settings), the latest change wins and the app's rules replace the
+ * edits. Rules first seen after an edit (the app was not reachable before)
+ * leave the edit alone.
  */
 export async function adoptAppRules(store: Store, rules: CaptureRules): Promise<void> {
   const clean = normaliseRules(rules);
   const current = await loadSettings(store);
-  await store.set(current.rulesEdited ? { appRules: clean } : { appRules: clean, rules: clean });
+  const changedInApp = current.appRules !== null && !sameRules(current.appRules, clean);
+  if (current.rulesEdited && !changedInApp) {
+    // Keep the user's edits; remember the app's rules for "Use Boltget's rules".
+    await store.set({ appRules: clean });
+    return;
+  }
+  await store.set({ appRules: clean, rules: clean, rulesEdited: false });
 }
 
 /** The user's edits from options. */

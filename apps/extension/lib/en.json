@@ -68,8 +68,8 @@
   "rules.extensions_hint": "Without dots, separated by spaces or commas.",
   "rules.private": "Private windows",
   "rules.private_hint": "Also send downloads from private windows. The browser must allow the extension in them as well.",
-  "rules.from_app": "These are Boltget’s rules.",
-  "rules.edited": "You changed these rules here; Boltget’s own are kept aside.",
+  "rules.from_app": "These are Boltget’s rules. Change them in Boltget’s settings, under Browser, or here for this browser.",
+  "rules.edited": "You changed these rules here. If they change in Boltget, Boltget’s apply again.",
   "rules.reset": "Use Boltget’s rules",
 
   "sites.title": "Sites",
