@@ -6,7 +6,7 @@
 //! the signature motion, lighting up top to bottom (BRAND.md §6: a 2.6 s
 //! loop, 0.12 s stagger per row, opacity 0.15 → 1 → 1 → 0.15 at 0, 12, 85
 //! and 100%, linear). The taskbar button and the window keep the app icon,
-//! Onyx or its white twin (`platform::update_app_icon`).
+//! Onyx (`platform::set_app_icon`).
 
 use std::time::Duration;
 

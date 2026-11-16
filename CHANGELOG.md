@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The browser extension's toolbar button shows a clear arrow instead of a grid of dots, at every display scale.
 - Pausing capture from the extension's popup right after opening it no longer springs back.
+- Boltget's taskbar button on Windows is sharp at every display scale: a solid white arrow on a glossy black tile instead of a blurry, striped grid of dots. It stays black on a dark taskbar too, and every small Boltget icon gets the same design: Alt+Tab, Explorer and shortcuts, the title bar, the browser extension's toolbar button, and the website's tab icon.
 
 ## [0.3.0-preview.1] - 2026-11-14
 

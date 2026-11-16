@@ -29,7 +29,7 @@ mod other {
     pub(crate) fn update_caption_layout(_window: &WebviewWindow) {}
     pub(crate) fn set_low_memory(_window: &WebviewWindow, _low: bool) {}
     /// The window keeps the icon Tauri gives it (Onyx).
-    pub(crate) fn set_app_icon(_window: &WebviewWindow, _light: bool) {}
+    pub(crate) fn set_app_icon(_window: &WebviewWindow) {}
     pub(crate) fn small_icon_size() -> u32 {
         32
     }

@@ -43,8 +43,8 @@ The icon has **two modes**, the same drawing inverted:
 
 | Mode | Look | Use on | Files |
 |---|---|---|---|
-| **Onyx** (primary) | Black tile lit from the top left, white arrow | Light contexts, and everywhere by default: the executable, installers, stores, the website, a light taskbar | `icon.svg`, `svg/icon-N.svg`, `png/icon-N.png`, `ico/app.ico`, `web/*`, `social/avatar*` |
-| **Paper** (the twin) | White tile, black arrow | Dark contexts: a dark taskbar, dark browser tabs, the app's dark theme | `icon-on-dark.svg`, `svg/icon-on-dark-N.svg`, `png/icon-on-dark-N.png`, `ico/app-on-dark.ico` |
+| **Onyx** (primary) | Black tile lit from the top left, white arrow | Light contexts, and everywhere by default: the executable, installers, stores, the website, the Windows taskbar (light or dark: its 1 px edge holds it on a dark one) | `icon.svg`, `svg/icon-N.svg`, `png/icon-N.png`, `ico/app.ico`, `web/*`, `social/avatar*` |
+| **Paper** (the twin) | White tile, black arrow | Dark contexts: dark browser tabs, the app's dark theme | `icon-on-dark.svg`, `svg/icon-on-dark-N.svg`, `png/icon-on-dark-N.png`, `ico/app-on-dark.ico` |
 
 Use Onyx unless the icon sits on a dark surface you know about. Never put
 Paper on a light background or Onyx on a black one without its edge.
@@ -90,21 +90,42 @@ Nothing goes inside clear space: no text, no edges, no other logos.
 ### Small sizes
 
 Below 180 px the gaps fall between device pixels and blur, so every size
-Windows asks for has its own native design, in both modes. Small sizes use a
-**resolution-reduced arrow**: the same arrow on a 5 × 5, 7 × 7 or 9 × 9 grid
-(`GRIDS` in the build), with whole-pixel cells and **real 1 px gaps**, so the
-chunks stay visible down to 16 px. The smaller the icon, the more of the tile
-the arrow fills.
+Windows asks for has its own native design, in both modes. There are **two
+designs**, split at 48 px (`SOLID_MAX` in the build):
 
-| Size | Arrow (grid · cell + gap) | Tile | Files |
+- **Up to 48 px: Onyx glass**, everywhere the icon is that small: the Windows
+  taskbar, title bar, Alt+Tab and small Explorer views, the browser
+  extension's toolbar button and small icons, and the favicon. The pixel grid does not work there: its gaps read as a field of
+  dots, and any scaling turns them into grey stripes. These sizes draw one
+  **solid arrow** with soft corners on a glassy Onyx tile (`glassSvg` and
+  `GLASS` in the build). Reference, on a 24-unit artboard:
+  - *Tile:* squircle 22 wide, inset 1, corner 5.6; vertical gradient
+    `#4A4D52` → `#1A1B1E` (45%) → `#050506`, and a radial white highlight at
+    (12, 3), radius 13, 22% fading to 0.
+  - *Rim:* a 1 px inner stroke, white at 38% at the top, 6% at 35%, 14% at the
+    foot. It keeps the black tile apart from a dark taskbar.
+  - *Arrow:* shaft 3.2 wide from y 3.7, shoulders at y 11.5, head 11 wide
+    ending near y 18.7, corners rounded about 0.9; vertical gradient white →
+    `#E9EBEE` (55%) → `#A9ADB4`; a drop shadow 0.9 down, blur 0.7, black at
+    55% (33% at 16 and 20 px, where a full shadow muddies the arrow).
+  - *Per size* the tile and the arrow's straight edges (the shaft's sides and
+    top, the shoulders) land on whole device pixels; the shaft is 2 px wide at
+    16 and 20, 4 px at 24 to 36, 6 px at 40 and 48.
+  - *Paper* is the same drawing inverted: white tile (`#FFFFFF` → `#F3F4F5` →
+    `#E1E3E6`), a dark rim, an ink arrow, a lighter shadow, no highlight.
+  - *Onyx on dark surfaces too:* its rim keeps the dark tile apart from a dark
+    taskbar, toolbar or tab, so small icons use Onyx glass on light and dark
+    alike. The Paper glass files exist for a dark context that needs them.
+- **From 60 px (64 and up in practice): the pixel arrow**, resolution-reduced: the same arrow on a
+  9 × 9 grid (`GRIDS`), with whole-pixel cells and **real 1 px gaps**.
+
+| Size | Arrow | Tile | Files |
 |---|---|---|---|
-| 16, 20 | 5 × 5 · 2 + 1 | Flat rounded tile (radius 3 or 4) with a 1 px edge: white at 14% on Onyx (it keeps the tile visible on a dark taskbar such as `#1C1C1E`), black at 22% on Paper. Onyx adds a 1 px lit top line | `svg/icon-{16,20}.svg` |
-| 24 | 7 × 7 · 2 + 1 | The same | `svg/icon-24.svg` |
-| 30, 32, 36, 40 | 9 × 9 · 2 + 1 | The same | `svg/icon-{30…40}.svg` |
-| 48 | 9 × 9 · 3 + 1 | The squircle tile with its gradient and rim | `svg/icon-48.svg` |
-| 60, 64, 72 | 9 × 9 · 4 + 1 | The same | `svg/icon-{60…72}.svg` |
-| 80, 96 | 9 × 9 · 5 + 1 | The same; from 96 the cells have a 1 px corner | `svg/icon-80.svg`, `svg/icon-96.svg` |
-| 128 | 9 × 9 · 7 + 1 | The same | `svg/icon-128.svg` |
+| 16, 20, 24 | Onyx glass | Onyx glass | `svg/icon-{16,20,24}.svg` |
+| 30, 32, 36, 40, 48 | Onyx glass | Onyx glass | `svg/icon-{30…48}.svg` |
+| 60, 64, 72 | Pixels, 9 × 9 · 4 + 1 | The squircle tile with its gradient and rim | `svg/icon-{60…72}.svg` |
+| 80, 96 | Pixels, 9 × 9 · 5 + 1 | The same; from 96 the cells have a 1 px corner | `svg/icon-80.svg`, `svg/icon-96.svg` |
+| 128 | Pixels, 9 × 9 · 7 + 1 | The same | `svg/icon-128.svg` |
 | 180 and up | The master, snapped (`png/icon-256.png` and up, the web icons) | | `icon.svg` |
 
 Each file has its Paper twin at `svg/icon-on-dark-N.svg`. Where a grid's width
@@ -125,10 +146,12 @@ with the same resolution-reduced arrows on whole pixels, filling the square:
 16 px 5 × 5 (2 + 1), 20 and 24 px 7 × 7 (2 + 1), 32 px 9 × 9 (2 + 1). Files:
 `svg/tray-ink-N.svg` and `svg/tray-white-N.svg`, the PNGs, and
 `ico/tray-ink.ico` / `ico/tray-white.ico` (16, 20, 24, 32). Its rows carry the
-motion (§6). The taskbar button and the window keep the app icon, Onyx or
-Paper by the same colour mode. The app embeds the tray PNGs
-(`apps/desktop/src-tauri/src/mark.rs`) and the 16–128 px app icons in both
-modes (`platform/windows.rs`).
+motion (§6). The taskbar button and the window keep the app icon, Onyx on a
+light or dark taskbar alike. The app embeds the tray PNGs
+(`apps/desktop/src-tauri/src/mark.rs`) and the 16–128 px Onyx icons
+(`platform/windows.rs`). The taskbar button draws the window's big icon at
+24 px at 100% scale (30, 36, 48 px at 125, 150, 200%), so the app sets it at
+exactly that size: a 32 px design squeezed into 24 px smears.
 
 ### Variants
 
@@ -459,11 +482,11 @@ Web snippet:
 <meta property="og:image" content="https://boltget.app/og-image.png">
 ```
 
-`favicon.svg` is the bare mark in one colour: ink (`#0A0A0B`) on light browser
-chrome, white on dark (`prefers-color-scheme`). At 32 device pixels it is the
-9 × 9 arrow (2 + 1 px cells); at tab size (16 to 24 px) it switches to the
-5 × 5 arrow. `favicon.ico` (16/32/48) is the Onyx tile for places that ignore
-SVG. `apple-touch-icon.png` (180) and the avatars are full bleed;
+`favicon.svg` is the Onyx glass icon (§2, "Small sizes"), on light and dark
+browser chrome alike: at 32 device pixels the 32 px design, at tab size (16 to
+24 px) the 16 px design drawn at twice the size, so its edges stay on whole
+pixels. `favicon.ico` (16/32/48) is Onyx glass too, for places that ignore
+SVG. *Until November 2026 the favicon was the bare pixel mark in one colour.* `apple-touch-icon.png` (180) and the avatars are full bleed;
 `icon-maskable-512.png` is full bleed with the arrow inside the central 80%
 (the build checks it).
 
@@ -495,8 +518,8 @@ SVG. `apple-touch-icon.png` (180) and the avatars are full bleed;
 | `ico/app.ico` | Windows icon, Onyx: 16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96 (BMP) and 256 (PNG) | Windows executable and installer |
 | `ico/app-on-dark.ico` | The same set, Paper | A dark taskbar |
 | `ico/tray-ink.ico`, `ico/tray-white.ico` | Tray glyphs, 16/20/24/32 | The tray on a light / dark taskbar |
-| `web/favicon.ico` | Onyx, 16/32/48 | Legacy favicon |
-| `web/favicon.svg` | Scheme-aware bare mark | Modern browsers |
+| `web/favicon.ico` | Onyx glass, 16/32/48 | Legacy favicon |
+| `web/favicon.svg` | Onyx glass, 32 and 16 px designs | Modern browsers |
 | `web/apple-touch-icon.png` | 180 × 180, full bleed | iOS home screen |
 | `web/icon-192.png`, `web/icon-512.png` | Rounded tile, transparent corners | PWA `any` icons |
 | `web/icon-maskable-512.png` | Full bleed | PWA `maskable` icon |

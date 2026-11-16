@@ -15,8 +15,8 @@ import { defineConfig, type ConfigEnv } from "wxt";
 import extensions from "../../packages/native-messaging/extensions.json" with { type: "json" };
 
 const ICON_SIZES = [16, 32, 48, 128] as const;
-// The toolbar button has its own icons, the arrow drawn solid per size
-// (scripts/icons.mjs), because the brand's gapped pixel arrow breaks up there.
+// The toolbar button has its own sizes, the brand's Onyx glass design (a
+// solid arrow) copied by scripts/icons.mjs; the gapped pixel arrow breaks up there.
 const TOOLBAR_SIZES = [16, 24, 32] as const;
 
 function toolbarIcons(variant: "toolbar" | "toolbar-on-dark"): Record<number, string> {

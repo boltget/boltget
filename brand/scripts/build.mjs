@@ -505,17 +505,115 @@ const SMALL_ARROW = {
 const BARE_ARROW = { 16: [5, 2, 1], 20: [7, 2, 1], 24: [7, 2, 1], 32: [9, 2, 1] };
 
 /**
+ * Up to this size the app icon is the Onyx glass design (glassSvg) instead
+ * of the pixel grid (BRAND.md, "Small sizes"). At taskbar, title bar and
+ * Alt+Tab sizes the grid's gaps read as a field of dots, and any scaling
+ * turns them into grey stripes; one solid arrow stays an arrow.
+ */
+const SOLID_MAX = 48;
+
+/**
+ * Onyx glass, per mode: the tile's vertical gradient, its top highlight
+ * (radial, white), the 1 px inner rim's gradient (top, 35%, foot), the
+ * arrow's vertical gradient and its drop shadow [colour, opacity].
+ */
+const GLASS = {
+  onyx: {
+    tile: [[0, '#4A4D52'], [0.45, '#1A1B1E'], [1, '#050506']],
+    highlight: 0.22,
+    rim: [WHITE, [0.38, 0.06, 0.14]],
+    arrow: [[0, WHITE], [0.55, '#E9EBEE'], [1, '#A9ADB4']],
+    shadow: ['#000000', 0.55],
+  },
+  paper: {
+    tile: [[0, WHITE], [0.55, '#F3F4F5'], [1, '#E1E3E6']],
+    highlight: 0,
+    rim: ['#000000', [0.1, 0.12, 0.24]],
+    arrow: [[0, '#26282B'], [0.35, '#121315'], [1, '#08090A']],
+    shadow: ['#3A3D44', 0.3],
+  },
+};
+
+/**
+ * The Onyx glass icon at `size` px (16 to 48), as SVG defs and body (ids end in`n * `id`, so two sizes can share a file). Drawn from a 24-unit
+ * reference: a squircle tile 22 wide inset 1 (corner 5.6) with a top-lit
+ * gradient, a radial highlight at (12, 3) and a light inner rim; a solid
+ * arrow with soft corners (shaft 3.2 wide from y 3.7, shoulders at 11.5, a
+ * head 11 wide ending near 18.7), a top-to-foot gradient and a soft drop
+ * shadow. Per size the tile and the arrow's straight edges (the shaft's
+ * sides and top, the shoulders) are snapped to whole device pixels, the rim
+ * is 1 px, and the shadow is lighter at 16 and 20 px so it does not muddy.
+ * Paper is the same drawing inverted, without the highlight.
+ */
+function glassParts(size, mode = 'onyx', id = '') {
+  const g = GLASS[mode];
+  const s = size / 24;
+  const c = size / 2;
+  const inset = Math.max(1, Math.round(s));
+  const TW = size - 2 * inset;
+  const r = (5.6 / 22) * TW;
+  const tile = squircle(inset, inset, TW, TW, r);
+  const rim = squircle(inset + 0.5, inset + 0.5, TW - 1, TW - 1, r - 0.5);
+  // The arrow: snapped shaft (half width h), top and shoulders; the head's
+  // curves and diagonals scale with the reference.
+  const h = Math.max(1, Math.round(1.6 * s));
+  const top = Math.round(3.7 * s);
+  const sh = Math.round(11.5 * s);
+  const q = (n) => fmt(n * s);
+  const arrow = [
+    `M${fmt(c - h)} ${fmt(top + 0.9 * s)}`,
+    `c0 ${q(-0.5)} ${q(0.4)} ${q(-0.9)} ${q(0.9)} ${q(-0.9)}`,
+    `H${fmt(c + h - 0.9 * s)}`,
+    `c${q(0.5)} 0 ${q(0.9)} ${q(0.4)} ${q(0.9)} ${q(0.9)}`,
+    `V${sh}H${fmt(c + 4.9 * s)}`,
+    `c${q(0.8)} 0 ${q(1.2)} ${q(0.9)} ${q(0.6)} ${q(1.5)}`,
+    `L${fmt(c + 0.7 * s)} ${fmt(sh + 6.5 * s)}`,
+    `c${q(-0.4)} ${q(0.4)} ${q(-1)} ${q(0.4)} ${q(-1.4)} 0`,
+    `L${fmt(c - 5.5 * s)} ${fmt(sh + 1.5 * s)}`,
+    `c${q(-0.6)} ${q(-0.6)} ${q(-0.2)} ${q(-1.5)} ${q(0.6)} ${q(-1.5)}`,
+    `H${fmt(c - h)}Z`,
+  ].join('');
+  const small = size <= 20;
+  const [shadowColour, shadowOpacity] = g.shadow;
+  const [rimColour, [rimTop, rimMid, rimFoot]] = g.rim;
+  const defs = [
+    vGrad(`gt${id}`, g.tile, inset, inset + TW),
+    g.highlight
+      ? `    <radialGradient id="gh${id}" gradientUnits="userSpaceOnUse" cx="${q(12)}" cy="${q(3)}" r="${q(13)}">${stops([[0, WHITE, g.highlight], [1, WHITE, 0]])}</radialGradient>`
+      : '',
+    vGrad(`gr${id}`, [[0, rimColour, rimTop], [0.35, rimColour, rimMid], [1, rimColour, rimFoot]], inset, inset + TW),
+    vGrad(`ga${id}`, g.arrow, top, sh + 6.9 * s),
+    `    <filter id="gs${id}" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="${q(0.9)}" stdDeviation="${q(0.7)}" flood-color="${shadowColour}" flood-opacity="${fmt(small ? shadowOpacity * 0.6 : shadowOpacity)}"/></filter>`,
+  ].filter(Boolean).join('\n');
+  const body = [
+    `  <path d="${tile}" fill="url(#gt${id})"/>`,
+    g.highlight ? `  <path d="${tile}" fill="url(#gh${id})"/>` : '',
+    `  <path d="${rim}" fill="none" stroke="url(#gr${id})" stroke-width="1"/>`,
+    `  <path d="${arrow}" fill="url(#ga${id})" filter="url(#gs${id})"/>`,
+  ].filter(Boolean).join('\n');
+  return { defs, body };
+}
+
+/** The Onyx glass icon at `size` px as a whole SVG (see glassParts). */
+function glassSvg(size, mode = 'onyx') {
+  const label = `Boltget (${size} px${mode === 'onyx' ? '' : ', for dark backgrounds'})`;
+  return svg({ w: size, h: size, title: label, ...glassParts(size, mode) });
+}
+
+/**
  * 16 to 40 px: a flat rounded tile with a 1 px edge (it keeps Onyx visible on
  * a dark taskbar and Paper on a light one) and, on Onyx, a 1 px lit top line.
  * 48 to 128 px: the squircle tile (inset 2 px, 5 from 96) with its gradient
- * and rim, and the same flat arrow. `arrow` overrides the size's recipe. crispEdges keeps the arrow on whole device pixels when a page places
- * the icon at a half-pixel offset.
+ * and rim. Up to SOLID_MAX the icon is Onyx glass (glassSvg) instead.
+ * `arrow` overrides the size's grid recipe and `solid` the choice. crispEdges keeps the pixel arrow on whole device pixels when a page
+ * places the icon at a half-pixel offset.
  */
-function smallSvg(size, mode = 'onyx', arrow = SMALL_ARROW[size]) {
+function smallSvg(size, mode = 'onyx', arrow = SMALL_ARROW[size], solid = size <= SOLID_MAX) {
+  if (solid) return glassSvg(size, mode);
   const look = ICON[mode];
   const onyx = mode === 'onyx';
   const t = look.small;
-  const cells = pixelRects(pixelCells(size, arrow), t.arrow);
+  const pixels = `  <g shape-rendering="crispEdges">${pixelRects(pixelCells(size, arrow), t.arrow)}</g>`;
   const label = `Boltget (${size} px${onyx ? '' : ', for dark backgrounds'})`;
   if (size < 48) {
     const rx = size <= 16 ? 3 : size <= 24 ? 4 : Math.round(0.22 * size);
@@ -524,7 +622,7 @@ function smallSvg(size, mode = 'onyx', arrow = SMALL_ARROW[size]) {
       `  <rect width="${size}" height="${size}" rx="${rx}" fill="url(#st)"/>`,
       `  <rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" rx="${rx - 0.5}" fill="none" stroke="${t.edge[0]}" stroke-opacity="${t.edge[1]}"/>`,
       t.lit ? `  <rect x="1.5" y="1" width="${size - 3}" height="1" fill="#fff" fill-opacity="${t.lit}"/>` : '',
-      `  <g shape-rendering="crispEdges">${cells}</g>`,
+      pixels,
     ].filter(Boolean).join('\n');
     return svg({ w: size, h: size, title: label, defs, body });
   }
@@ -545,7 +643,7 @@ function smallSvg(size, mode = 'onyx', arrow = SMALL_ARROW[size]) {
     onyx
       ? `  <path d="${tile}" fill="none" stroke="#fff" stroke-opacity="0.12" stroke-width="1" transform="translate(0.5 0.5) scale(${fmt((size - 1) / size)})"/>`
       : `  <path d="${tile}" fill="none" stroke="#000" stroke-opacity="0.18" stroke-width="1"/>`,
-    big ? `  <g>${cells.replaceAll('/>', ' rx="1"/>')}</g>` : `  <g shape-rendering="crispEdges">${cells}</g>`,
+    big ? `  <g>${pixelRects(pixelCells(size, arrow), t.arrow).replaceAll('/>', ' rx="1"/>')}</g>` : pixels,
   ].join('\n');
   return svg({ w: size, h: size, title: label, defs, body });
 }
@@ -616,23 +714,22 @@ function buildLogos() {
     }),
   );
 
-  // Favicon: the bare mark in one colour, ink on light browser chrome, white
-  // on dark. At 32 device pixels (a 2x tab) it is the 9x9 arrow on whole
-  // pixels; at 16 (max-width 24px) the 5x5 arrow, 2 px cells with 1 px gaps,
-  // drawn at twice the size.
+  // Favicon: Onyx glass, the small-size app icon. At 32 device pixels (a 2x
+  // tab) the 32 px design; at 16 (max-width 24px) the 16 px design drawn at
+  // twice the size, so its straight edges stay on whole pixels.
   {
-    const big = pixelRects(pixelCells(32, BARE_ARROW[32]));
-    const small = pixelRects(pixelCells(16, BARE_ARROW[16]).map(({ x, y, w, h }) => ({ x: 2 * x, y: 2 * y, w: 2 * w, h: 2 * h })));
+    const big = glassParts(32, 'onyx', 'b');
+    const small = glassParts(16, 'onyx', 's');
     writeSvg(
       'web/favicon.svg',
       svg({
         w: 32, h: 32, title: 'Boltget',
-        style: SCHEME_FILL('g') + '.s{display:none}@media (max-width:24px){.b{display:none}.s{display:inline}}',
-        body: [`  <g class="b" shape-rendering="crispEdges">${big}</g>`, `  <g class="s" shape-rendering="crispEdges">${small}</g>`].join('\n'),
+        style: '.s{display:none}@media (max-width:24px){.b{display:none}.s{display:inline}}',
+        defs: [big.defs, small.defs].join('\n'),
+        body: [`  <g class="b">\n${big.body}\n  </g>`, `  <g class="s" transform="scale(2)">\n${small.body}\n  </g>`].join('\n'),
       }),
     );
   }
-
   // Wordmark + lockups
   const WM_SIZE = 100;
   const wm = wordmarkText(WM_SIZE);
@@ -862,7 +959,7 @@ async function ogSvg(W, H, title) {
   const body = [
     `  <image x="${fmt(ax)}" y="${fmt(ay)}" width="${fmt(aw)}" height="${fmt(ah)}" preserveAspectRatio="none" href="${dataUri(art)}"/>`,
     `  <rect x="${fmt(x + size / 2 - patch / 2)}" y="${fmt(y + size / 2 - patch / 2 + 2 * k)}" width="${patch}" height="${patch}" rx="${fmt(patch * 0.28)}" fill="${await ogGround()}" filter="url(#soft)"/>`,
-    `  <image x="${x}" y="${y}" width="${size}" height="${size}" href="${dataUri(render(smallSvg(size, 'onyx', [9, pitch - 1, 1]), size).asPng())}"/>`,
+    `  <image x="${x}" y="${y}" width="${size}" height="${size}" href="${dataUri(render(smallSvg(size, 'onyx', [9, pitch - 1, 1], false), size).asPng())}"/>`,
   ].join('\n');
   const defs = `    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="${fmt(2 * k)}"/></filter>`;
   return svg({ w: W, h: H, title, defs, body });
@@ -1120,7 +1217,7 @@ figcaption{font:12px "Geist Mono",monospace;color:var(--subtle)}
 
 <h2>App icon</h2>
 ${both(() => `<figure><img src="icon.svg" width="200" height="200" alt=""><figcaption>icon.svg (Onyx)</figcaption></figure><figure><img src="icon-animated.svg" width="200" height="200" alt=""><figcaption>icon-animated.svg</figcaption></figure><figure><img src="icon-on-dark.svg" width="200" height="200" alt=""><figcaption>icon-on-dark.svg (Paper)</figcaption></figure>`)}
-<h3>Native sizes (16–40 flat tile, 48–128 snapped, 256+ master): Onyx, then Paper</h3>
+<h3>Native sizes (16–48 Onyx glass, 60–128 pixel arrow snapped, 256+ master): Onyx, then Paper</h3>
 ${both(() => iconRow('onyx'))}
 <div style="height:16px"></div>
 ${both(() => iconRow('paper'))}

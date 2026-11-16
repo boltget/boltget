@@ -75,8 +75,8 @@
 
 <header class="titlebar" class:inactive={!focused} data-tauri-drag-region="deep">
   <div class="brand">
-    <!-- The app icon as a vector (AppMark): Onyx on light, its white twin on
-         dark. The window and taskbar keep the native per-size icons. -->
+    <!-- The app icon as a vector (AppMark): Onyx glass in both themes. The
+         window and taskbar keep the native per-size icons. -->
     <AppMark size={20} />
     <span class="name">{t("app.name")}</span>
   </div>

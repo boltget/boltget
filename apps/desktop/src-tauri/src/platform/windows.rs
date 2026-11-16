@@ -16,8 +16,8 @@
 //! - **The tray:** the system's small icon size, whether Windows shows
 //!   animations (the tray mark stays still when it does not), and whether the
 //!   taskbar is light (the mark's colour), read and watched in the registry.
-//! - **The window's icon:** the app icon's native design per size and DPI,
-//!   Onyx on a light taskbar and its white twin on a dark one.
+//! - **The window's icon:** the app icon's native design (Onyx) per size and
+//!   DPI, the big one at the taskbar button's size.
 //!
 //! All of this runs on the main (UI) thread, which owns the windows.
 //!
@@ -61,7 +61,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CreateIconFromResourceEx, CreateWindowExW, DefWindowProcW, FindWindowExW,
     GWLP_USERDATA, GetClientRect, GetParent, GetSystemMetrics, GetWindowLongPtrW, HICON,
     HTMAXBUTTON, HWND_TOP, ICON_BIG, ICON_SMALL, IDC_ARROW, IsZoomed, LR_DEFAULTCOLOR, LoadCursorW,
-    PostMessageW, RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SM_CXICON, SM_CXSMICON,
+    PostMessageW, RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SM_CXSMICON,
     SPI_GETCLIENTAREAANIMATION, SWP_NOACTIVATE, SWP_SHOWWINDOW,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageW, SetWindowLongPtrW, SetWindowPos,
     SystemParametersInfoW, WINDOW_EX_STYLE, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST,
@@ -521,98 +521,41 @@ pub(crate) fn small_icon_size() -> u32 {
 }
 
 /// The app icon's native designs (brand/BRAND.md, "Small sizes"), PNG
-/// bytes by size: Onyx, then its white twin for a dark taskbar.
-const APP_ICONS: [(i32, &[u8], &[u8]); 14] = [
-    (
-        16,
-        include_bytes!("../../../../../brand/png/icon-16.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-16.png"),
-    ),
-    (
-        20,
-        include_bytes!("../../../../../brand/png/icon-20.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-20.png"),
-    ),
-    (
-        24,
-        include_bytes!("../../../../../brand/png/icon-24.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-24.png"),
-    ),
-    (
-        30,
-        include_bytes!("../../../../../brand/png/icon-30.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-30.png"),
-    ),
-    (
-        32,
-        include_bytes!("../../../../../brand/png/icon-32.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-32.png"),
-    ),
-    (
-        36,
-        include_bytes!("../../../../../brand/png/icon-36.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-36.png"),
-    ),
-    (
-        40,
-        include_bytes!("../../../../../brand/png/icon-40.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-40.png"),
-    ),
-    (
-        48,
-        include_bytes!("../../../../../brand/png/icon-48.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-48.png"),
-    ),
-    (
-        60,
-        include_bytes!("../../../../../brand/png/icon-60.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-60.png"),
-    ),
-    (
-        64,
-        include_bytes!("../../../../../brand/png/icon-64.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-64.png"),
-    ),
-    (
-        72,
-        include_bytes!("../../../../../brand/png/icon-72.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-72.png"),
-    ),
-    (
-        80,
-        include_bytes!("../../../../../brand/png/icon-80.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-80.png"),
-    ),
-    (
-        96,
-        include_bytes!("../../../../../brand/png/icon-96.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-96.png"),
-    ),
-    (
-        128,
-        include_bytes!("../../../../../brand/png/icon-128.png"),
-        include_bytes!("../../../../../brand/png/icon-on-dark-128.png"),
-    ),
+/// bytes by size, Onyx: Onyx glass (a solid arrow) up to 48 px, the pixel arrow above.
+const APP_ICONS: [(i32, &[u8]); 14] = [
+    (16, include_bytes!("../../../../../brand/png/icon-16.png")),
+    (20, include_bytes!("../../../../../brand/png/icon-20.png")),
+    (24, include_bytes!("../../../../../brand/png/icon-24.png")),
+    (30, include_bytes!("../../../../../brand/png/icon-30.png")),
+    (32, include_bytes!("../../../../../brand/png/icon-32.png")),
+    (36, include_bytes!("../../../../../brand/png/icon-36.png")),
+    (40, include_bytes!("../../../../../brand/png/icon-40.png")),
+    (48, include_bytes!("../../../../../brand/png/icon-48.png")),
+    (60, include_bytes!("../../../../../brand/png/icon-60.png")),
+    (64, include_bytes!("../../../../../brand/png/icon-64.png")),
+    (72, include_bytes!("../../../../../brand/png/icon-72.png")),
+    (80, include_bytes!("../../../../../brand/png/icon-80.png")),
+    (96, include_bytes!("../../../../../brand/png/icon-96.png")),
+    (128, include_bytes!("../../../../../brand/png/icon-128.png")),
 ];
 
-/// Icons made so far, by mode and size, as integers so the cache is `Send`.
-/// They live as long as the app: a handful at most, one per mode and size.
-static APP_ICON_CACHE: Mutex<Vec<((bool, i32), isize)>> = Mutex::new(Vec::new());
+/// Icons made so far, by size, as integers so the cache is `Send`. They
+/// live as long as the app: a handful at most, one per size.
+static APP_ICON_CACHE: Mutex<Vec<(i32, isize)>> = Mutex::new(Vec::new());
 
 /// The app icon for a `size` px slot: the native design of that size, else
 /// the next larger one scaled down by Windows.
-fn app_icon(light: bool, size: i32) -> Option<HICON> {
+fn app_icon(size: i32) -> Option<HICON> {
     let mut cache = APP_ICON_CACHE
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    if let Some(&(_, handle)) = cache.iter().find(|(key, _)| *key == (light, size)) {
+    if let Some(&(_, handle)) = cache.iter().find(|(key, _)| *key == size) {
         return Some(HICON(handle as *mut c_void));
     }
-    let (_, onyx, paper) = APP_ICONS
+    let (_, png) = APP_ICONS
         .iter()
-        .find(|(s, ..)| *s >= size)
+        .find(|(s, _)| *s >= size)
         .or(APP_ICONS.last())?;
-    let png = if light { onyx } else { paper };
     // SAFETY: `png` is a whole PNG file, which CreateIconFromResourceEx
     // reads as an icon resource (Windows Vista and later); it only reads
     // the slice and returns a new icon we own.
@@ -620,7 +563,7 @@ fn app_icon(light: bool, size: i32) -> Option<HICON> {
         unsafe { CreateIconFromResourceEx(png, true, 0x0003_0000, size, size, LR_DEFAULTCOLOR) };
     match icon {
         Ok(icon) => {
-            cache.push(((light, size), icon.0 as isize));
+            cache.push((size, icon.0 as isize));
             Some(icon)
         }
         Err(error) => {
@@ -630,20 +573,33 @@ fn app_icon(light: bool, size: i32) -> Option<HICON> {
     }
 }
 
-/// Sets the window's icons (the taskbar button and Alt+Tab, and the small
-/// one) to the app icon for the taskbar's colour mode: Onyx on a light
-/// taskbar, its white twin on a dark one (brand/BRAND.md, "The app icon").
+/// The side of the taskbar button's icon at `dpi`: 24 px at 100% (96 DPI),
+/// scaled with the DPI (30 at 125%, 36 at 150%, 48 at 200%).
+///
+/// The taskbar draws the window's big icon at this size, and Windows has no
+/// metric for it: `SM_CXICON` is 32 at 100%, and a 32 px icon squeezed into
+/// 24 px smears the pixel arrow's cells and gaps into grey stripes. Giving
+/// the big icon this size lets the taskbar draw a native design unscaled.
+fn taskbar_icon_size(dpi: u32) -> i32 {
+    let size = (24 * dpi.max(96) + 48) / 96;
+    i32::try_from(size).unwrap_or(i32::MAX)
+}
+
+/// Sets the window's icons to the app icon, Onyx on light and dark taskbars
+/// alike (brand/BRAND.md, "The app icon": its 1 px edge holds it on a dark
+/// taskbar). The big icon (the taskbar button, Alt+Tab) has the taskbar's
+/// size ([`taskbar_icon_size`]), the small one the system's small icon size.
 /// Sizes follow the window's DPI; call it again after a DPI change.
-pub(crate) fn set_app_icon(window: &WebviewWindow, light: bool) {
+pub(crate) fn set_app_icon(window: &WebviewWindow) {
     let Ok(hwnd) = window.hwnd() else {
         return;
     };
     // SAFETY: GetDpiForWindow only reads the window's DPI.
     let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
-    for (kind, metric) in [(ICON_SMALL, SM_CXSMICON), (ICON_BIG, SM_CXICON)] {
-        // SAFETY: GetSystemMetricsForDpi has no preconditions.
-        let size = unsafe { GetSystemMetricsForDpi(metric, dpi) }.max(16);
-        let Some(icon) = app_icon(light, size) else {
+    // SAFETY: GetSystemMetricsForDpi has no preconditions.
+    let small = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, dpi) }.max(16);
+    for (kind, size) in [(ICON_SMALL, small), (ICON_BIG, taskbar_icon_size(dpi))] {
+        let Some(icon) = app_icon(size) else {
             continue;
         };
         // SAFETY: WM_SETICON takes an icon handle, which stays valid for as
@@ -1253,18 +1209,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn windows_makes_app_icons_from_the_brand_pngs() {
-        for (light, size) in [
-            (true, 16),
-            (false, 16),
-            (true, 32),
-            (false, 40),
-            (false, 300),
+    fn the_big_icon_has_the_taskbar_size_per_dpi() {
+        // 100%, 125%, 150%, 175%, 200%, 300%, and below 96 DPI.
+        for (dpi, size) in [
+            (96, 24),
+            (120, 30),
+            (144, 36),
+            (168, 42),
+            (192, 48),
+            (288, 72),
+            (72, 24),
         ] {
-            let icon = app_icon(light, size);
-            assert!(icon.is_some(), "{light} {size}");
+            assert_eq!(taskbar_icon_size(dpi), size, "{dpi} DPI");
+        }
+        // Each common scale has a native design of exactly that size.
+        for dpi in [96, 120, 144, 192, 288] {
+            let size = taskbar_icon_size(dpi);
+            assert!(APP_ICONS.iter().any(|(s, ..)| *s == size), "{size} px");
+        }
+    }
+
+    #[test]
+    fn windows_makes_app_icons_from_the_brand_pngs() {
+        for size in [16, 24, 32, 42, 300] {
+            let icon = app_icon(size);
+            assert!(icon.is_some(), "{size}");
             // A second ask is the cached icon.
-            assert_eq!(app_icon(light, size).map(|i| i.0), icon.map(|i| i.0));
+            assert_eq!(app_icon(size).map(|i| i.0), icon.map(|i| i.0));
         }
     }
 }

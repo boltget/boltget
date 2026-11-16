@@ -1,10 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
   <title>Boltget (16 px)</title>
   <defs>
-    <linearGradient id="st" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="16"><stop offset="0" stop-color="#26272A"/><stop offset="1" stop-color="#0E0E10"/></linearGradient>
+    <linearGradient id="gt" gradientUnits="userSpaceOnUse" x1="0" y1="1" x2="0" y2="15"><stop offset="0" stop-color="#4A4D52"/><stop offset="0.45" stop-color="#1A1B1E"/><stop offset="1" stop-color="#050506"/></linearGradient>
+    <radialGradient id="gh" gradientUnits="userSpaceOnUse" cx="8" cy="2" r="8.667"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    <linearGradient id="gr" gradientUnits="userSpaceOnUse" x1="0" y1="1" x2="0" y2="15"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.38"/><stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0.06"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.14"/></linearGradient>
+    <linearGradient id="ga" gradientUnits="userSpaceOnUse" x1="0" y1="2" x2="0" y2="12.6"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.55" stop-color="#E9EBEE"/><stop offset="1" stop-color="#A9ADB4"/></linearGradient>
+    <filter id="gs" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="0.6" stdDeviation="0.467" flood-color="#000000" flood-opacity="0.33"/></filter>
   </defs>
-  <rect width="16" height="16" rx="3" fill="url(#st)"/>
-  <rect x="0.5" y="0.5" width="15" height="15" rx="2.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.14"/>
-  <rect x="1.5" y="1" width="13" height="1" fill="#fff" fill-opacity="0.12"/>
-  <g shape-rendering="crispEdges"><rect x="7" y="1" width="2" height="2" fill="#FFFFFF"/><rect x="7" y="4" width="2" height="2" fill="#FFFFFF"/><rect x="1" y="7" width="2" height="2" fill="#FFFFFF"/><rect x="4" y="7" width="2" height="2" fill="#FFFFFF"/><rect x="7" y="7" width="2" height="2" fill="#FFFFFF"/><rect x="10" y="7" width="2" height="2" fill="#FFFFFF"/><rect x="13" y="7" width="2" height="2" fill="#FFFFFF"/><rect x="4" y="10" width="2" height="2" fill="#FFFFFF"/><rect x="7" y="10" width="2" height="2" fill="#FFFFFF"/><rect x="10" y="10" width="2" height="2" fill="#FFFFFF"/><rect x="7" y="13" width="2" height="2" fill="#FFFFFF"/></g>
+  <path d="M9.3 1c2 0 2.99 0 3.76 0.39a3.56 3.56 0 0 1 1.56 1.56c0.39 0.76 0.39 1.76 0.39 3.76L15 9.3c0 2 0 2.99 -0.39 3.76a3.56 3.56 0 0 1 -1.56 1.56c-0.76 0.39 -1.76 0.39 -3.76 0.39L6.7 15c-2 0 -2.99 0 -3.76 -0.39a3.56 3.56 0 0 1 -1.56 -1.56c-0.39 -0.76 -0.39 -1.76 -0.39 -3.76L1 6.7c0 -2 0 -2.99 0.39 -3.76a3.56 3.56 0 0 1 1.56 -1.56c0.76 -0.39 1.76 -0.39 3.76 -0.39Z" fill="url(#gt)"/>
+  <path d="M9.3 1c2 0 2.99 0 3.76 0.39a3.56 3.56 0 0 1 1.56 1.56c0.39 0.76 0.39 1.76 0.39 3.76L15 9.3c0 2 0 2.99 -0.39 3.76a3.56 3.56 0 0 1 -1.56 1.56c-0.76 0.39 -1.76 0.39 -3.76 0.39L6.7 15c-2 0 -2.99 0 -3.76 -0.39a3.56 3.56 0 0 1 -1.56 -1.56c-0.39 -0.76 -0.39 -1.76 -0.39 -3.76L1 6.7c0 -2 0 -2.99 0.39 -3.76a3.56 3.56 0 0 1 1.56 -1.56c0.76 -0.39 1.76 -0.39 3.76 -0.39Z" fill="url(#gh)"/>
+  <path d="M9.6 1.5c1.72 0 2.57 0 3.23 0.33a3.06 3.06 0 0 1 1.34 1.34c0.33 0.66 0.33 1.51 0.33 3.23L14.5 9.6c0 1.72 0 2.57 -0.33 3.23a3.06 3.06 0 0 1 -1.34 1.34c-0.66 0.33 -1.51 0.33 -3.23 0.33L6.4 14.5c-1.72 0 -2.57 0 -3.23 -0.33a3.06 3.06 0 0 1 -1.34 -1.34c-0.33 -0.66 -0.33 -1.51 -0.33 -3.23L1.5 6.4c0 -1.72 0 -2.57 0.33 -3.23a3.06 3.06 0 0 1 1.34 -1.34c0.66 -0.33 1.51 -0.33 3.23 -0.33Z" fill="none" stroke="url(#gr)" stroke-width="1"/>
+  <path d="M7 2.6c0 -0.333 0.267 -0.6 0.6 -0.6H8.4c0.333 0 0.6 0.267 0.6 0.6V8H11.267c0.533 0 0.8 0.6 0.4 1L8.467 12.333c-0.267 0.267 -0.667 0.267 -0.933 0L4.333 9c-0.4 -0.4 -0.133 -1 0.4 -1H7Z" fill="url(#ga)" filter="url(#gs)"/>
 </svg>

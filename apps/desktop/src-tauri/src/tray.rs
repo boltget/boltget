@@ -5,9 +5,9 @@
 //!   bytes are flowing (it freezes when everything is paused or stalled, and
 //!   never moves when Windows' animation effects are off). The brand's tray
 //!   glyph in one colour, white on a dark taskbar and ink on a light one,
-//!   following Windows' colour mode as it changes; the window's icon (the
-//!   taskbar button, Alt+Tab) follows it too, Onyx or its white twin. Left
-//!   click opens the window; right click opens the native menu.
+//!   following Windows' colour mode as it changes (the window's icon, the
+//!   taskbar button and Alt+Tab, stays Onyx in both). Left click opens the
+//!   window; right click opens the native menu.
 //! - **Tooltip.** `3 active · 48.2 MiB/s · about 2 min left`, at most once a
 //!   second so the digits do not churn.
 //! - **Taskbar button.** The batch's progress (see `bridge/activity.rs`):
@@ -339,13 +339,8 @@ async fn run(
             }
             Some(()) = theme_changes.recv() => {
                 let light = platform::taskbar_is_light();
-                if icon.set_taskbar(mark::Taskbar::from_light(light)) {
-                    if !animating {
-                        let _ = tray.set_icon(Some(icon.still()));
-                    }
-                    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
-                        platform::set_app_icon(&w, light);
-                    }
+                if icon.set_taskbar(mark::Taskbar::from_light(light)) && !animating {
+                    let _ = tray.set_icon(Some(icon.still()));
                 }
             }
             _ = ticker.tick(), if animating => {
