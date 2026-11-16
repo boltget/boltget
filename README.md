@@ -1,133 +1,61 @@
 <p align="center">
-  <img src="brand/icon.svg" width="120" height="120" alt="Boltget icon: a pixel down-arrow in a white-to-sky-blue ramp on an ink tile">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/icon-on-dark.svg">
+    <img src="brand/icon.svg" width="96" height="96" alt="Boltget">
+  </picture>
 </p>
 
 <h1 align="center">Boltget</h1>
 
 <p align="center">
-  <strong>Every byte, at full speed.</strong>
+  <strong>Every byte, at full speed.</strong><br>
+  A download manager that splits every file across many connections and resumes it after anything.
 </p>
 
 <p align="center">
-  A download manager built for speed. Dynamic segmentation, crash-proof resume and seamless browser capture, for Windows.
-</p>
-
-<p align="center">
-  <a href="https://boltget.app">boltget.app</a> ·
+  <a href="https://boltget.app/download/">Download</a> ·
+  <a href="https://boltget.app">Website</a> ·
   <a href="docs/README.md">Docs</a> ·
-  <a href="docs/ROADMAP.md">Roadmap</a>
+  <a href="docs/ROADMAP.md">Roadmap</a> ·
+  <a href="https://discord.gg/F8Cr6Whhnt">Discord</a>
 </p>
 
 <p align="center">
-  <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-34D399">
-  <img alt="Platform: Windows first" src="https://img.shields.io/badge/platform-Windows%20first-A7F3D0">
-  <!-- Enable once the workflows exist:
-  <a href="https://github.com/boltget/boltget/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/boltget/boltget/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/boltget/boltget/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/boltget/boltget"></a>
-  -->
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/app-dark.png">
+    <img src=".github/assets/app-light.png" width="860" alt="The Boltget app downloading a file over four connections, with its file map and speed chart">
+  </picture>
 </p>
 
----
+## Features
 
-## What it does
-
-Boltget splits every file across several connections and keeps them all busy until the last byte. Its engine is written in Rust and built around three goals: speed, reliability and craft.
-
-- **Dynamic segmentation.** A download starts with 4 connections and adds more only while they make it faster. When a connection finishes early, it takes over half of the largest remaining part, so all connections finish together. A slow or stalled connection is replaced within about a second. [Engine spec](docs/ENGINE.md)
-- **Crash-safe resume.** Progress is recorded only after the bytes are on disk. Kill the process or lose power, and `boltget resume` continues where it stopped. Our test harness has run 1,000 kill-and-resume cycles; every file came out byte-identical.
-- **Link refresh.** Signed link expired at 97%? Give Boltget a new one. It checks that the file is the same (size, ETag or sample bytes) and continues instead of starting over.
-- **Bandwidth limits.** Per download and global, changed without reconnecting.
-- **Checksum verification.** SHA-256, SHA-512, SHA-1 or MD5, plus digests the server sends. The file is hashed while it downloads, so there is no wait at the end.
-- **Proxies and cookies.** HTTP, HTTPS and SOCKS5 proxies; browser `cookies.txt` files matched per request; HTTP Basic auth.
-- **A scriptable CLI.** Documented exit codes and line-delimited JSON events for every state change.
-
-```console
-$ boltget get https://example.com/ubuntu-24.04.iso --checksum sha256:<hex>
-$ boltget list
-$ boltget resume 7
-$ boltget get https://example.com/big.zip --limit 5M --json
-```
-
-### Today
-
-The Rust engine and the `boltget` command-line tool: `get`, `list`, `pause`, `resume`, `refresh`, `remove` and `config`. It is pre-alpha and moving quickly. See [Status](#status).
-
-### Coming
-
-- **Desktop app.** Tauri 2 and Svelte 5. Light and dark themes, keyboard-first, small and fast.
-- **Browser extension.** Chrome, Edge and Firefox (Manifest V3). Catches downloads and forwards cookies, referrer and headers through native messaging, with no local web server. [Details](docs/BROWSER-INTEGRATION.md)
-- **Video and audio.** yt-dlp and ffmpeg, installed on demand and kept up to date, with a clean format picker. [Details](docs/VIDEO.md)
-- **Queues and scheduling.** Categories, queues and time windows.
-
-The full feature matrix, with milestones and comparisons, is in [docs/FEATURES.md](docs/FEATURES.md). What we are building toward and how we measure it is in [docs/VISION.md](docs/VISION.md).
-
-## Status
-
-**Pre-alpha.** v0.1, the Rust engine and the `boltget` command-line downloader with a [published benchmark](docs/BENCHMARK.md), is released. Work on v0.2, the desktop app, is under way. See [docs/ROADMAP.md](docs/ROADMAP.md).
+- **Dynamic segmentation.** Starts with a few connections, adds more only while they help, and splits the slowest part when one finishes early, so they all end together. [Benchmark](docs/BENCHMARK.md)
+- **Crash-safe resume.** Progress is saved only after the bytes are on disk. Kill it or lose power and it picks up where it stopped.
+- **Link refresh.** An expired link at 97% is not a restart: give it a new one and it checks the file is the same, then continues.
+- **Browser capture.** The extension hands downloads to the app with their cookies, so files behind a sign-in work too.
+- **Queues and schedules,** categories, bandwidth limits, checksums, proxies.
+- **A scriptable CLI** with documented exit codes and JSON events.
 
 ## Install
 
-**Now:** the command-line downloader. Download `boltget-<version>-windows-x64.zip` from [GitHub Releases](https://github.com/boltget/boltget/releases), unzip it and run `boltget get <url>`. The v0.x builds are not code-signed yet; [docs/BUILDING.md](docs/BUILDING.md) shows how to verify a download or build from source (`cargo run --release -p boltget-cli -- get <url>`).
-
-**Planned:**
-
-- **Windows (v1):** signed installer from [GitHub Releases](https://github.com/boltget/boltget/releases) and [boltget.app/download](https://boltget.app/download). We also plan to publish to winget.
-- **Browser extension:** Chrome Web Store, Microsoft Edge Add-ons, Firefox Add-ons.
-- **CLI:** bundled with the desktop app, and as a standalone binary.
-- **macOS and Linux:** after 1.0.
-
-## Repository layout
-
-The repository is a monorepo (pnpm workspaces + a Cargo workspace). Of `apps/` and `packages/`, only `apps/web` exists so far; the rest is the planned layout.
-
-```
-boltget/
-├── crates/
-│   ├── engine/          Rust download engine (library): probing, segmentation, I/O, persistence
-│   ├── cli/             `boltget` command-line tool on top of the engine
-│   └── testserver/      Local HTTP server that simulates misbehaving servers for tests
-├── apps/
-│   ├── desktop/         Tauri 2 desktop app (Svelte 5 + TypeScript + Vite)
-│   │   └── src-tauri/   Rust backend that embeds the engine
-│   ├── extension/       Browser extension (WXT, Manifest V3, Chrome/Edge/Firefox)
-│   └── web/             boltget.app (Astro + Svelte islands) and docs (Starlight)
-├── packages/
-│   └── ui/              Shared Svelte components and design tokens (app + site)
-├── brand/               Icon, animated icon, brand guidelines (brand/BRAND.md)
-└── docs/                Design documents
-```
-
-## Documentation
-
-| Document | What it covers |
+| | |
 |---|---|
-| [Vision](docs/VISION.md) | Problem, principles, non-goals, how we measure success |
-| [Features](docs/FEATURES.md) | Feature matrix and comparisons, with milestones |
-| [Architecture](docs/ARCHITECTURE.md) | Components, process model, IPC, data model, security |
-| [Engine](docs/ENGINE.md) | The download engine spec: probing, segmentation, resume, benchmarks |
-| [Browser integration](docs/BROWSER-INTEGRATION.md) | Extension, capture rules, native messaging |
-| [Video](docs/VIDEO.md) | yt-dlp and ffmpeg sidecars |
-| [Tech stack](docs/TECH-STACK.md) | Every major choice, with rejected alternatives |
-| [Design principles](docs/DESIGN-PRINCIPLES.md) | Product and UI rules for app and site |
-| [Website](docs/WEBSITE.md) | boltget.app structure, hero, performance budget |
-| [Roadmap](docs/ROADMAP.md) | Milestones and exit criteria |
-| [Release](docs/RELEASE.md) | Versioning, channels, signing, updater |
-| [Brand](brand/BRAND.md) | Visual identity, tokens and voice |
+| **Desktop app** | Windows 10 and 11: the installer from [boltget.app/download](https://boltget.app/download/). macOS and Linux are on the way. |
+| **Browser extension** | [Chrome Web Store](https://chromewebstore.google.com/detail/boltget/aeobielfcjcidnadamggpnomipkijcbj). Edge and Firefox are next. |
+| **Command line** | Windows and Linux builds on [GitHub Releases](https://github.com/boltget/boltget/releases). |
 
-The complete index is [docs/README.md](docs/README.md).
+```console
+$ boltget get https://example.com/ubuntu.iso --checksum sha256:<hex>
+$ boltget list
+$ boltget resume 7
+```
+
+Boltget is in preview: builds are not code-signed yet, so Windows SmartScreen asks once. To verify a download or build from source, see [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Contributing
 
-The best time to shape Boltget is now, while most of it is still being designed. Start with [CONTRIBUTING.md](CONTRIBUTING.md). It is the rulebook for everything: Conventional Commits, branching, PR rules, the RFC process, code style, the string catalog and our policy on AI-assisted contributions.
-
-- Questions and ideas: [GitHub Discussions](https://github.com/boltget/boltget/discussions) (see [SUPPORT.md](SUPPORT.md))
-- Bugs and concrete feature requests: [Issues](https://github.com/boltget/boltget/issues)
-- Security problems: **do not open an issue**. See [SECURITY.md](SECURITY.md).
-- How decisions are made: [GOVERNANCE.md](GOVERNANCE.md)
-- Everyone is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+Start with [CONTRIBUTING.md](CONTRIBUTING.md). Questions and ideas go to [Discussions](https://github.com/boltget/boltget/discussions), bugs to [Issues](https://github.com/boltget/boltget/issues), and security reports to [SECURITY.md](SECURITY.md), never to a public issue. The design docs, from the engine spec to the architecture, are indexed in [docs/README.md](docs/README.md).
 
 ## License
 
-Boltget is free and open source under the **GNU General Public License v3.0 or later** ([LICENSE](LICENSE)). Copyleft keeps it that way: anyone can use, study, modify and share it, and any distributed fork stays open too.
-
-"Boltget" and the Boltget icon identify this project. Please do not use them to brand a modified build in a way that suggests it is the official one.
+[GPL-3.0-or-later](LICENSE). The Boltget name and icon identify the official project; please don't use them to brand a modified build.
