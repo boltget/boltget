@@ -935,8 +935,11 @@ impl Engine {
     ///
     /// On success the new link (and `ctx`'s headers, without secrets) replaces
     /// the old one for good: re-resolution starts there, and the old link stays
-    /// in the download's history. Continue the download with [`Engine::resume`],
-    /// passing secret headers such as `Authorization` again.
+    /// in the download's history. Cookies in `ctx` (the browser's, from a
+    /// download captured again) replace the download's cookies, whether held
+    /// in memory or read from a cookie file; a `ctx` without cookies keeps
+    /// them. Continue the download with [`Engine::resume`], which uses the
+    /// new context's cookies and `Authorization` while this engine runs.
     pub async fn refresh_link(
         &self,
         id: DownloadId,
@@ -965,21 +968,29 @@ impl Engine {
             let old = RequestContext::from_saved(&saved.url, &saved.request_ctx)?;
             ctx.set_proxy(old.proxy().clone());
         }
-        if ctx.cookie_file().is_none()
+        // Cookies given with the new link (the browser's, when it captured
+        // the download again) replace the download's: its cookie file and
+        // the cookies it held in memory. Without any, it keeps them.
+        let given_cookies = ctx.cookies().is_some();
+        if !given_cookies
             && let Ok(old) = RequestContext::from_saved(&saved.url, &saved.request_ctx)
             && let Some(file) = old.cookie_file()
         {
-            // No cookies with the new link: keep the download's cookie file.
             match ctx.clone().with_cookie_file(file) {
                 Ok(c) => ctx = c,
                 Err(e) => tracing::warn!(error = %e, "could not read the saved cookie file"),
             }
         }
-        // The browser's cookies (and `Authorization`) the download had are
-        // used too; any given with the new link replace them.
+        // The `Authorization` the download had is used unless the new link
+        // brings its own, and so are its in-memory cookies unless it brings
+        // cookies.
         let kept = self.secrets().get(&id).cloned();
         if let Some(s) = &kept {
-            ctx.restore(s);
+            if given_cookies {
+                ctx.restore(&s.without_cookies());
+            } else {
+                ctx.restore(s);
+            }
         }
         let connector = Connector::new(
             self.inner.env.tls.clone(),

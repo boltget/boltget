@@ -56,6 +56,17 @@ pub(crate) struct Secrets {
     headers: HeaderMap,
 }
 
+impl Secrets {
+    /// The secret headers alone, for a context whose own cookies replace
+    /// the kept ones (a new link from the browser).
+    pub(crate) fn without_cookies(&self) -> Self {
+        Self {
+            cookies: None,
+            headers: self.headers.clone(),
+        }
+    }
+}
+
 /// Everything needed to (re)issue requests for a download.
 #[derive(Debug, Clone)]
 pub struct RequestContext {

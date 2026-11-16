@@ -418,3 +418,74 @@ async fn after_a_restart_the_browsers_cookies_are_gone_and_a_new_link_is_asked_f
     assert_content(&done, 13, size);
     engine.shutdown().await;
 }
+
+/// A new link that brings cookies (the browser captured the download again)
+/// replaces the cookies the download had, in memory or from a cookie file;
+/// one without cookies keeps them.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_link_with_cookies_replaces_the_downloads_cookies() {
+    let srv = TestServer::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::open(cfg(), state.path()).unwrap();
+    let size = 2 * MIB;
+    let link = |need: &str, key: &str| {
+        srv.url(&format!(
+            "/cookie?need={}&size={size}&seed=14&key={key}",
+            enc(need)
+        ))
+    };
+
+    // Cookies held in memory.
+    let mut ctx = RequestContext::new(&link("old=1", "a")).unwrap();
+    ctx.cookie("old", "1");
+    let id = engine
+        .add_paused(req(ctx, dir.path()).connections(2))
+        .unwrap();
+    // A new link without cookies keeps them.
+    let ctx = RequestContext::new(&link("old=1", "b")).unwrap();
+    engine.refresh_link(id, ctx).await.unwrap();
+    // A new link with cookies replaces them.
+    let start = srv.requests().len();
+    let mut ctx = RequestContext::new(&link("sid=new", "c")).unwrap();
+    ctx.cookie("sid", "new");
+    engine.refresh_link(id, ctx).await.unwrap();
+    let done = engine
+        .resume(id, ResumeOptions::default())
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    assert_content(&done, 14, size);
+    let reqs = &srv.requests()[start..];
+    assert!(reqs.len() >= 2, "{reqs:?}");
+    for r in reqs {
+        assert_eq!(r.cookie.as_deref(), Some("sid=new"), "{r:?}");
+    }
+
+    // Cookies from a file: the browser's replace them too.
+    let file = cookie_file(state.path(), &["127.0.0.1\tFALSE\t/\tFALSE\t0\told\t1"]);
+    let ctx = RequestContext::new(&link("old=1", "d"))
+        .unwrap()
+        .with_cookie_file(&file)
+        .unwrap();
+    let dir2 = tempfile::tempdir().unwrap();
+    let id = engine.add_paused(req(ctx, dir2.path())).unwrap();
+    let start = srv.requests().len();
+    let mut ctx = RequestContext::new(&link("sid=new", "e")).unwrap();
+    ctx.cookie("sid", "new");
+    engine.refresh_link(id, ctx).await.unwrap();
+    let done = engine
+        .resume(id, ResumeOptions::default())
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    assert_content(&done, 14, size);
+    for r in &srv.requests()[start..] {
+        assert_eq!(r.cookie.as_deref(), Some("sid=new"), "{r:?}");
+    }
+    engine.shutdown().await;
+}
