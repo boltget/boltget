@@ -1,0 +1,15 @@
+{
+  "_type": "playlist",
+  "id": "PL8dPuuaLjXtNlUrzyH5r6jN9ulIgZBpdo",
+  "title": "Weekend projects",
+  "uploader": "Example Channel",
+  "webpage_url": "https://www.youtube.com/playlist?list=PL8dPuuaLjXtNlUrzyH5r6jN9ulIgZBpdo",
+  "extractor": "youtube:tab",
+  "extractor_key": "YoutubeTab",
+  "playlist_count": 3,
+  "entries": [
+    {"_type": "url", "ie_key": "Youtube", "id": "aaaaaaaaaa1", "url": "https://www.youtube.com/watch?v=aaaaaaaaaa1", "title": "Part 1: the plan", "duration": 601},
+    {"_type": "url", "ie_key": "Youtube", "id": "aaaaaaaaaa2", "url": "https://www.youtube.com/watch?v=aaaaaaaaaa2", "title": "Part 2: the build", "duration": 1322.0},
+    {"_type": "url", "ie_key": "Youtube", "id": "aaaaaaaaaa3", "url": "https://www.youtube.com/watch?v=aaaaaaaaaa3", "title": "[Private video]", "duration": null}
+  ]
+}

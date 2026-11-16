@@ -393,6 +393,86 @@ export function mockEngineApi(search: string): EngineApi {
             : null,
         });
       },
+      async probeMedia(url: string) {
+        // Simulated answers by link: "tools" (not installed), "nomedia",
+        // "drm", "list" (a playlist) and "broken" (yt-dlp fails) pick a
+        // case; anything else is a video.
+        await new Promise((r) => setTimeout(r, /slow/.test(url) ? 2500 : 700));
+        if (/tools/.test(url)) return ok({ kind: "notInstalled" as const });
+        if (/broken/.test(url)) return err("error.media.extraction");
+        const empty = {
+          title: null,
+          uploader: null,
+          duration: null,
+          thumbnail: null,
+          presets: [],
+          subtitles: [],
+          isPlaylist: false,
+          entryCount: 0,
+          drm: false,
+        };
+        if (/nomedia/.test(url)) return ok({ kind: "found" as const, media: empty });
+        if (/drm/.test(url)) {
+          return ok({
+            kind: "found" as const,
+            media: { ...empty, title: "Premium Series S1E1", duration: 2940, drm: true },
+          });
+        }
+        if (/list/.test(url)) {
+          return ok({
+            kind: "found" as const,
+            media: {
+              ...empty,
+              title: "Weekend projects",
+              uploader: "Example Channel",
+              isPlaylist: true,
+              entryCount: 12,
+            },
+          });
+        }
+        const preset = (
+          preset: string,
+          height: number | null,
+          size: number,
+          audioOnly = false,
+        ) => ({
+          preset,
+          expression: audioOnly
+            ? "ba[ext=m4a]/ba/b"
+            : "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
+          audioOnly,
+          width: height === null ? null : Math.round((height * 16) / 9),
+          height,
+          fps: height === null ? null : 30,
+          container: audioOnly ? "m4a" : "mp4",
+          videoCodec: audioOnly ? null : "H.264",
+          audioCodec: "AAC",
+          size,
+          sizeApproximate: height !== null && height > 1000,
+        });
+        return ok({
+          kind: "found" as const,
+          media: {
+            title: "A Video About Downloading",
+            uploader: "Example Channel",
+            duration: 212,
+            thumbnail: null,
+            presets: [
+              preset("best", 1080, 31 * MIB),
+              preset("720p", 720, 18 * MIB),
+              preset("small", 480, 9 * MIB),
+              preset("audio", null, 3 * MIB, true),
+            ],
+            subtitles: [
+              { code: "en", name: "English", automatic: false },
+              { code: "de", name: "German", automatic: true },
+            ],
+            isPlaylist: false,
+            entryCount: 0,
+            drm: false,
+          },
+        });
+      },
       async pauseDownload(id: DownloadId) {
         const sim = sims.get(id);
         if (!sim) return err("error.unknown_download");

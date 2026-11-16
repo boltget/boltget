@@ -2,13 +2,15 @@
 //! on demand, verifies and keeps up to date. See `docs/VIDEO.md`.
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use boltget_engine::{EngineConfig, ProxyRules};
+use boltget_engine::{CookieJar, EngineConfig, ProxyRules};
 use boltget_media::{
-    Channel, Error, InstallEvent, Outcome, Sidecars, Sources, Status, Tool, ToolStatus,
+    Channel, ContainerPreference, Error, InstallEvent, MediaInfo, Outcome, PlaylistMode, Preset,
+    ProbeOptions, ResolvedPreset, Sidecars, Sources, Status, Tool, ToolStatus, codec_label,
+    presets,
 };
 use clap::{Args, Subcommand, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -33,7 +35,33 @@ Exit codes:
   5    local disk problem
   7    another Boltget process is installing tools right now
   8    the tool is not installed, or there is no earlier version to go back to
-  9    a signature or checksum did not verify: nothing was installed";
+  9    a signature or checksum did not verify: nothing was installed
+
+`probe` also exits with 4 when yt-dlp cannot read the page (its message is
+printed), and 8 when yt-dlp is not installed.";
+
+const PROBE_HELP: &str = "\
+Asks yt-dlp what the page offers, without downloading anything: the title,
+length, the picker's presets (Best quality, 1080p, 720p, Smaller file, Audio
+only; presets that would give the same file are shown once) with their
+resolution, container, codecs and size (\"about\" when estimated), and the
+subtitle languages. A playlist page lists its entries instead. Due updates of
+the tools are installed first (yt-dlp at most once a day).
+
+--cookies passes a Netscape cookies.txt (as browser export extensions write
+it); yt-dlp receives a private copy that is deleted afterwards.
+
+With --json, stdout carries one JSON object:
+  {title, id, uploader, duration, webpage_url, extractor, thumbnail,
+   is_playlist, entry_count, entries: [{id, title, url, duration}], drm,
+   container, presets: [{preset, expression, format_ids, audio_only, width,
+   height, fps, dynamic_range, video_codec, audio_codec, container,
+   size: {bytes, approximate} | null}],
+   subtitles: [{code, name, automatic}]}
+preset is best, 1080p, 720p, small or audio; container is mp4 or original
+(the --original switch); duration is seconds; drm is true when everything on
+the page is DRM-protected (then there are no presets). On failure stdout
+carries {\"error\": {key, message}, \"exit_code\"}.";
 
 #[derive(Debug, Args)]
 pub(crate) struct MediaArgs {
@@ -81,6 +109,27 @@ pub(crate) enum MediaAction {
         #[arg(value_enum)]
         channel: ChannelArg,
     },
+    /// Show what video or audio a web page offers, with the picker's presets.
+    #[command(after_long_help = PROBE_HELP)]
+    Probe(ProbeArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ProbeArgs {
+    /// The web page.
+    url: String,
+    /// A Netscape cookies.txt file for the site.
+    #[arg(long, value_name = "FILE")]
+    cookies: Option<PathBuf>,
+    /// Prefer the site's original formats over MP4 (the default prefers MP4).
+    #[arg(long)]
+    original: bool,
+    /// List the playlist the page belongs to (a watch page with a list).
+    #[arg(long)]
+    playlist: bool,
+    /// Print JSON instead of text.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -126,7 +175,7 @@ fn exit_code(e: &Error) -> u8 {
     match e {
         Error::Download(e) => crate::exit_code_for(e),
         Error::Signature { .. } | Error::Checksum { .. } => 9,
-        Error::Release { .. } | Error::Unsupported(_) => 4,
+        Error::Release { .. } | Error::Unsupported(_) | Error::Extraction { .. } => 4,
         Error::NotInstalled(_) | Error::NoPrevious(_) => 8,
         Error::Busy(_) => 7,
         Error::Argument { .. } => 2,
@@ -155,6 +204,7 @@ pub(crate) async fn run(args: MediaArgs, state: Option<&Path>) -> u8 {
     let shown = Shown::default();
     let on_event = |e: InstallEvent| shown.event(e);
     let result = match args.action {
+        MediaAction::Probe(probe_args) => return probe(&sidecars, &shown, probe_args).await,
         MediaAction::Status { json } => status(&sidecars, json),
         MediaAction::Install { tool } => {
             each(&tool.tools(), async |t| {
@@ -311,6 +361,189 @@ fn status_json(s: &Status) -> serde_json::Value {
     serde_json::json!({ "dir": s.dir.display().to_string(), "tools": tools })
 }
 
+/// `boltget media probe`: due updates first (as the app does before using
+/// the tools), then yt-dlp on the page.
+async fn probe(sidecars: &Sidecars, shown: &Shown, args: ProbeArgs) -> u8 {
+    let on_event = |e: InstallEvent| shown.event(e);
+    // A failed update check leaves the installed tools in place; the probe
+    // goes on with them.
+    if let Err(e) = sidecars.update_if_due(SystemTime::now(), &on_event).await {
+        eprintln!("boltget: the update check failed: {e}");
+    }
+    shown.finish();
+    let result = probe_page(sidecars, &args).await;
+    match result {
+        Ok((info, container)) => {
+            if args.json {
+                println!("{}", probe_json(&info, container));
+            } else {
+                print_probe(&info, container);
+            }
+            0
+        }
+        Err(e) => {
+            let code = exit_code(&e);
+            if args.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "error": {"key": e.message_key(), "message": e.to_string()},
+                        "exit_code": code,
+                    })
+                );
+            } else {
+                eprintln!("boltget: {e}");
+                if matches!(e, Error::NotInstalled(_)) {
+                    eprintln!("hint: install the video tools with `boltget media install`");
+                }
+            }
+            code
+        }
+    }
+}
+
+async fn probe_page(
+    sidecars: &Sidecars,
+    args: &ProbeArgs,
+) -> boltget_media::Result<(MediaInfo, ContainerPreference)> {
+    let prober = sidecars.prober()?;
+    let cookies = match &args.cookies {
+        Some(path) => Some(CookieJar::load(path)?),
+        None => None,
+    };
+    let opts = ProbeOptions {
+        cookies,
+        playlist: if args.playlist {
+            PlaylistMode::Entries
+        } else {
+            PlaylistMode::Single
+        },
+        ..ProbeOptions::default()
+    };
+    let container = if args.original {
+        ContainerPreference::Original
+    } else {
+        ContainerPreference::Mp4
+    };
+    let info = prober.probe(args.url.trim(), &opts).await?;
+    Ok((info, container))
+}
+
+fn preset_name(p: Preset) -> &'static str {
+    match p {
+        Preset::Best => "Best quality",
+        Preset::P1080 => "1080p",
+        Preset::P720 => "720p",
+        Preset::Small => "Smaller file",
+        Preset::Audio => "Audio only",
+    }
+}
+
+fn duration_text(secs: f64) -> String {
+    let s = secs.round() as u64;
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+/// One preset as a line: resolution, container, codecs, size.
+fn preset_line(r: &ResolvedPreset) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(h) = r.height {
+        let mut res = format!("{h}p");
+        if let Some(fps) = r.fps.filter(|f| *f > 30.5) {
+            let _ = write!(res, "{}", fps.round());
+        }
+        if let Some(hdr) = &r.dynamic_range {
+            let _ = write!(res, " {hdr}");
+        }
+        parts.push(res);
+    }
+    parts.push(r.container.to_uppercase());
+    let codecs: Vec<String> = [&r.video_codec, &r.audio_codec]
+        .into_iter()
+        .flatten()
+        .map(|c| codec_label(c))
+        .collect();
+    if !codecs.is_empty() {
+        parts.push(codecs.join(" + "));
+    }
+    if let Some(size) = r.size {
+        let about = if size.approximate { "about " } else { "" };
+        parts.push(format!("{about}{}", indicatif::HumanBytes(size.bytes)));
+    }
+    format!("  {:<14}{}", preset_name(r.preset), parts.join("  "))
+}
+
+fn print_probe(info: &MediaInfo, container: ContainerPreference) {
+    println!("{}", info.title.as_deref().unwrap_or("(untitled)"));
+    if let Some(who) = info.publisher() {
+        println!("  by {who}");
+    }
+    if let Some(d) = info.duration {
+        println!("  length {}", duration_text(d));
+    }
+    if info.is_playlist() {
+        println!("playlist, {} entries:", info.entry_count());
+        for (i, e) in info.entries.iter().enumerate() {
+            let length = e.duration.map(duration_text).unwrap_or_default();
+            println!(
+                "  {:>3}. {}  {length}",
+                i + 1,
+                e.title.as_deref().or(e.url.as_deref()).unwrap_or("?")
+            );
+        }
+        return;
+    }
+    if info.drm_only() {
+        println!("DRM-protected: Boltget cannot download this.");
+        return;
+    }
+    let list = presets(info, container);
+    if list.is_empty() {
+        println!("no media found on this page");
+        return;
+    }
+    let which = match container {
+        ContainerPreference::Mp4 => "prefer MP4",
+        ContainerPreference::Original => "prefer original",
+    };
+    println!("presets ({which}):");
+    for r in &list {
+        println!("{}", preset_line(r));
+    }
+    let langs = info.subtitle_languages();
+    let (auto, own): (Vec<_>, Vec<_>) = langs.iter().partition(|l| l.automatic);
+    if !own.is_empty() {
+        let codes: Vec<&str> = own.iter().map(|l| l.code.as_str()).collect();
+        println!("subtitles: {}", codes.join(", "));
+    }
+    if !auto.is_empty() {
+        println!("automatic captions: {} languages", auto.len());
+    }
+}
+
+fn probe_json(info: &MediaInfo, container: ContainerPreference) -> serde_json::Value {
+    serde_json::json!({
+        "title": info.title,
+        "id": info.id,
+        "uploader": info.publisher(),
+        "duration": info.duration,
+        "webpage_url": info.webpage_url,
+        "extractor": info.extractor,
+        "thumbnail": info.best_thumbnail(),
+        "is_playlist": info.is_playlist(),
+        "entry_count": info.entry_count(),
+        "entries": info.entries,
+        "drm": info.drm_only(),
+        "container": container,
+        "presets": presets(info, container),
+        "subtitles": info.subtitle_languages(),
+    })
+}
+
 /// Shows install progress on stderr: a line per step, a bar per large file.
 #[derive(Default)]
 struct Shown {
@@ -385,5 +618,63 @@ impl Shown {
         {
             b.finish_and_clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_probe() {
+        use clap::Parser as _;
+        let cli = crate::Cli::try_parse_from([
+            "boltget",
+            "media",
+            "probe",
+            "https://x.test/v",
+            "--cookies",
+            "c.txt",
+            "--original",
+            "--json",
+        ])
+        .unwrap();
+        let crate::Command::Media(MediaArgs {
+            action: MediaAction::Probe(p),
+        }) = cli.command
+        else {
+            panic!("expected media probe");
+        };
+        assert_eq!(p.url, "https://x.test/v");
+        assert_eq!(p.cookies.as_deref(), Some(Path::new("c.txt")));
+        assert!(p.original && p.json && !p.playlist);
+    }
+
+    #[test]
+    fn durations_and_preset_lines() {
+        assert_eq!(duration_text(212.0), "3:32");
+        assert_eq!(duration_text(3725.4), "1:02:05");
+        assert_eq!(duration_text(0.4), "0:00");
+        let info = MediaInfo::from_json(
+            br#"{"duration": 100, "formats": [
+                {"format_id": "a", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "filesize": 1048576},
+                {"format_id": "v", "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "height": 1080, "fps": 60, "dynamic_range": "HDR10", "filesize_approx": 10485760}
+            ]}"#,
+        )
+        .unwrap();
+        let list = presets(&info, ContainerPreference::Mp4);
+        assert_eq!(
+            preset_line(&list[0]),
+            "  Best quality  1080p60 HDR10  MP4  H.264 + AAC  about 11.00 MiB"
+        );
+        assert_eq!(
+            preset_line(list.last().unwrap()),
+            "  Audio only    M4A  AAC  1.00 MiB"
+        );
+        let json = probe_json(&info, ContainerPreference::Mp4);
+        assert_eq!(json["container"], "mp4");
+        assert_eq!(json["presets"][0]["preset"], "best");
+        assert_eq!(json["presets"][0]["size"]["approximate"], true);
+        assert_eq!(json["drm"], false);
     }
 }

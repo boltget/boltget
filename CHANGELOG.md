@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Look for video on a web page: when a link you add turns out to be a web page rather than a file, the add sheet offers "Look for media on this page" and shows what it finds: the title, channel, length and the best quality on offer, with its resolution, format and size. Choosing a quality and downloading arrive in the next preview. On the command line, `boltget media probe <url>` lists the choices Boltget will offer (Best quality, 1080p, 720p, Smaller file and Audio only) with their resolution, format, codecs and size, plus the subtitle languages; `--original` shows them for the site's own formats instead of MP4, `--cookies` passes a cookies.txt for sites that need a sign-in (yt-dlp gets a private copy that is deleted right after), and `--json` prints it for scripts. Pages protected by DRM are recognised and said so.
+
+### Changed
+
+- Installing FFmpeg no longer unpacks its media player (`ffplay.exe`), which Boltget does not use.
+
 ## [0.3.0-preview.2] - 2026-11-16
 
 The browser extension grows up: Boltget now sets its rules, resumes expired downloads you start again in the browser, and can forget private-window downloads. Also the first piece of video downloads and a sharp new taskbar icon.

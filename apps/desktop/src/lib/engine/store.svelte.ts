@@ -23,6 +23,7 @@ import type {
   EngineStatus,
   FinishCountdown,
   LimitScope,
+  MediaProbe,
   ProbePreview,
   ProgressItem,
   QueueId,
@@ -54,6 +55,7 @@ export interface EngineApi {
     | "checkDestination"
     | "chooseFolder"
     | "probeUrl"
+    | "probeMedia"
     | "pauseDownload"
     | "resumeDownload"
     | "requeueDownload"
@@ -267,6 +269,11 @@ export class DownloadStore {
   /** What a link points at, for the add sheet. */
   probe(url: string): Promise<Result<ProbePreview>> {
     return this.#api.commands.probeUrl(url);
+  }
+
+  /** Video or audio on a web page (yt-dlp), for the add sheet. */
+  probeMedia(url: string): Promise<Result<MediaProbe>> {
+    return this.#api.commands.probeMedia(url);
   }
 
   /** The Downloads folder and the recent folders, for the add sheet. */

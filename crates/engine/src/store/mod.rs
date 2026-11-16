@@ -10,6 +10,7 @@
 //!   Jobs run in submission order, which is what lets checkpoint writes be
 //!   fire-and-forget: a later job always sees the effects of earlier ones.
 
+pub(crate) mod media_jobs;
 mod migrations;
 pub(crate) mod records;
 

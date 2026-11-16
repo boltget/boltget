@@ -99,6 +99,8 @@ const YT_DLP_FLAGS: &[&str] = &[
     "--no-prefer-free-formats",
     "--check-formats",
     "--no-check-formats",
+    "--ignore-no-formats-error",
+    "--no-ignore-no-formats-error",
     "-4",
     "--force-ipv4",
     "-6",
@@ -454,6 +456,8 @@ mod tests {
             v(&[
                 "-J",
                 "--no-playlist",
+                "--flat-playlist",
+                "--ignore-no-formats-error",
                 "--cookies",
                 "C:\\t\\c.txt",
                 "--",

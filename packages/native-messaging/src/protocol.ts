@@ -111,8 +111,9 @@ export type CaptureRules = {
 };
 
 /**
- *  A cookie as `cookies.getAll` reports it. `same_site` and `http_only`
- *  mean nothing to a downloader and are only checked.
+ *  A cookie as `cookies.getAll` reports it. `same_site` means nothing to a
+ *  downloader and is only checked; `http_only` is kept only for the
+ *  `cookies.txt` files written for yt-dlp.
  */
 export type CookieRecord = {
 	/**  Its name (may be empty, as browsers allow). */

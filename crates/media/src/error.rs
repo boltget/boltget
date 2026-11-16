@@ -115,6 +115,24 @@ pub enum Error {
         source: std::io::Error,
     },
 
+    /// yt-dlp could not read the page (unsupported site, no such video,
+    /// sign-in needed, network failure, ...). `message` is yt-dlp's own,
+    /// without its `ERROR:` prefix; step 6 of v0.4 sorts these into the
+    /// user-facing categories of `docs/VIDEO.md`.
+    #[error("yt-dlp could not read the page: {message}")]
+    Extraction {
+        /// yt-dlp's message.
+        message: String,
+    },
+
+    /// yt-dlp's description of the page could not be used (not JSON, or too
+    /// large).
+    #[error("yt-dlp's description of the page cannot be read: {detail}")]
+    InfoJson {
+        /// What is wrong.
+        detail: String,
+    },
+
     /// The installed-tools manifest cannot be read or written.
     #[error("tools manifest {}: {detail}", path.display())]
     Manifest {
@@ -154,6 +172,8 @@ impl Error {
             Error::Busy(_) => "error.media.busy",
             Error::Argument { .. } => "error.media.argument",
             Error::Timeout { .. } => "error.media.timeout",
+            Error::Extraction { .. } => "error.media.extraction",
+            Error::InfoJson { .. } => "error.media.info_json",
             Error::Io { .. } | Error::Manifest { .. } => "error.media.disk",
         }
     }

@@ -438,6 +438,7 @@ version = "0.3.0-preview.2"
 dependencies = [
  "boltget-engine",
  "boltget-ipc",
+ "boltget-media",
  "boltget-native-host",
  "boltget-testserver",
  "rusqlite",

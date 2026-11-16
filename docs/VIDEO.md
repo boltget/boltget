@@ -95,7 +95,7 @@ Nothing is executed until it is verified:
 - **Windows build of yt-dlp:** the unpacked "onedir" build (`yt-dlp_win.zip`, `yt-dlp_win_arm64.zip`), which upstream now publishes: it starts faster than the self-extracting `yt-dlp.exe` and is flagged less often (see Known operational issues). Linux and macOS use the single-file builds.
 - **No Mark of the Web** on these downloads: they are verified and never opened by the user, and a zip's mark would not reach the unpacked files anyway.
 
-**Install.** Download, verify, unpack (zip only, with the pure-Rust `zip` crate: entries that would leave the directory, symbolic links, more than 20,000 entries or more than 2 GiB unpacked are refused; FFmpeg keeps only `bin/`) into a staging directory, rename it to the version directory, then the **smoke test**: yt-dlp `--ignore-config --no-plugin-dirs --no-update --version` must print exactly the release tag; `ffmpeg -version` and `ffprobe -version` must start with `ffmpeg version` / `ffprobe version` and name the pinned version; 120 s at most each. Only then is the version made active. A version that fails is deleted and the active one stays as it was.
+**Install.** Download, verify, unpack (zip only, with the pure-Rust `zip` crate: entries that would leave the directory, symbolic links, more than 20,000 entries or more than 2 GiB unpacked are refused; FFmpeg keeps only `bin/`, and since step 2 not `ffplay.exe`) into a staging directory, rename it to the version directory, then the **smoke test**: yt-dlp `--ignore-config --no-plugin-dirs --no-update --version` must print exactly the release tag; `ffmpeg -version` and `ffprobe -version` must start with `ffmpeg version` / `ffprobe version` and name the pinned version; 120 s at most each. Only then is the version made active. A version that fails is deleted and the active one stays as it was.
 
 **Rollback.** The previous version is kept; every other version (and any leftover staging directory) is pruned after each switch; a directory still in use is left for the next prune. `verify_active` (CLI: `boltget media check`) smoke-tests the active version; if it fails and the previous one passes, the previous one becomes active again and the failed version is recorded as rejected: it is never installed again automatically (a newer release is). `boltget media rollback <tool>` does the same by hand.
 
@@ -161,6 +161,43 @@ Principles from [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) apply: one obvious 
 - The last-used preset is remembered per site.
 
 **Output naming** uses a yt-dlp output template with a safe default (`%(title)s [%(id)s].%(ext)s`), sanitized by yt-dlp's Windows-safe filename handling, written to the "Video" category folder.
+
+### Probing and presets: as built
+
+*v0.4 step 2 (2026-11-16).* What the sections above left open, and how probing works.
+
+**The command line.** `Prober` (`crates/media/src/probe.rs`; `Sidecars::prober` takes the active yt-dlp, and FFmpeg's directory when it is installed) runs, through the guarded runner: `yt-dlp --ignore-config --no-plugin-dirs --no-update [--ffmpeg-location <dir>] -J --flat-playlist --no-playlist --ignore-no-formats-error --encoding utf-8 --socket-timeout 20 [--cookies <file>] [--referer <url>] [--add-headers User-Agent:<ua>] [--proxy <url>] -- <page>`.
+
+- `--flat-playlist` is always passed: with `--no-playlist` a watch page that names a video still gets that video in full, while a page that is only a playlist lists its entries without resolving each (which could take minutes). `PlaylistMode::Entries` (`--yes-playlist` instead) lists the playlist a watch page belongs to, for step 5.
+- `--ignore-no-formats-error`: a page whose formats are all DRM-protected is still described (with `_has_drm` set and no formats) instead of failing, so DRM is a flag rather than an error to classify. It is the only option added to the allowlist in this step.
+- Header values must not contain control characters (no smuggled second header). The URL always follows `--` and must be `http(s)`, as the allowlist requires.
+- 60 s timeout (`PROBE_TIMEOUT`); at most 32 MiB of JSON is read (`MAX_INFO_JSON`), more is an error.
+- A non-zero exit is `Error::Extraction` with yt-dlp's last `ERROR:` line (without the prefix; else its last line of output), cut at 2,000 characters, key `error.media.extraction`. Sorting these into the categories of [Progress and errors](#progress-and-errors) is step 6. Output that is not a JSON object is `Error::InfoJson`.
+- The app passes no proxy yet (yt-dlp gets a reduced environment, so no proxy variables either): Settings' proxy for media jobs comes with step 3. The app's downloads of the tools themselves do use it.
+
+**Cookies.** The engine's `CookieJar::to_netscape` writes the jar ([ENGINE.md](ENGINE.md#authentication-and-cookies)); `CookieFile` puts it in `tools\.jobs\cookies-<pid>-<n>-<nanos>.txt`, created new (never overwriting), and deletes it when dropped, so on success, failure and timeout alike; files older than an hour that a crashed process left behind are deleted when the next one is created. **The ACL decision:** rather than setting an ACL on each file (which would need Win32 security calls and `unsafe` code), the file lives in a folder that is already private: `%LOCALAPPDATA%\Boltget\tools` inherits the user profile's permissions, which admit only the user, `SYSTEM` and administrators (who could read the browser's cookie store anyway). On Unix the file is created with mode 0600. A CLI `--state` directory elsewhere has whatever permissions its folder has. yt-dlp writes the jar back to the file when it exits; that copy is deleted with it.
+
+**The model.** `MediaInfo` (`crates/media/src/info.rs`) reads the fields the picker needs: `_type`, id, title, uploader (else channel), duration, webpage URL, extractor, thumbnails, formats (`format_id`, `ext`, `protocol`, `vcodec`/`acodec`, width, height, fps, `tbr`/`vbr`/`abr`, `filesize`/`filesize_approx`, `dynamic_range`, `has_drm`, `format_note`, `language`), subtitles and automatic captions (language to `{ext, name}`; `live_chat` is not a subtitle), `is_live`, `_has_drm`, and a playlist's entries (`id`, `title`, `url`, `duration`) and `playlist_count`. Everything is read leniently: unknown fields are ignored, missing and `null` fields are empty, numbers may be integers, floats or numeric strings, a codec of `"none"` means the stream is absent while a missing codec means unknown (counted as present, as yt-dlp does), `has_drm` counts only when `true` (not yt-dlp's `"maybe"`), and a list element of the wrong shape is skipped. Fixtures in `crates/media/tests/fixtures/info/` (hand-made, after real output): a YouTube-like page with DASH formats up to 2160p, a progressive-only site, an HLS-only site, an audio-only page, a flat playlist and a DRM-protected page.
+
+**Presets** (`crates/media/src/presets.rs`). Each preset is built from yt-dlp's own selectors and resolved here as yt-dlp resolves it: yt-dlp lists formats worst first, so a selector takes the **last** match; `A+B` needs both, `/` falls back; `[height<=N]` does not match a format without a height; DRM-protected formats are never chosen.
+
+| Preset | Prefer MP4 (default) | Prefer original |
+|---|---|---|
+| Best quality | `bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b` | `bv*+ba/b` |
+| 1080p, 720p, Smaller file (480p) | `bv*[height<=N][ext=mp4]+ba[ext=m4a]/b[height<=N][ext=mp4]/bv*[height<=N]+ba/b[height<=N]` | `bv*[height<=N]+ba/b[height<=N]` |
+| Audio only | `ba[ext=m4a]/ba/b` | `ba/b` |
+
+- Each resolved preset reports its formats, resolution, fps, dynamic range (not for SDR), codecs (`codec_label` gives the everyday names: H.264, VP9, AV1, AAC, Opus, ...), container and size.
+- **Container:** with "Prefer MP4" video is MP4 (step 3 passes `--merge-output-format mp4` and `--remux-video mp4` for the fallbacks that are not MP4) and audio is M4A (`--audio-format m4a`). With "Prefer original": one format keeps its extension; two are MP4 when both are MP4-family (`mp4`, `m4a`, ...), WebM when both are WebM, else MKV, as yt-dlp merges; audio keeps its codec's container (Opus `opus`, AAC `m4a`, Vorbis `ogg`, MP3, FLAC).
+- **Size:** the chosen formats' `filesize`, else `filesize_approx`, else bit rate (`tbr`, or `vbr` + `abr`) times the duration, added up; approximate if any part was; unknown if any part is.
+- **Which presets are shown:** height presets above the page's highest video are left out; a preset that selects the same formats into the same kind of file (video or audio) and container as an earlier one is collapsed into it (on the YouTube-like fixture with "Prefer MP4", 1080p is Best quality again, since the best MP4 video is 1080p); a preset nothing matches is left out (an audio-only page has only Audio only). Audio only on a page without separate audio extracts it from the best combined format. A page whose formats are all DRM-protected has no presets and reports `drm`.
+- The last-used preset per site, the subtitle choice and the advanced table are step 3.
+
+**`media_job` table** (schema version 7, [ARCHITECTURE.md](ARCHITECTURE.md#data-model)): one row per job with the page, the chosen expression, preset, container preference, subtitle choice, output template, folder, state and error; jobs are recorded, not yet run.
+
+**Front ends.** `boltget media probe <url> [--cookies <file>] [--original] [--playlist] [--json]` installs due updates, then prints the title, uploader, length, presets with their sizes and the subtitle languages (or a playlist's entries); `--json` is described in `boltget help media probe`. In the app, the add sheet's "This link returns a web page" notice offers **Look for media on this page** (`probe_media`): with the tools missing it answers "Video tools are not installed yet" without running anything (the install sheet is step 3); otherwise it installs due updates, probes, and shows the title, uploader, length and Best quality's resolution, container, codecs and size, or "No video or audio found" (also for yt-dlp's failures, until step 6), DRM, or a playlist's size.
+
+**Fuzzing.** `pgp_signature` (`fuzz/fuzz_targets/`, `boltget_media::pgp::fuzz` behind the crate's `fuzzing` feature) feeds arbitrary bytes as the signature of yt-dlp 2026.10.26's real `SHA2-256SUMS`: no panic, and nothing may verify over a changed document. Its seeds run in `cargo test`. **FFmpeg** installs no longer unpack `ffplay.exe` (`Layout::Zip::skip`).
 
 ## Progress and errors
 

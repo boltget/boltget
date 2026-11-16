@@ -44,6 +44,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 6,
         sql: include_str!("migrations/0006_private.sql"),
     },
+    Migration {
+        version: 7,
+        sql: include_str!("migrations/0007_media_job.sql"),
+    },
 ];
 
 /// The schema version this build writes.
@@ -251,6 +255,46 @@ mod tests {
             })
             .unwrap();
         assert!(!private);
+    }
+
+    #[test]
+    fn an_older_database_gains_media_jobs_tied_to_downloads() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut c, p) = open(dir.path());
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut c, &p, &MIGRATIONS[..6]).unwrap();
+        c.execute(
+            "INSERT INTO download (id, state, url, request_ctx, requested_kind,
+                                   requested_dest, conflict, created_at, updated_at)
+             VALUES (4, 'queued', 'https://x.test/a', '{}', 'dir', '/d', 'rename', 0, 0)",
+            [],
+        )
+        .unwrap();
+        migrate(&mut c, &p, MIGRATIONS).unwrap();
+        assert!(backup_path(&p, 6).exists());
+        let insert = |download: Option<i64>| {
+            c.execute(
+                "INSERT INTO media_job (download_id, state, page_url, format_expression,
+                                        container, output_template, dest_dir, created_at, updated_at)
+                 VALUES (?1, 'queued', 'https://v.test/watch', 'bv*+ba/b', 'mp4', 't', '/d', 0, 0)",
+                [download],
+            )
+        };
+        insert(Some(4)).unwrap();
+        insert(None).unwrap();
+        // One job per download, and only for a download that exists.
+        assert!(insert(Some(4)).is_err());
+        assert!(insert(Some(99)).is_err());
+        // Removing the download removes its job; the other stays.
+        c.execute("DELETE FROM download WHERE id = 4", []).unwrap();
+        let left: Vec<Option<i64>> = c
+            .prepare("SELECT download_id FROM media_job")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(left, [None]);
     }
 
     #[test]

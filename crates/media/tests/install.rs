@@ -371,7 +371,8 @@ async fn ffmpeg_installs_from_its_pin_and_updates_when_the_pin_changes() {
     let server = Server::start().await;
     let key = TestKey::load();
     let tmp = tempfile::tempdir().unwrap();
-    let pin = publish_ffmpeg(&server, "n9.9-test", &[]);
+    let ffplay = support::exe("ffplay");
+    let pin = publish_ffmpeg(&server, "n9.9-test", &[(ffplay.as_str(), b"player")]);
     let m = Sidecars::new(
         tmp.path().to_path_buf(),
         sources(&server, &key, Some(pin.clone())),
@@ -383,9 +384,11 @@ async fn ffmpeg_installs_from_its_pin_and_updates_when_the_pin_changes() {
     let ffmpeg = m.program(Program::Ffmpeg).unwrap();
     let ffprobe = m.program(Program::Ffprobe).unwrap();
     assert!(ffmpeg.is_file() && ffprobe.is_file());
-    // Only bin/ was unpacked.
+    // Only bin/ was unpacked, without the player.
     let vdir = tmp.path().join("ffmpeg").join("n9.9-test");
     assert!(!vdir.join("doc").exists());
+    assert!(vdir.join("bin").is_dir());
+    assert!(!vdir.join("bin").join(&ffplay).exists());
     assert_eq!(
         std::fs::read_to_string(ffmpeg.with_file_name("fake-args.txt")).unwrap(),
         "-version"

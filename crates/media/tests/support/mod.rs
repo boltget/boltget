@@ -212,6 +212,7 @@ pub fn sources(server: &Server, key: &TestKey, ffmpeg: Option<PinnedBuild>) -> S
             layout: Layout::Zip {
                 strip: 0,
                 keep: None,
+                skip: Vec::new(),
             },
             programs: vec![(Program::YtDlp, exe("yt-dlp"))],
         }),
@@ -313,6 +314,7 @@ pub fn publish_ffmpeg(server: &Server, version: &str, extra: &[(&str, &[u8])]) -
         layout: Layout::Zip {
             strip: 1,
             keep: Some("bin/".into()),
+            skip: vec![exe("ffplay")],
         },
         programs: vec![
             (Program::Ffmpeg, format!("bin/{}", exe("ffmpeg"))),

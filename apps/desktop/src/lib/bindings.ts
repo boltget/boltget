@@ -41,6 +41,14 @@ export const commands = {
 	/**  Looks at a link without downloading it, for the add sheet's preview. */
 	probeUrl: (url: string) => typedError<ProbePreview, UiError>(__TAURI_INVOKE("probe_url", { url })),
 	/**
+	 *  Looks for video or audio on a web page with yt-dlp. Answers
+	 *  `notInstalled` without running anything while the tools are missing;
+	 *  otherwise installs due updates first (yt-dlp at most once a day; a failed
+	 *  check keeps the installed version), then probes. yt-dlp's own failure is
+	 *  `error.media.extraction`, with its message.
+	 */
+	probeMedia: (url: string) => typedError<MediaProbe, UiError>(__TAURI_INVOKE("probe_media", { url })),
+	/**
 	 *  Adds a download to its queue (the default queue unless the page names
 	 *  one): it starts when its turn comes, or at `startAt`, or stays paused
 	 *  with `paused`. Returns its row at once, so the list can show it before
@@ -573,6 +581,66 @@ export type LinkSource = {
 	url: string,
 	/**  `primary` (as added) or `refreshed` (given later). */
 	role: string,
+};
+
+/**  One preset with what it resolves to. */
+export type MediaPreset = {
+	/**  `best`, `1080p`, `720p`, `small` or `audio`. */
+	preset: string,
+	/**  The yt-dlp format expression. */
+	expression: string,
+	audioOnly: boolean,
+	width: number | null,
+	height: number | null,
+	fps: number | null,
+	/**  The file's extension (`mp4`, `m4a`, ...). */
+	container: string,
+	/**  Everyday codec names (`H.264`, `AAC`). */
+	videoCodec: string | null,
+	audioCodec: string | null,
+	/**  Bytes, when known. */
+	size: number | null,
+	/**  The size is an estimate ("about"). */
+	sizeApproximate: boolean,
+};
+
+/**  What "Look for media on this page" found. */
+export type MediaProbe = 
+/**
+ *  yt-dlp and FFmpeg are not installed yet (the install sheet is v0.4
+ *  step 3); nothing was run.
+ */
+{ kind: "notInstalled" } | 
+/**  yt-dlp described the page. */
+{ kind: "found"; 
+/**  What it found. */
+media: MediaSummary };
+
+/**  A subtitle language. */
+export type MediaSubtitle = {
+	code: string,
+	name: string | null,
+	/**  Automatic captions rather than subtitles. */
+	automatic: boolean,
+};
+
+/**  A page's media, as the add sheet shows it. */
+export type MediaSummary = {
+	title: string | null,
+	uploader: string | null,
+	/**  Seconds. */
+	duration: number | null,
+	thumbnail: string | null,
+	/**
+	 *  The presets for "Prefer MP4", best first; empty when there is
+	 *  nothing to download (no media, DRM, or a playlist).
+	 */
+	presets: MediaPreset[],
+	subtitles: MediaSubtitle[],
+	isPlaylist: boolean,
+	entryCount: number,
+	/**  Everything on the page is DRM-protected. */
+	drm: boolean,
 };
 
 /**  The answer to [`answer_resume_offer`]. */

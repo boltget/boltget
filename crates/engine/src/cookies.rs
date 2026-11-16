@@ -31,6 +31,9 @@ pub struct Cookie {
     secure: bool,
     /// `None`: a session cookie.
     expires: Option<SystemTime>,
+    /// Hidden from page scripts. Means nothing to a downloader; kept so a
+    /// `cookies.txt` written for another tool says the same as the browser.
+    http_only: bool,
 }
 
 impl std::fmt::Debug for Cookie {
@@ -56,6 +59,7 @@ impl Cookie {
             path: "/".into(),
             secure: false,
             expires: None,
+            http_only: false,
         }
     }
 
@@ -88,7 +92,15 @@ impl Cookie {
             },
             secure,
             expires,
+            http_only: false,
         }
+    }
+
+    /// The same cookie, marked `HttpOnly` (hidden from page scripts) or not.
+    #[must_use]
+    pub fn with_http_only(mut self, http_only: bool) -> Self {
+        self.http_only = http_only;
+        self
     }
 
     /// Whether the cookie has expired by `now`.
@@ -109,6 +121,10 @@ impl Cookie {
         self.name == other.name && self.domain == other.domain && self.path == other.path
     }
 }
+
+/// The prefix curl writes before the domain of an `HttpOnly` cookie in a
+/// `cookies.txt`.
+const HTTP_ONLY_PREFIX: &str = "#HttpOnly_";
 
 /// RFC 6265 5.1.3: does `host` domain-match `domain`?
 fn domain_matches(host: &str, domain: &str) -> bool {
@@ -188,7 +204,10 @@ impl CookieJar {
         let mut jar = Self::new();
         for (i, raw) in text.lines().enumerate() {
             let line = raw.trim_end_matches(['\r', '\n']);
-            let line = line.strip_prefix("#HttpOnly_").unwrap_or(line);
+            let (line, http_only) = match line.strip_prefix(HTTP_ONLY_PREFIX) {
+                Some(rest) => (rest, true),
+                None => (line, false),
+            };
             if line.trim().is_empty() || line.starts_with('#') {
                 continue;
             }
@@ -234,12 +253,60 @@ impl CookieJar {
                 },
                 secure: flag(f[3]),
                 expires,
+                http_only,
             };
             if !cookie.expired(now) && !cookie.domain.is_empty() {
                 jar.insert(cookie);
             }
         }
         Ok(jar)
+    }
+
+    /// Writes the jar as a Netscape `cookies.txt` (what
+    /// [`CookieJar::from_netscape`] reads, and what yt-dlp's `--cookies`
+    /// takes): a header line, then one line per cookie that has not expired by
+    /// `now`, with seven tab-separated fields. A cookie for a domain and its
+    /// subdomains is written with a leading dot and `TRUE`, a host-only one
+    /// without the dot and `FALSE` (Python's reader insists the two agree); a
+    /// session cookie has expiry `0`; an `HttpOnly` cookie gets curl's
+    /// `#HttpOnly_` prefix. The format has no escaping, so a cookie with a tab,
+    /// line break or NUL in any field, an empty domain or one starting with `#`
+    /// is left out rather than allowed to spill into another line.
+    ///
+    /// The text holds the cookies' values: secrets. Write it only to a file
+    /// only the user can read, and delete it after use.
+    pub fn to_netscape(&self, now: SystemTime) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::from("# Netscape HTTP Cookie File\n");
+        for c in self.cookies.iter().filter(|c| !c.expired(now)) {
+            let unsafe_field = [&c.name, &c.value, &c.domain, &c.path]
+                .iter()
+                .any(|f| f.contains(['\t', '\r', '\n', '\0']));
+            if unsafe_field || c.domain.is_empty() || c.domain.starts_with('#') {
+                continue;
+            }
+            let expiry = match c.expires {
+                None => 0,
+                Some(t) => match t.duration_since(UNIX_EPOCH) {
+                    // At least 1: 0 would read as a session cookie.
+                    Ok(d) => d.as_secs().clamp(1, i64::MAX as u64),
+                    Err(_) => continue,
+                },
+            };
+            let (dot, subdomains) = if c.host_only {
+                ("", "FALSE")
+            } else {
+                (".", "TRUE")
+            };
+            let secure = if c.secure { "TRUE" } else { "FALSE" };
+            let prefix = if c.http_only { HTTP_ONLY_PREFIX } else { "" };
+            let _ = writeln!(
+                out,
+                "{prefix}{dot}{}\t{subdomains}\t{}\t{secure}\t{expiry}\t{}\t{}",
+                c.domain, c.path, c.name, c.value
+            );
+        }
+        out
     }
 
     /// Loads a `cookies.txt` file.
@@ -305,6 +372,7 @@ impl CookieJar {
             path: default_path(url),
             secure: false,
             expires: None,
+            http_only: false,
         };
         let mut max_age: Option<i64> = None;
         for attr in parts {
@@ -332,6 +400,7 @@ impl CookieJar {
                 }
                 "path" if v.starts_with('/') => v.clone_into(&mut c.path),
                 "secure" => c.secure = true,
+                "httponly" => c.http_only = true,
                 _ => {}
             }
         }
@@ -447,6 +516,62 @@ mod tests {
         assert_eq!(
             header(&spaced, "http://example.com/").as_deref(),
             Some("a=b c")
+        );
+    }
+
+    #[test]
+    fn netscape_output() {
+        let now = SystemTime::now();
+        let later = UNIX_EPOCH + Duration::from_secs(4_102_444_800);
+        let mut jar = CookieJar::new();
+        jar.insert(Cookie::from_browser(
+            "sid",
+            "a=b",
+            ".Example.com",
+            false,
+            "/",
+            true,
+            None,
+        ));
+        jar.insert(
+            Cookie::from_browser("tok", "1", "dl.example.com", true, "/f", false, Some(later))
+                .with_http_only(true),
+        );
+        // Left out: expired, or a field that would break the line format.
+        jar.insert(Cookie::from_browser(
+            "old",
+            "1",
+            "example.com",
+            false,
+            "/",
+            false,
+            Some(UNIX_EPOCH + Duration::from_secs(5)),
+        ));
+        jar.insert(Cookie::for_host("example.com", "tab", "a\tb"));
+        jar.insert(Cookie::for_host("example.com", "nl\nx", "1"));
+        jar.insert(Cookie::for_host("#example.com", "c", "1"));
+        let text = jar.to_netscape(now);
+        assert_eq!(
+            text,
+            "# Netscape HTTP Cookie File\n\
+             .example.com\tTRUE\t/\tTRUE\t0\tsid\ta=b\n\
+             #HttpOnly_dl.example.com\tFALSE\t/f\tFALSE\t4102444800\ttok\t1\n"
+        );
+        // It reads back as the same cookies.
+        let back = CookieJar::from_netscape(&text).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back.cookies, jar.cookies[..2]);
+        assert_eq!(
+            header(&back, "https://dl.example.com/f/x").as_deref(),
+            Some("tok=1; sid=a=b")
+        );
+        // An HttpOnly line read from a file is written back the same way.
+        let curl = "#HttpOnly_.example.org\tTRUE\t/\tFALSE\t0\th\t1\n";
+        let jar = CookieJar::from_netscape(curl).unwrap();
+        assert!(jar.to_netscape(now).ends_with(curl));
+        assert_eq!(
+            CookieJar::new().to_netscape(now),
+            "# Netscape HTTP Cookie File\n"
         );
     }
 

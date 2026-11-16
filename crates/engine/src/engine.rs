@@ -19,6 +19,7 @@ use crate::events::{Completed, DownloadId, DownloadInfo, EngineEvent, Progress, 
 use crate::filename::{self, NameSources};
 use crate::http::{self, Connector, Origin};
 use crate::integrity::{self, Checksum, ChecksumSource};
+use crate::media_job::{self, MediaJob, MediaJobId, MediaJobUpdate, NewMediaJob};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport, ServerDigest};
 use crate::proxy::ProxyChoice;
 use crate::queue::{
@@ -26,7 +27,7 @@ use crate::queue::{
 };
 use crate::ratelimit::RateLimiter;
 use crate::request::{RequestContext, Secrets, redact_url};
-use crate::store::{DownloadSummary, Store, records};
+use crate::store::{DownloadSummary, Store, media_jobs, records};
 
 /// Attempts [`Engine::probe`] makes before it reports a transient failure.
 pub const PROBE_ATTEMPTS: u32 = 2;
@@ -1342,6 +1343,70 @@ impl Engine {
             })
             .await
             .unwrap_or_default()
+    }
+
+    // Media jobs --------------------------------------------------------------
+
+    /// Records a media job (`docs/VIDEO.md`) in state `queued`. Nothing runs:
+    /// `boltget-media` carries jobs out. Needs a database; the page URL must
+    /// be `http` or `https`, and the format expression and output template
+    /// must not be empty.
+    pub async fn add_media_job(&self, job: NewMediaJob) -> Result<MediaJob> {
+        let store = self.store()?;
+        media_job::validate(&job.page_url, &job.format_expression, &job.output_template)?;
+        store
+            .call(move |c| {
+                let id = media_jobs::insert(c, &job)?;
+                media_jobs::get(c, id)?.ok_or(Error::UnknownMediaJob(id))
+            })
+            .await
+    }
+
+    /// The media job with this id.
+    pub async fn media_job(&self, id: MediaJobId) -> Result<MediaJob> {
+        let store = self.store()?;
+        store
+            .call(move |c| media_jobs::get(c, id)?.ok_or(Error::UnknownMediaJob(id)))
+            .await
+    }
+
+    /// Every media job, oldest first (empty without a database).
+    pub async fn media_jobs(&self) -> Result<Vec<MediaJob>> {
+        match &self.inner.store {
+            Some(store) => store.call(|c| media_jobs::list(c)).await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Changes a media job and returns it as stored.
+    pub async fn update_media_job(
+        &self,
+        id: MediaJobId,
+        change: MediaJobUpdate,
+    ) -> Result<MediaJob> {
+        let store = self.store()?;
+        store
+            .call(move |c| {
+                if !media_jobs::update(c, id, &change)? {
+                    return Err(Error::UnknownMediaJob(id));
+                }
+                media_jobs::get(c, id)?.ok_or(Error::UnknownMediaJob(id))
+            })
+            .await
+    }
+
+    /// Forgets a media job (its files stay where they are).
+    pub async fn remove_media_job(&self, id: MediaJobId) -> Result<()> {
+        let store = self.store()?;
+        store
+            .call(move |c| {
+                if media_jobs::delete(c, id)? {
+                    Ok(())
+                } else {
+                    Err(Error::UnknownMediaJob(id))
+                }
+            })
+            .await
     }
 
     // Queues ------------------------------------------------------------------

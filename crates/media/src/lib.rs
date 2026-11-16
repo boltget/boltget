@@ -16,27 +16,40 @@
 //!   Windows Job Object that kills it with Boltget, with a timeout, and only
 //!   with arguments from an allowlist (no option that runs commands, loads
 //!   code or reads configuration).
+//! - [`Prober`] describes a web page with `yt-dlp -J` ([`MediaInfo`]: formats,
+//!   subtitles, thumbnails, playlist entries), passing cookies through a
+//!   temporary file ([`CookieFile`]), and [`presets()`] turns the formats into
+//!   the picker's presets.
 //!
 //! The design is in `docs/VIDEO.md` ("Install, verification and updates") and
 //! `docs/ARCHITECTURE.md` ("Sidecars").
 #![warn(missing_docs)]
 
 pub mod args;
+mod cookies;
 mod error;
 mod extract;
+pub mod info;
 mod manager;
 mod manifest;
 pub mod pgp;
 mod platform;
+pub mod presets;
+mod probe;
 pub mod runner;
 pub mod sources;
 
 use std::fmt;
 
+pub use boltget_engine::ContainerPreference;
+pub use cookies::CookieFile;
 pub use error::{Error, Result};
+pub use info::{Codec, Entry, Format, MediaInfo, SubtitleLanguage, SubtitleTrack, Thumbnail};
 pub use manager::{
     DAILY, FAILURE_RECHECK, InstallEvent, Outcome, Release, Sidecars, Status, ToolStatus,
 };
+pub use presets::{Preset, ResolvedPreset, SizeEstimate, codec_label, presets};
+pub use probe::{MAX_INFO_JSON, PROBE_TIMEOUT, PlaylistMode, ProbeOptions, Prober};
 pub use sources::{Channel, Sources};
 
 /// A sidecar tool, installed and updated as one unit.

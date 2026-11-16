@@ -17,6 +17,10 @@ path = "tests/support/fake_sidecar.rs"
 test = false
 doc = false
 
+[features]
+# Exposes `boltget_media::pgp::fuzz` for the fuzz target in `fuzz/`. Not an API.
+fuzzing = []
+
 [dependencies]
 boltget-engine.workspace = true
 # RSA signature verification for yt-dlp's signed checksum files; already in the

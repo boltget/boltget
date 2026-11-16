@@ -213,6 +213,16 @@ pub fn cookies(data: &[u8]) {
             assert!(v.is_sensitive());
         }
     }
+    // What the jar writes for yt-dlp is one well-formed line per cookie, and
+    // reads back without error.
+    let written = jar.to_netscape(now);
+    for line in written.lines().skip(1) {
+        let line = line.strip_prefix("#HttpOnly_").unwrap_or(line);
+        assert!(!line.starts_with('#'), "{line:?}: a comment line");
+        assert_eq!(line.split('\t').count(), 7, "{line:?}: not seven fields");
+    }
+    let back = CookieJar::from_netscape(&written).expect("the jar's own output parses");
+    assert!(back.len() <= jar.len());
 }
 
 /// Probe responses: a status code (first two bytes) and header lines (the rest).

@@ -1,0 +1,10 @@
+{
+  "id": "80192837",
+  "title": "Premium Series S1E1",
+  "duration": 2940,
+  "webpage_url": "https://watch.example.com/title/80192837",
+  "extractor": "generic",
+  "extractor_key": "Generic",
+  "formats": [],
+  "_has_drm": true
+}

@@ -9,7 +9,7 @@
 //! boltget refresh <id> <new-url> [-H ...]
 //! boltget config list|get|set|unset [limit] [<value>]
 //! boltget bench [<url>...] [--targets bench/targets.toml] [--runs 5] [-c auto,8] [--json]
-//! boltget media status|install|update|check|rollback|channel
+//! boltget media status|install|update|check|rollback|channel|probe <url> [--json]
 //! ```
 //!
 //! Downloads are kept in a database (`--state`, default `%LOCALAPPDATA%\Boltget`)

@@ -1,8 +1,10 @@
 # Fuzz targets for the engine's parsers of untrusted input and for the native
-# messaging host's reader of what the browser sends. Not a member of the main
-# workspace: cargo-fuzz needs a nightly toolchain. Each target calls one
-# function of `boltget_engine::fuzzing` (or `boltget_ipc::browser::fuzz` for
-# `native_message`), where the checked properties live; the seed corpus in
+# messaging host's reader of what the browser sends, and for the media
+# crate's OpenPGP signature parser. Not a member of the main workspace:
+# cargo-fuzz needs a nightly toolchain. Each target calls one function of
+# `boltget_engine::fuzzing` (or `boltget_ipc::browser::fuzz` for
+# `native_message`, `boltget_media::pgp::fuzz` for `pgp_signature`), where
+# the checked properties live; the seed corpus in
 # `corpus/<target>/` also runs as a unit test of that crate.
 #
 #   cargo +nightly fuzz run content_range -- -max_total_time=60
@@ -19,6 +21,7 @@ cargo-fuzz = true
 [dependencies]
 boltget-engine = { path = "../crates/engine", features = ["fuzzing"] }
 boltget-ipc = { path = "../crates/ipc", features = ["fuzzing"] }
+boltget-media = { path = "../crates/media", features = ["fuzzing"] }
 libfuzzer-sys = "0.4.10"
 
 [workspace]
@@ -79,6 +82,13 @@ bench = false
 [[bin]]
 name = "native_message"
 path = "fuzz_targets/native_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pgp_signature"
+path = "fuzz_targets/pgp_signature.rs"
 test = false
 doc = false
 bench = false

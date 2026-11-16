@@ -20,6 +20,7 @@ mod commands;
 mod error;
 mod ipc;
 mod mark;
+mod media;
 mod notify;
 mod pipe;
 mod platform;
@@ -91,6 +92,7 @@ fn main() {
             ipc.mount_events(app);
             tauri::async_runtime::spawn(hub);
             let dir = data_dir();
+            app.manage(media::MediaTools::new(dir.clone()));
             if let Some(dir) = &dir {
                 pipe::start(app.handle(), dir.clone());
             }

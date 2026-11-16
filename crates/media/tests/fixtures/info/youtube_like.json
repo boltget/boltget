@@ -1,0 +1,54 @@
+{
+  "id": "dQw4w9WgXcQ",
+  "title": "A Video About Downloading",
+  "uploader": "Example Channel",
+  "channel": "Example Channel",
+  "duration": 212,
+  "webpage_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "extractor": "youtube",
+  "extractor_key": "Youtube",
+  "is_live": false,
+  "thumbnail": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+  "thumbnails": [
+    {"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg", "width": 120, "height": 90, "preference": -10, "id": "0"},
+    {"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", "width": 480, "height": 360, "preference": -5, "id": "1"},
+    {"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg", "width": 1280, "height": 720, "preference": -1, "id": "2"},
+    {"url": "https://i.ytimg.com/vi_webp/dQw4w9WgXcQ/maxresdefault.webp", "preference": 0, "id": "3"}
+  ],
+  "formats": [
+    {"format_id": "sb0", "format_note": "storyboard", "ext": "mhtml", "protocol": "mhtml", "vcodec": "none", "acodec": "none", "width": 320, "height": 180, "fps": 0.5},
+    {"format_id": "139", "format_note": "low", "ext": "m4a", "protocol": "https", "vcodec": "none", "acodec": "mp4a.40.5", "abr": 48.8, "tbr": 48.8, "filesize": 1296034, "language": "en"},
+    {"format_id": "249", "format_note": "low", "ext": "webm", "protocol": "https", "vcodec": "none", "acodec": "opus", "abr": 50.3, "tbr": 50.3, "filesize": 1336052, "language": "en"},
+    {"format_id": "140", "format_note": "medium", "ext": "m4a", "protocol": "https", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129.5, "tbr": 129.5, "filesize": 3437753, "language": "en"},
+    {"format_id": "251", "format_note": "medium", "ext": "webm", "protocol": "https", "vcodec": "none", "acodec": "opus", "abr": 135.6, "tbr": 135.6, "filesize": 3600402, "language": "en"},
+    {"format_id": "160", "format_note": "144p", "ext": "mp4", "protocol": "https", "vcodec": "avc1.4d400c", "acodec": "none", "width": 256, "height": 144, "fps": 25, "vbr": 52.1, "tbr": 52.1, "filesize": 1383520, "dynamic_range": "SDR"},
+    {"format_id": "278", "format_note": "144p", "ext": "webm", "protocol": "https", "vcodec": "vp9", "acodec": "none", "width": 256, "height": 144, "fps": 25, "vbr": 57.8, "tbr": 57.8, "filesize": 1534731, "dynamic_range": "SDR"},
+    {"format_id": "134", "format_note": "360p", "ext": "mp4", "protocol": "https", "vcodec": "avc1.4d401e", "acodec": "none", "width": 640, "height": 360, "fps": 25, "vbr": 197.4, "tbr": 197.4, "filesize": 5243170, "dynamic_range": "SDR"},
+    {"format_id": "18", "format_note": "360p", "ext": "mp4", "protocol": "https", "vcodec": "avc1.42001E", "acodec": "mp4a.40.2", "width": 640, "height": 360, "fps": 25, "tbr": 395.3, "filesize_approx": 10503024, "dynamic_range": "SDR"},
+    {"format_id": "243", "format_note": "360p", "ext": "webm", "protocol": "https", "vcodec": "vp9", "acodec": "none", "width": 640, "height": 360, "fps": 25, "vbr": 228.8, "tbr": 228.8, "filesize": 6077120, "dynamic_range": "SDR"},
+    {"format_id": "135", "format_note": "480p", "ext": "mp4", "protocol": "https", "vcodec": "avc1.4d401e", "acodec": "none", "width": 854, "height": 480, "fps": 25, "vbr": 321.9, "tbr": 321.9, "filesize": 8550012, "dynamic_range": "SDR"},
+    {"format_id": "244", "format_note": "480p", "ext": "webm", "protocol": "https", "vcodec": "vp9", "acodec": "none", "width": 854, "height": 480, "fps": 25, "vbr": 391.2, "tbr": 391.2, "filesize": 10389004, "dynamic_range": "SDR"},
+    {"format_id": "136", "format_note": "720p", "ext": "mp4", "protocol": "https", "vcodec": "avc1.4d401f", "acodec": "none", "width": 1280, "height": 720, "fps": 25, "vbr": 600.1, "tbr": 600.1, "filesize": 15936790, "dynamic_range": "SDR"},
+    {"format_id": "247", "format_note": "720p", "ext": "webm", "protocol": "https", "vcodec": "vp9", "acodec": "none", "width": 1280, "height": 720, "fps": 25, "vbr": 682.6, "tbr": 682.6, "filesize": 18128102, "dynamic_range": "SDR"},
+    {"format_id": "398", "format_note": "720p", "ext": "mp4", "protocol": "https", "vcodec": "av01.0.05M.08", "acodec": "none", "width": 1280, "height": 720, "fps": 25, "vbr": 562.0, "tbr": 562.0, "filesize": 14925400, "dynamic_range": "SDR"},
+    {"format_id": "137", "format_note": "1080p", "ext": "mp4", "protocol": "https", "vcodec": "avc1.640028", "acodec": "none", "width": 1920, "height": 1080, "fps": 25, "vbr": 2163.4, "tbr": 2163.4, "filesize": 57452070, "dynamic_range": "SDR"},
+    {"format_id": "248", "format_note": "1080p", "ext": "webm", "protocol": "https", "vcodec": "vp9", "acodec": "none", "width": 1920, "height": 1080, "fps": 25, "vbr": 1222.0, "tbr": 1222.0, "filesize": 32452001, "dynamic_range": "SDR"},
+    {"format_id": "399", "format_note": "1080p", "ext": "mp4", "protocol": "https", "vcodec": "av01.0.08M.08", "acodec": "none", "width": 1920, "height": 1080, "fps": 25, "vbr": 1043.2, "tbr": 1043.2, "filesize": 27703020, "dynamic_range": "SDR"},
+    {"format_id": "271", "format_note": "1440p", "ext": "webm", "protocol": "https", "vcodec": "vp9", "acodec": "none", "width": 2560, "height": 1440, "fps": 25, "vbr": 4103.6, "tbr": 4103.6, "filesize_approx": 108975020, "dynamic_range": "SDR"},
+    {"format_id": "313", "format_note": "2160p", "ext": "webm", "protocol": "https", "vcodec": "vp9", "acodec": "none", "width": 3840, "height": 2160, "fps": 25, "vbr": 9420.1, "tbr": 9420.1, "filesize_approx": 250160003, "dynamic_range": "SDR", "http_headers": {"User-Agent": "Mozilla/5.0"}}
+  ],
+  "subtitles": {
+    "en": [{"ext": "json3", "url": "https://www.youtube.com/api/timedtext?lang=en&fmt=json3", "name": "English"}, {"ext": "vtt", "url": "https://www.youtube.com/api/timedtext?lang=en&fmt=vtt", "name": "English"}],
+    "pt-BR": [{"ext": "vtt", "url": "https://www.youtube.com/api/timedtext?lang=pt-BR&fmt=vtt", "name": "Portuguese (Brazil)"}],
+    "live_chat": [{"ext": "json", "url": "https://www.youtube.com/live_chat_replay"}]
+  },
+  "automatic_captions": {
+    "de": [{"ext": "vtt", "url": "https://www.youtube.com/api/timedtext?lang=de&tlang=de", "name": "German"}],
+    "en-orig": [{"ext": "vtt", "url": "https://www.youtube.com/api/timedtext?lang=en", "name": "English (Original)"}]
+  },
+  "requested_formats": [{"format_id": "399"}, {"format_id": "140"}],
+  "format_id": "399+140",
+  "_has_drm": null,
+  "epoch": 1779000000,
+  "_version": {"version": "2026.10.26", "repository": "yt-dlp/yt-dlp"}
+}

@@ -23,6 +23,8 @@ tauri-build = { version = "2.7", features = [] }
 boltget-engine.workspace = true
 # The named pipe the app serves to the CLI (docs/ARCHITECTURE.md, "CLI to app").
 boltget-ipc.workspace = true
+# The video tools: probing web pages with yt-dlp (docs/VIDEO.md).
+boltget-media.workspace = true
 # The browsers' registration of the native host, for Settings' "Repair
 # browser integration" (the same code the installer runs).
 boltget-native-host.workspace = true

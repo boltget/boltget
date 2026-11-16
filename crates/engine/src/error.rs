@@ -255,6 +255,14 @@ pub enum Error {
     #[error("{0}")]
     QueueRefused(crate::queue::QueueProblem),
 
+    /// No media job with this id.
+    #[error("no media job with id {0}")]
+    UnknownMediaJob(crate::media_job::MediaJobId),
+
+    /// A media job that cannot be stored as given.
+    #[error("invalid media job: {0}")]
+    InvalidMediaJob(String),
+
     /// A bug or invariant violation.
     #[error("internal error: {0}")]
     Internal(String),
@@ -268,7 +276,8 @@ impl Error {
             | Error::ProxyAuth(_)
             | Error::TooManyRedirects(_)
             | Error::InsecureRedirect(_)
-            | Error::Tls(_) => ErrorKind::Permanent,
+            | Error::Tls(_)
+            | Error::InvalidMediaJob(_) => ErrorKind::Permanent,
             Error::Status {
                 status,
                 previously_worked,
@@ -285,7 +294,9 @@ impl Error {
             Error::Internal(_) => ErrorKind::Internal,
             Error::DatabaseLocked { .. } => ErrorKind::Busy,
             Error::Database(_) => ErrorKind::Database,
-            Error::UnknownDownload(_) | Error::UnknownQueue(_) => ErrorKind::NotFound,
+            Error::UnknownDownload(_) | Error::UnknownQueue(_) | Error::UnknownMediaJob(_) => {
+                ErrorKind::NotFound
+            }
             Error::InvalidState { .. } | Error::QueueRefused(_) => ErrorKind::InvalidState,
             Error::ChecksumMismatch { .. } => ErrorKind::Integrity,
             Error::LinkExpired(_) => ErrorKind::LinkExpired,
@@ -330,6 +341,8 @@ impl Error {
             Error::InvalidState { .. } => "error.invalid_state",
             Error::UnknownQueue(_) => "error.unknown_queue",
             Error::QueueRefused(p) => p.message_key(),
+            Error::UnknownMediaJob(_) => "error.unknown_media_job",
+            Error::InvalidMediaJob(_) => "error.invalid_media_job",
             Error::PartialMissing { .. } => "error.partial_missing",
             Error::ChecksumMismatch { .. } => "error.checksum_mismatch",
             Error::LinkExpired(_) => "error.link_expired",

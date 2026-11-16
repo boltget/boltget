@@ -90,12 +90,15 @@ pub enum Layout {
     },
     /// A zip archive: `strip` leading path components are dropped from every
     /// entry, and only entries under `keep` (after stripping; `None`: all) are
-    /// unpacked.
+    /// unpacked, except files named in `skip`.
     Zip {
         /// Leading components to drop.
         strip: usize,
         /// The only directory to unpack, such as `bin/`.
         keep: Option<String>,
+        /// File names (compared without regard to case) never unpacked, such
+        /// as programs Boltget does not use.
+        skip: Vec<String>,
     },
 }
 
@@ -222,6 +225,7 @@ fn zip_all() -> Layout {
     Layout::Zip {
         strip: 0,
         keep: None,
+        skip: Vec::new(),
     }
 }
 
@@ -232,7 +236,8 @@ fn executable(file: &str) -> Layout {
 /// The pinned FFmpeg build for the platform Boltget was built for: BtbN's
 /// FFmpeg-Builds, release branch 9.0, GPL, shared libraries (the smaller
 /// download), from a month-end autobuild (those are kept long-term). Only
-/// `bin/` is unpacked. Other platforms have none yet: their users point
+/// `bin/` is unpacked, without `ffplay.exe` (a media player Boltget does not
+/// use). Other platforms have none yet: their users point
 /// Boltget at the system's FFmpeg.
 pub fn ffmpeg_build() -> Option<PinnedBuild> {
     const TAG: &str = "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/";
@@ -259,6 +264,7 @@ pub fn ffmpeg_build() -> Option<PinnedBuild> {
         layout: Layout::Zip {
             strip: 1,
             keep: Some("bin/".into()),
+            skip: vec!["ffplay.exe".into()],
         },
         programs: vec![
             (Program::Ffmpeg, "bin/ffmpeg.exe".into()),

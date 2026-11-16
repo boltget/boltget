@@ -1,0 +1,14 @@
+{
+  "id": "991204",
+  "title": "Night Drive (Extended Mix)",
+  "uploader": "synth collective",
+  "duration": 412.0,
+  "webpage_url": "https://soundcloud.com/synth-collective/night-drive",
+  "extractor": "soundcloud",
+  "extractor_key": "Soundcloud",
+  "thumbnails": [{"url": "https://i1.sndcdn.com/artworks-t500x500.jpg", "width": 500, "height": 500}],
+  "formats": [
+    {"format_id": "hls_opus_64", "ext": "opus", "protocol": "m3u8_native", "vcodec": "none", "acodec": "opus", "abr": 64},
+    {"format_id": "http_mp3_128", "ext": "mp3", "protocol": "http", "vcodec": "none", "acodec": "mp3", "abr": 128, "filesize": 6592000}
+  ]
+}

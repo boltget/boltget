@@ -1,0 +1,14 @@
+{
+  "id": "live-replay-88",
+  "title": "Council meeting replay",
+  "uploader": null,
+  "duration": 120,
+  "webpage_url": "https://stream.example.net/replay/88",
+  "extractor": "generic",
+  "extractor_key": "Generic",
+  "formats": [
+    {"format_id": "hls-240p", "ext": "mp4", "protocol": "m3u8_native", "vcodec": "avc1.4d4015", "acodec": "mp4a.40.2", "width": 426, "height": 240, "tbr": 400.0},
+    {"format_id": "hls-480p", "ext": "mp4", "protocol": "m3u8_native", "vcodec": "avc1.4d401e", "acodec": "mp4a.40.2", "width": 854, "height": 480, "tbr": 1200.5},
+    {"format_id": "hls-1080p", "ext": "mp4", "protocol": "m3u8_native", "width": 1920, "height": 1080, "tbr": 4800}
+  ]
+}

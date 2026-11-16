@@ -76,6 +76,7 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
         checksum: null,
       }),
     ),
+    probeMedia: vi.fn(() => ok({ kind: "notInstalled" as const })),
     addDefaults: vi.fn(() => ok({ downloadsFolder: "Downloads", recentFolders: [] })),
     checkDestination: vi.fn((_dir, name) =>
       ok({ fileName: name, renamed: false, folderExists: true, freeBytes: null }),

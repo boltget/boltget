@@ -41,6 +41,7 @@ pub mod fuzzing;
 mod headers;
 mod http;
 mod integrity;
+mod media_job;
 mod platform;
 mod probe;
 mod proxy;
@@ -62,6 +63,10 @@ pub use error::{Error, ErrorKind, Result};
 pub use events::{Completed, DownloadId, DownloadInfo, EngineEvent, ErrorInfo, Progress, State};
 pub use headers::Validators;
 pub use integrity::{Checksum, ChecksumSource, HashAlgo};
+pub use media_job::{
+    ContainerPreference, DEFAULT_OUTPUT_TEMPLATE, MediaJob, MediaJobError, MediaJobId,
+    MediaJobState, MediaJobUpdate, NewMediaJob, SubtitleChoice,
+};
 pub use platform::{Preallocation, available_space, is_sparse};
 pub use probe::{ProbeResult, RangeSupport, ServerDigest};
 pub use proxy::{NoProxy, Proxy, ProxyChoice, ProxyKind, ProxyRules};

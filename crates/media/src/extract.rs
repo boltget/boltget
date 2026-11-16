@@ -25,7 +25,7 @@ pub(crate) fn unpack(download: &Path, layout: &Layout, dir: &Path) -> Result<(),
             make_executable(&dest).map_err(|e| format!("set executable: {e}"))?;
             Ok(())
         }
-        Layout::Zip { strip, keep } => unzip(download, *strip, keep.as_deref(), dir),
+        Layout::Zip { strip, keep, skip } => unzip(download, *strip, keep.as_deref(), skip, dir),
     }
 }
 
@@ -37,7 +37,13 @@ fn single_component(name: &str) -> Option<&str> {
     }
 }
 
-fn unzip(archive: &Path, strip: usize, keep: Option<&str>, dir: &Path) -> Result<(), String> {
+fn unzip(
+    archive: &Path,
+    strip: usize,
+    keep: Option<&str>,
+    skip: &[String],
+    dir: &Path,
+) -> Result<(), String> {
     let file = File::open(archive).map_err(|e| format!("open: {e}"))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("not a zip archive: {e}"))?;
     if zip.len() > MAX_ENTRIES {
@@ -62,6 +68,9 @@ fn unzip(archive: &Path, strip: usize, keep: Option<&str>, dir: &Path) -> Result
             if !relative.starts_with(keep) || relative == keep {
                 continue;
             }
+        }
+        if !entry.is_dir() && skipped(&relative, skip) {
+            continue;
         }
         let dest = dir.join(&relative);
         if entry.is_dir() {
@@ -93,6 +102,14 @@ fn unzip(archive: &Path, strip: usize, keep: Option<&str>, dir: &Path) -> Result
         return Err("nothing to unpack".into());
     }
     Ok(())
+}
+
+/// Whether the file at `relative` is one of the names in `skip`.
+fn skipped(relative: &Path, skip: &[String]) -> bool {
+    relative
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| skip.iter().any(|s| s.eq_ignore_ascii_case(n)))
 }
 
 /// The entry's path inside the target after dropping `strip` components;
@@ -162,6 +179,15 @@ mod tests {
         ] {
             assert!(relative_path(bad, 0).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn skipped_names() {
+        let skip = vec!["ffplay.exe".to_owned()];
+        assert!(skipped(Path::new("bin/FFplay.exe"), &skip));
+        assert!(!skipped(Path::new("bin/ffmpeg.exe"), &skip));
+        assert!(!skipped(Path::new("bin/ffplay.exe.txt"), &skip));
+        assert!(!skipped(Path::new("bin/ffplay.exe"), &[]));
     }
 
     #[test]

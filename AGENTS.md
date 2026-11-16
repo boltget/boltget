@@ -14,7 +14,7 @@ Current stage: v0.1 (Rust engine and CLI) is released; next is v0.2, the desktop
 |---|---|
 | `crates/engine` | `boltget-engine` library: probing, segmentation, I/O, persistence |
 | `crates/ipc` | `boltget-ipc`: the named pipe (a Unix socket elsewhere) between the engine's owner (the app) and its clients (the CLI): framing, messages, server and client |
-| `crates/media` | `boltget-media`: the video sidecars (yt-dlp, FFmpeg): verified on-demand installs, updates and rollback in the tools directory, and the guarded process runner (argument allowlist, Job Object). `boltget media` in the CLI. [docs/VIDEO.md](docs/VIDEO.md#install-verification-and-updates-as-built) |
+| `crates/media` | `boltget-media`: the video sidecars (yt-dlp, FFmpeg): verified on-demand installs, updates and rollback in the tools directory, the guarded process runner (argument allowlist, Job Object), probing pages (`yt-dlp -J`) into a typed model, and the picker's presets. `boltget media` in the CLI. [docs/VIDEO.md](docs/VIDEO.md#install-verification-and-updates-as-built) |
 | `crates/cli` | `boltget-cli` package, `boltget` binary |
 | `crates/native-host` | `boltget-native-host`: the binary browsers start for the extension (stdio native messaging relayed to the app's pipe) and its registration with the browsers. The protocol is `crates/ipc/src/browser.rs` |
 | `crates/testserver` | `boltget-testserver`: local HTTP server that simulates misbehaving servers for tests |

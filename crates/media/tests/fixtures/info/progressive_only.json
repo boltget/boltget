@@ -1,0 +1,14 @@
+{
+  "id": "4521",
+  "title": "Harbour at dawn",
+  "uploader": "lens-and-light",
+  "duration": 95.4,
+  "webpage_url": "https://videos.example.org/v/4521",
+  "extractor": "generic",
+  "extractor_key": "Generic",
+  "thumbnail": "https://videos.example.org/thumbs/4521.jpg",
+  "formats": [
+    {"format_id": "360p", "ext": "mp4", "protocol": "https", "url": "https://cdn.example.org/4521_360.mp4", "vcodec": "avc1.42E01E", "acodec": "mp4a.40.2", "width": 640, "height": 360, "filesize": 9120344},
+    {"format_id": "720p", "ext": "mp4", "protocol": "https", "url": "https://cdn.example.org/4521_720.mp4", "vcodec": "avc1.64001F", "acodec": "mp4a.40.2", "width": 1280, "height": 720, "fps": 30.0, "filesize": 24688012}
+  ]
+}

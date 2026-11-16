@@ -5,7 +5,9 @@
 //! its arguments to `fake-args.txt` and its environment's names to
 //! `fake-env.txt`, fails if `fake-fail` exists next to it, and
 //! hangs if `fake-hang` does. With `fake-spawn` it first starts `gc/<its own
-//! name>`.
+//! name>`. As yt-dlp with `-J` it copies the `--cookies` file (if any) to
+//! `fake-cookies.txt`, then prints `fake-probe-error.txt` to stderr and
+//! fails if that exists, or prints `fake-info.json`.
 #![allow(clippy::print_stdout)]
 
 use std::path::Path;
@@ -45,6 +47,21 @@ fn main() -> ExitCode {
         .map(|s| s.trim().to_owned())
         .or_else(|| version_dir(dir))
         .unwrap_or_else(|| "unknown".into());
+    if name == "yt-dlp" && args.iter().any(|a| a == "-J") {
+        if let Some(i) = args.iter().position(|a| a == "--cookies")
+            && let Some(file) = args.get(i + 1)
+        {
+            let _ = std::fs::copy(file, dir.join("fake-cookies.txt"));
+        }
+        if let Ok(message) = std::fs::read_to_string(dir.join("fake-probe-error.txt")) {
+            eprint!("{message}");
+            return ExitCode::from(1);
+        }
+        if let Ok(json) = std::fs::read_to_string(dir.join("fake-info.json")) {
+            print!("{json}");
+            return ExitCode::SUCCESS;
+        }
+    }
     if name == "yt-dlp" && args.last().is_some_and(|a| a == "--version") {
         println!("{version}");
         return ExitCode::SUCCESS;

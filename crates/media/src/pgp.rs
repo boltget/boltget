@@ -322,9 +322,80 @@ fn be_u32(v: &[u8]) -> Result<u32, String> {
     Ok(u32::from_be_bytes(b))
 }
 
+/// The fuzz target `pgp_signature` (`fuzz/fuzz_targets/pgp_signature.rs`):
+/// `data` is taken as a detached signature over yt-dlp 2026.10.26's real
+/// `SHA2-256SUMS` and checked against yt-dlp's pinned key. The parser must
+/// never panic, and nothing may verify over a changed document: that would be
+/// a forgery. Not an API; the seed corpus (`fuzz/corpus/pgp_signature/`) also
+/// runs in this crate's tests.
+#[cfg(any(test, feature = "fuzzing"))]
+#[doc(hidden)]
+pub fn fuzz(data: &[u8]) {
+    const DOCUMENT: &[u8] = include_bytes!("../tests/fixtures/yt-dlp-2026.10.26/SHA2-256SUMS");
+    // A fixed time (2026-11-01), so a finding reproduces on any day.
+    let now = UNIX_EPOCH + std::time::Duration::from_secs(1_793_491_200);
+    let key = crate::sources::yt_dlp_key();
+    let _ = verify_detached(&key, DOCUMENT, data, now);
+    let mut changed = DOCUMENT.to_vec();
+    changed.push(b'\n');
+    assert!(
+        verify_detached(&key, &changed, data, now).is_err(),
+        "a signature verified over a changed document"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_fuzz_seed_corpus_passes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fuzz/corpus/pgp_signature");
+        let mut seeds = Vec::new();
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            seeds.push(std::fs::read(entry.unwrap().path()).unwrap());
+        }
+        assert!(!seeds.is_empty(), "no seeds in {}", dir.display());
+        let manifest = std::fs::read_to_string(dir.join("../../Cargo.toml")).unwrap();
+        assert!(manifest.contains("name = \"pgp_signature\""));
+        // The real signature is among the seeds and verifies.
+        let real = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/yt-dlp-2026.10.26/SHA2-256SUMS.sig"),
+        )
+        .unwrap();
+        assert!(seeds.contains(&real));
+        for seed in &seeds {
+            fuzz(seed);
+        }
+        // A small deterministic mutation run, so a plain `cargo test`
+        // exercises the target; libFuzzer runs it properly every night.
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..3000 {
+            let mut data = seeds[(next() as usize) % seeds.len()].clone();
+            for _ in 0..=(next() % 4) {
+                if data.is_empty() {
+                    data.push(0xC2);
+                }
+                let i = (next() as usize) % data.len();
+                match next() % 3 {
+                    0 => data[i] = next() as u8,
+                    1 => {
+                        data.remove(i);
+                    }
+                    _ => data.insert(i, next() as u8),
+                }
+            }
+            fuzz(&data);
+        }
+    }
 
     #[test]
     fn mpi_bit_counts() {
