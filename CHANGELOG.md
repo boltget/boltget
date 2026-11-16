@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-preview.2] - 2026-11-16
+
+The browser extension grows up: Boltget now sets its rules, resumes expired downloads you start again in the browser, and can forget private-window downloads. Also the first piece of video downloads and a sharp new taskbar icon.
+
 ### Added
 
 - The groundwork for video downloads: `boltget media install` sets up the two tools Boltget uses for video, yt-dlp and FFmpeg, in Boltget's own folder. They are downloaded only when you ask, only from their official release pages, and checked before they ever run: yt-dlp must carry its developers' signature, FFmpeg must match the build Boltget has pinned. A new version is used only after it starts and reports the right version; the one before it is kept, so a bad update goes back with `boltget media rollback`, or by itself when `boltget media check` finds the current one broken. `boltget media update` fetches new releases (`--if-due` checks yt-dlp at most once a day), `boltget media status` shows what is installed, and `boltget media channel nightly` follows yt-dlp's nightly builds. Boltget never lets yt-dlp update itself, and starts both tools only with options it allows, never ones that could run other programs.
@@ -19,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The browser extension's toolbar button shows a clear arrow instead of a grid of dots, at every display scale.
 - Pausing capture from the extension's popup right after opening it no longer springs back.
+- A finished queue asks for its finish action (such as shutting down) once; it could ask twice, or not at all, when its last downloads ended together.
 - Boltget's taskbar button on Windows is sharp at every display scale: a solid white arrow on a glossy black tile instead of a blurry, striped grid of dots. It stays black on a dark taskbar too, and every small Boltget icon gets the same design: Alt+Tab, Explorer and shortcuts, the title bar, the browser extension's toolbar button, and the website's tab icon.
 
 ## [0.3.0-preview.1] - 2026-11-14
@@ -123,7 +128,8 @@ The first release: the download engine and the `boltget` command-line downloader
 - Project policies: GPL-3.0-or-later license, contributing guide, governance, support, security policy and code of conduct.
 - GitHub configuration: issue forms, pull request template, code owners, Dependabot, label taxonomy, and workflows for PR title and documentation link checks.
 
-[Unreleased]: https://github.com/boltget/boltget/compare/v0.3.0-preview.1...HEAD
+[Unreleased]: https://github.com/boltget/boltget/compare/v0.3.0-preview.2...HEAD
+[0.3.0-preview.2]: https://github.com/boltget/boltget/compare/v0.3.0-preview.1...v0.3.0-preview.2
 [0.3.0-preview.1]: https://github.com/boltget/boltget/compare/v0.2.0-preview.2...v0.3.0-preview.1
 [0.2.0-preview.2]: https://github.com/boltget/boltget/compare/v0.2.0-preview.1...v0.2.0-preview.2
 [0.2.0-preview.1]: https://github.com/boltget/boltget/compare/v0.1.0...v0.2.0-preview.1
