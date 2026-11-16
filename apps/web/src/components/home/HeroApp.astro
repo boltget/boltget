@@ -277,9 +277,10 @@ const data = JSON.stringify({ ui, chips });
   .hero-app .bezel {
     padding: clamp(4px, 0.6vw, 8px);
     border-radius: clamp(10px, 1.6vw, 20px);
-    background: rgb(255 255 255 / 0.55);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    /* No backdrop blur: the sky behind drifts without end, so a blur here
+       was recomputed every frame. The clouds are soft already; a slightly
+       denser white reads the same. */
+    background: rgb(255 255 255 / 0.64);
     box-shadow:
       0 0 0 1px rgb(255 255 255 / 0.7) inset,
       0 0 0 1px rgb(10 10 11 / 0.06),

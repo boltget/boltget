@@ -18,6 +18,7 @@ import Faq from "../components/home/Faq.astro";
 import AppSchema from "../components/home/AppSchema.astro";
 import skyAvif from "../assets/sky.avif";
 import skyWebp from "../assets/sky.webp";
+import serifItalic from "../fonts/SourceSerif4-400-italic-latin.woff2?url";
 import { t } from "../i18n";
 
 const skyStyle = `--sky-avif: url(${skyAvif.src}); --sky-webp: url(${skyWebp.src})`;
@@ -42,7 +43,21 @@ const builtinItems = [
   <script is:inline slot="head">
     // Scroll reveals only with JavaScript and full motion; otherwise everything is simply there.
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("reveal");
+    // On a cold visit the fonts arrive after the first paint; the hero's
+    // entrance waits for them (at most 700 ms) so it plays once, already in
+    // its final type, instead of swapping fonts mid-motion.
+    (() => {
+      const root = document.documentElement;
+      if (!document.fonts || root.classList.contains("frozen")) return;
+      root.classList.add("loading");
+      const go = () => root.classList.remove("loading");
+      Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 700))]).then(go, go);
+    })();
   </script>
+  <Fragment slot="preload">
+    <link rel="preload" href={serifItalic} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={skyAvif.src} as="image" type="image/avif" fetchpriority="high" />
+  </Fragment>
 
   <section class="hero" aria-labelledby="hero-title">
     <div class="panel">
@@ -238,13 +253,32 @@ const builtinItems = [
     position: relative;
     margin-top: calc(-1 * var(--overlap));
     padding-inline: clamp(0.75rem, 3vw, 3rem);
-    animation: rise 1.3s 0.4s var(--ease-out) both;
+    animation: rise-plain 1.3s 0.4s var(--ease-out) both;
+  }
+  /* Held at their first frame until the fonts are in (the head script). */
+  :global(.loading) .l1,
+  :global(.loading) .l2,
+  :global(.loading) .copy .lede,
+  :global(.loading) .actions,
+  :global(.loading) .copy :global(.also),
+  :global(.loading) .stage {
+    animation-play-state: paused;
   }
   @keyframes rise {
     from {
       opacity: 0;
       transform: translateY(14px);
       filter: blur(6px);
+    }
+  }
+  /* Large blocks rise without the blur: animating a filter over the whole
+     app demo (which has a backdrop blur of its own) repaints it every frame
+     and made the first second stutter. Opacity and transform stay on the
+     compositor. */
+  @keyframes rise-plain {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
     }
   }
 
@@ -300,6 +334,11 @@ const builtinItems = [
     opacity: 0;
     transform: translateY(18px);
     filter: blur(6px);
+  }
+  /* The big cards reveal without the blur, for the same reason as the stage. */
+  :global(.reveal [data-reveal].visual:not(.in)),
+  :global(.reveal [data-reveal][data-proof]:not(.in)) {
+    filter: none;
   }
 
   @media (max-width: 40rem) {
