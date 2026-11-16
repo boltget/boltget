@@ -40,6 +40,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 5,
         sql: include_str!("migrations/0005_queues.sql"),
     },
+    Migration {
+        version: 6,
+        sql: include_str!("migrations/0006_private.sql"),
+    },
 ];
 
 /// The schema version this build writes.
@@ -226,6 +230,27 @@ mod tests {
             })
             .unwrap();
         assert_eq!((name, default), (None, true));
+    }
+
+    #[test]
+    fn downloads_of_an_older_database_are_not_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut c, p) = open(dir.path());
+        migrate(&mut c, &p, &MIGRATIONS[..5]).unwrap();
+        c.execute(
+            "INSERT INTO download (id, state, url, request_ctx, requested_kind,
+                                   requested_dest, conflict, created_at, updated_at)
+             VALUES (1, 'completed', 'https://x.test/a', '{}', 'dir', '/d', 'rename', 0, 0)",
+            [],
+        )
+        .unwrap();
+        migrate(&mut c, &p, MIGRATIONS).unwrap();
+        let private: bool = c
+            .query_row("SELECT private FROM download WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!private);
     }
 
     #[test]

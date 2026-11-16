@@ -536,6 +536,63 @@ async fn remove_forgets_the_download_and_optionally_deletes_files() {
     engine.shutdown().await;
 }
 
+/// A download from a private browser window is marked so, through a
+/// restart and a resume; forgetting it once it completed keeps the file.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_private_mark_persists_and_forgetting_keeps_the_file() {
+    let srv = TestServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let size = 2 * MIB;
+    let engine = Engine::open(cfg(), state.path()).unwrap();
+    let ctx = |url: &str| RequestContext::new(url).unwrap();
+    let to = || Destination::Directory(dir.path().to_path_buf());
+    let h = engine.add(
+        AddRequest::new(
+            ctx(&srv.url(&format!("/data?size={size}&seed=60&throttle=262144"))),
+            to(),
+        )
+        .private(true),
+    );
+    let private = h.id();
+    until_durable(&h, 64 * KIB).await;
+    engine.pause(private).await.unwrap();
+    let _ = wait(h).await;
+    let other = engine
+        .add_paused(AddRequest::new(
+            ctx(&srv.url("/data?size=5000&seed=61")),
+            to(),
+        ))
+        .unwrap();
+    engine.shutdown().await;
+
+    let engine = Engine::open(cfg(), state.path()).unwrap();
+    let list = engine.list().await.unwrap();
+    assert!(summary(&list, private).private, "kept through a restart");
+    assert!(!summary(&list, other).private);
+    let done = wait(
+        engine
+            .resume(private, ResumeOptions::default())
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_content(&done, 60, size);
+    let list = engine.list().await.unwrap();
+    let s = summary(&list, private);
+    assert!(s.private && s.state == State::Completed, "{s:?}");
+
+    let r = engine.remove(private, false).await.unwrap();
+    assert!(r.deleted.is_empty(), "{:?}", r.deleted);
+    assert!(done.path.exists(), "the file stays");
+    assert_content(&done, 60, size);
+    let list = engine.list().await.unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, other);
+    engine.shutdown().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn crash_between_rename_and_completion_record_is_recognised() {
     let srv = TestServer::start().await;

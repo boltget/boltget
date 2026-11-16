@@ -80,6 +80,11 @@ pub struct AddRequest {
     /// For [`Engine::enqueue`]: start it at this time, whatever its queue
     /// does, instead of when its turn comes.
     pub start_at: Option<SystemTime>,
+    /// From a private browser window. Stored with the download and listed
+    /// ([`DownloadSummary::private`]); the engine itself treats it like any
+    /// other, and a front end may forget it once it completes
+    /// ([`Engine::remove`] without deleting the file).
+    pub private: bool,
 }
 
 impl AddRequest {
@@ -95,6 +100,7 @@ impl AddRequest {
             server_digest: true,
             queue: None,
             start_at: None,
+            private: false,
         }
     }
 
@@ -144,6 +150,13 @@ impl AddRequest {
     #[must_use]
     pub fn server_digest(mut self, verify: bool) -> Self {
         self.server_digest = verify;
+        self
+    }
+
+    /// Marks it as coming from a private browser window (default false).
+    #[must_use]
+    pub fn private(mut self, private: bool) -> Self {
+        self.private = private;
         self
     }
 }
@@ -750,6 +763,7 @@ impl Engine {
             speed_limit: req.speed_limit,
             queue: req.queue.unwrap_or(DEFAULT_QUEUE),
             start_at: req.start_at.map(to_ms),
+            private: req.private,
         };
         store.send("new download", move |c| records::insert(c, &rec));
         if let Some(c) = &req.checksum {

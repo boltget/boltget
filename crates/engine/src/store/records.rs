@@ -60,6 +60,8 @@ pub(crate) struct NewRecord {
     pub(crate) queue: QueueId,
     /// When to start it (Unix ms), whatever its queue does.
     pub(crate) start_at: Option<i64>,
+    /// From a private browser window.
+    pub(crate) private: bool,
 }
 
 /// What the probe resolved: destination, size, validators and the initial split.
@@ -195,6 +197,12 @@ pub struct DownloadSummary {
     /// When it starts on its own, Unix milliseconds (`docs/ENGINE.md`,
     /// "Queues").
     pub start_at: Option<u64>,
+    /// Whether it came from a private browser window
+    /// ([`AddRequest::private`](crate::AddRequest::private)). Not in the
+    /// serialized form, so `boltget list --json` reads the same from the
+    /// database as from the app.
+    #[serde(skip_serializing)]
+    pub private: bool,
 }
 
 pub(crate) fn insert(conn: &Connection, r: &NewRecord) -> Result<()> {
@@ -202,12 +210,12 @@ pub(crate) fn insert(conn: &Connection, r: &NewRecord) -> Result<()> {
     conn.execute(
         "INSERT INTO download (id, state, url, request_ctx, requested_kind, requested_dest,
                                conflict, max_connections, speed_limit_bps, created_at, updated_at,
-                               queue_id, queue_position, start_at)
+                               queue_id, queue_position, start_at, private)
          VALUES (?1, 'queued', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9,
                  coalesce((SELECT id FROM queue WHERE id = ?10), 1),
                  (SELECT coalesce(max(queue_position), 0) + 1 FROM download
                   WHERE queue_id = coalesce((SELECT id FROM queue WHERE id = ?10), 1)),
-                 ?11)",
+                 ?11, ?12)",
         params![
             int(r.id.0)?,
             r.url,
@@ -219,7 +227,8 @@ pub(crate) fn insert(conn: &Connection, r: &NewRecord) -> Result<()> {
             r.speed_limit.map(int).transpose()?,
             now,
             int(r.queue.0)?,
-            r.start_at
+            r.start_at,
+            r.private
         ],
     )?;
     Ok(())
@@ -507,6 +516,7 @@ fn summary(r: &Row<'_>) -> rusqlite::Result<DownloadSummary> {
             .unwrap_or_else(|| DEFAULT_QUEUE_NAME.to_owned()),
         queue_position: r.get("queue_position")?,
         start_at: r.get::<_, Option<i64>>("start_at")?.map(uint),
+        private: r.get("private")?,
     })
 }
 

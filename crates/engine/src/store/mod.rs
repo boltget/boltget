@@ -291,6 +291,7 @@ mod tests {
             speed_limit: None,
             queue: crate::queue::DEFAULT_QUEUE,
             start_at: None,
+            private: false,
         }
     }
 
