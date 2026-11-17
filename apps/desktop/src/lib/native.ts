@@ -11,6 +11,7 @@ import {
   type AppInfo,
   type BrowserMediaPage,
   type CaptionMaximize,
+  type ClipboardOffer,
   type OfferAnswer,
   type ResumeOffer,
   type ShellRequest,
@@ -20,7 +21,7 @@ import type { CaptionRect } from "./caption";
 
 export const inTauri = isTauri();
 
-export type { AppInfo, BrowserMediaPage, OfferAnswer, ResumeOffer, ShellRequest };
+export type { AppInfo, BrowserMediaPage, ClipboardOffer, OfferAnswer, ResumeOffer, ShellRequest };
 
 export async function appInfo(): Promise<AppInfo> {
   if (!inTauri) {
@@ -79,12 +80,29 @@ export async function onShellRequest(
 }
 
 /**
- * Links clipboard monitoring offers (one per line); it sends them only
- * while the setting is on.
+ * What clipboard monitoring offers: copied file links (one per line), or a
+ * copied link to a video page. It sends them only while the setting is on.
+ * The UI alone in a browser simulates the listener in development
+ * (engine/mock-clipboard.ts).
  */
-export async function onClipboardOffer(handler: (links: string) => void): Promise<() => void> {
-  if (!inTauri) return () => {};
-  return events.clipboardOffer.listen((event) => handler(event.payload.links));
+export async function onClipboardOffer(
+  handler: (offer: ClipboardOffer) => void,
+): Promise<() => void> {
+  if (!inTauri) {
+    if (!import.meta.env.DEV || import.meta.env.VITEST) return () => {};
+    const [{ watchClipboard }, { downloads }] = await Promise.all([
+      import("./engine/mock-clipboard"),
+      import("./engine"),
+    ]);
+    return watchClipboard(() => downloads.settings, handler);
+  }
+  return events.clipboardOffer.listen((event) => handler(event.payload));
+}
+
+/** Development, outside Tauri: another app copied `text` (mock-clipboard.ts). */
+export async function simulateCopy(text: string): Promise<void> {
+  if (inTauri || !import.meta.env.DEV) return;
+  (await import("./engine/mock-clipboard")).simulateCopy(text);
 }
 
 /**

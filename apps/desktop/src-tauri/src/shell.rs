@@ -34,6 +34,9 @@ pub(crate) enum ShellRequest {
     /// Open the media sheet for the pages the browser extension sent
     /// (`take_media_pages` hands them over).
     MediaPage,
+    /// Open the media sheet for a page (a copied video page link that
+    /// clipboard monitoring offered, from its notification).
+    MediaLink { url: String },
 }
 
 /// The command line: links to add, and `--background` (start in the tray,

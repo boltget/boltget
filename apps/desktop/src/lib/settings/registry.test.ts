@@ -9,7 +9,9 @@ describe("settings search", () => {
     expect(ids("throttle")).toEqual(["limit"]);
     expect(ids("dark")).toEqual(["theme"]);
     expect(ids("startup")).toEqual(["autostart"]);
-    expect(ids("CLIPBOARD")).toContain("clipboard");
+    expect(ids("CLIPBOARD")).toEqual(["clipboard", "clipboard_video"]);
+    expect(ids("copied video")).toEqual(["clipboard_video"]);
+    expect(sectionOf("clipboard_video")).toBe("general");
     expect(ids("incognito")).toEqual(["capture_private", "forget_private"]);
     expect(ids("history")).toEqual(["forget_private"]);
     expect(ids("never sites")).toEqual(["capture_sites"]);

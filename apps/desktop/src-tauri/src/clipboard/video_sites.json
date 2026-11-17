@@ -1,0 +1,366 @@
+{
+  "$comment": [
+    "Well-known video and audio page links, for clipboard monitoring's 'Download video from this page?' offer (docs/APP-DESIGN.md, 'Clipboard monitoring'; docs/VIDEO.md, 'Copied video links: as built').",
+    "A short, curated list, not yt-dlp's extractors: a link that matches is only offered, and the media sheet's probe decides what is there. Read by src/clipboard/video.rs (the app) and src/lib/engine/mock-clipboard.ts (the browser-only dev UI); both test every example below.",
+    "hosts: 'example.com' is that host only, '*.example.com' is it and any subdomain.",
+    "paths: '/a/b?key' matches when the link's path starts with segments matching a and b (more may follow) and its query has a non-empty 'key'. A segment is matched without regard to case after %-decoding: '*' is any segment, '{n}' is digits, 'x*y' starts with x and ends with y with something between, anything else is itself.",
+    "except: paths, in the same form, that are never offered even though one of 'paths' matches.",
+    "audio: the site is for music and sound, so the offer says audio.",
+    "examples: links that must be offered with this entry's site; notPages: links that must not be offered at all."
+  ],
+  "sites": [
+    {
+      "site": "YouTube",
+      "hosts": ["*.youtube.com", "*.youtube-nocookie.com"],
+      "paths": ["/watch?v", "/shorts/*", "/live/*", "/playlist?list", "/embed/*", "/v/*"],
+      "examples": [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtube.com/watch?v=dQw4w9WgXcQ&t=42s",
+        "https://m.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123",
+        "https://music.youtube.com/watch?v=dQw4w9WgXcQ&si=abc",
+        "https://www.youtube.com/shorts/aBcDeFgHiJk",
+        "https://www.youtube.com/live/aBcDeFgHiJk?feature=share",
+        "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+        "https://music.youtube.com/playlist?list=OLAK5uy_abc",
+        "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ",
+        "HTTPS://WWW.YOUTUBE.COM/WATCH?v=dQw4w9WgXcQ"
+      ]
+    },
+    {
+      "site": "YouTube",
+      "hosts": ["youtu.be"],
+      "paths": ["/*"],
+      "examples": ["https://youtu.be/dQw4w9WgXcQ?si=xyz", "http://youtu.be/dQw4w9WgXcQ"]
+    },
+    {
+      "site": "Vimeo",
+      "hosts": ["vimeo.com", "www.vimeo.com"],
+      "paths": [
+        "/{n}",
+        "/channels/*/{n}",
+        "/groups/*/videos/{n}",
+        "/album/*/video/{n}",
+        "/showcase/*/video/{n}"
+      ],
+      "examples": [
+        "https://vimeo.com/76979871",
+        "https://vimeo.com/76979871/abcdef1234",
+        "https://vimeo.com/channels/staffpicks/76979871"
+      ]
+    },
+    {
+      "site": "Vimeo",
+      "hosts": ["player.vimeo.com"],
+      "paths": ["/video/{n}"],
+      "examples": ["https://player.vimeo.com/video/76979871?h=abc"]
+    },
+    {
+      "site": "Dailymotion",
+      "hosts": ["*.dailymotion.com"],
+      "paths": ["/video/*", "/embed/video/*", "/playlist/*"],
+      "examples": ["https://www.dailymotion.com/video/x8abcd1"]
+    },
+    {
+      "site": "Dailymotion",
+      "hosts": ["dai.ly"],
+      "paths": ["/*"],
+      "examples": ["https://dai.ly/x8abcd1"]
+    },
+    {
+      "site": "Twitch",
+      "hosts": ["twitch.tv", "www.twitch.tv", "m.twitch.tv"],
+      "paths": ["/videos/{n}", "/*/clip/*", "/*/v/{n}"],
+      "examples": [
+        "https://www.twitch.tv/videos/2045678901",
+        "https://www.twitch.tv/somechannel/clip/FunnyClipSlug-abc123"
+      ]
+    },
+    {
+      "site": "Twitch",
+      "hosts": ["clips.twitch.tv"],
+      "paths": ["/*"],
+      "examples": ["https://clips.twitch.tv/FunnyClipSlug-abc123"]
+    },
+    {
+      "site": "TikTok",
+      "hosts": ["*.tiktok.com"],
+      "paths": ["/@*/video/{n}", "/t/*", "/embed/*"],
+      "examples": [
+        "https://www.tiktok.com/@someone/video/7312345678901234567?lang=en",
+        "https://www.tiktok.com/t/ZT8abc123/"
+      ]
+    },
+    {
+      "site": "TikTok",
+      "hosts": ["vm.tiktok.com", "vt.tiktok.com"],
+      "paths": ["/*"],
+      "examples": ["https://vm.tiktok.com/ZMabc123/"]
+    },
+    {
+      "site": "Instagram",
+      "hosts": ["*.instagram.com"],
+      "paths": ["/reel/*", "/reels/*", "/p/*", "/tv/*"],
+      "examples": [
+        "https://www.instagram.com/reel/C1a2B3c4D5e/?igsh=abc",
+        "https://www.instagram.com/p/C1a2B3c4D5e/"
+      ]
+    },
+    {
+      "site": "X",
+      "hosts": ["*.x.com", "*.twitter.com"],
+      "paths": ["/*/status/{n}", "/i/web/status/{n}"],
+      "examples": [
+        "https://x.com/someone/status/1790000000000000000",
+        "https://twitter.com/someone/status/1790000000000000000/video/1",
+        "https://mobile.twitter.com/someone/status/1790000000000000000"
+      ]
+    },
+    {
+      "site": "Facebook",
+      "hosts": ["*.facebook.com"],
+      "paths": [
+        "/watch?v",
+        "/*/videos/*",
+        "/videos/*",
+        "/reel/*",
+        "/share/v/*",
+        "/share/r/*"
+      ],
+      "examples": [
+        "https://www.facebook.com/watch?v=1234567890",
+        "https://www.facebook.com/watch/live/?v=1234567890",
+        "https://www.facebook.com/somepage/videos/1234567890/",
+        "https://m.facebook.com/reel/1234567890",
+        "https://www.facebook.com/share/v/1AbCdEfGh/"
+      ]
+    },
+    {
+      "site": "Facebook",
+      "hosts": ["fb.watch"],
+      "paths": ["/*"],
+      "examples": ["https://fb.watch/abcDEF123/"]
+    },
+    {
+      "site": "Reddit",
+      "hosts": ["*.reddit.com"],
+      "paths": ["/r/*/comments/*", "/user/*/comments/*", "/r/*/s/*"],
+      "examples": [
+        "https://www.reddit.com/r/videos/comments/1abcde/a_title_here/",
+        "https://old.reddit.com/r/videos/comments/1abcde/",
+        "https://www.reddit.com/r/videos/s/AbCdEf123"
+      ]
+    },
+    {
+      "site": "Reddit",
+      "hosts": ["redd.it", "v.redd.it"],
+      "paths": ["/*"],
+      "examples": ["https://v.redd.it/abcdef123456", "https://redd.it/1abcde"]
+    },
+    {
+      "site": "SoundCloud",
+      "audio": true,
+      "hosts": ["soundcloud.com", "www.soundcloud.com", "m.soundcloud.com"],
+      "paths": ["/*/*"],
+      "except": [
+        "/discover",
+        "/you",
+        "/search",
+        "/charts",
+        "/stream",
+        "/feed",
+        "/upload",
+        "/settings",
+        "/messages",
+        "/notifications",
+        "/pages",
+        "/people",
+        "/pro",
+        "/jobs",
+        "/imprint",
+        "/terms-of-use",
+        "/signin",
+        "/*/followers",
+        "/*/following",
+        "/*/comments"
+      ],
+      "examples": [
+        "https://soundcloud.com/some-artist/a-track-name",
+        "https://soundcloud.com/some-artist/sets/an-album"
+      ]
+    },
+    {
+      "site": "SoundCloud",
+      "audio": true,
+      "hosts": ["on.soundcloud.com"],
+      "paths": ["/*"],
+      "examples": ["https://on.soundcloud.com/AbCdEf123"]
+    },
+    {
+      "site": "Bandcamp",
+      "audio": true,
+      "hosts": ["*.bandcamp.com"],
+      "paths": ["/track/*", "/album/*"],
+      "examples": [
+        "https://someartist.bandcamp.com/track/a-track",
+        "https://someartist.bandcamp.com/album/an-album"
+      ]
+    },
+    {
+      "site": "Bilibili",
+      "hosts": ["*.bilibili.com"],
+      "paths": ["/video/*", "/bangumi/play/*"],
+      "examples": ["https://www.bilibili.com/video/BV1xx411c7mD/?p=2"]
+    },
+    {
+      "site": "Bilibili",
+      "hosts": ["b23.tv"],
+      "paths": ["/*"],
+      "examples": ["https://b23.tv/AbCdEf1"]
+    },
+    {
+      "site": "Streamable",
+      "hosts": ["streamable.com", "www.streamable.com"],
+      "paths": ["/*"],
+      "except": [
+        "/login",
+        "/signup",
+        "/pricing",
+        "/about",
+        "/terms",
+        "/privacy",
+        "/upload",
+        "/settings",
+        "/documentation",
+        "/blog",
+        "/careers",
+        "/contact",
+        "/community-guidelines",
+        "/videos"
+      ],
+      "examples": ["https://streamable.com/abc12d", "https://streamable.com/e/abc12d"]
+    },
+    {
+      "site": "Rumble",
+      "hosts": ["rumble.com", "www.rumble.com"],
+      "paths": ["/v*", "/embed/*"],
+      "except": ["/videos", "/vids"],
+      "examples": ["https://rumble.com/v4abcde-a-video-title.html"]
+    },
+    {
+      "site": "Kick",
+      "hosts": ["kick.com", "www.kick.com"],
+      "paths": ["/*/videos/*", "/*/clips/*", "/*?clip", "/video/*"],
+      "examples": [
+        "https://kick.com/somechannel/videos/0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+        "https://kick.com/somechannel?clip=clip_01ABCDEF"
+      ]
+    },
+    {
+      "site": "Niconico",
+      "hosts": ["*.nicovideo.jp"],
+      "paths": ["/watch/*"],
+      "examples": ["https://www.nicovideo.jp/watch/sm9"]
+    },
+    {
+      "site": "TED",
+      "hosts": ["*.ted.com"],
+      "paths": ["/talks/*"],
+      "examples": ["https://www.ted.com/talks/some_speaker_a_talk_title"]
+    },
+    {
+      "site": "Odysee",
+      "hosts": ["odysee.com", "www.odysee.com"],
+      "paths": ["/@*/*"],
+      "examples": ["https://odysee.com/@SomeChannel:a/a-video-title:b"]
+    },
+    {
+      "site": "VK",
+      "hosts": ["*.vk.com", "*.vkvideo.ru"],
+      "paths": ["/video*", "/clip*"],
+      "examples": ["https://vk.com/video-12345678_456239017", "https://vkvideo.ru/video-12345678_456239017"]
+    },
+    {
+      "site": "Internet Archive",
+      "hosts": ["archive.org", "www.archive.org"],
+      "paths": ["/details/*", "/embed/*"],
+      "examples": ["https://archive.org/details/BigBuckBunny_124"]
+    },
+    {
+      "site": "Wikimedia Commons",
+      "hosts": ["commons.wikimedia.org", "commons.m.wikimedia.org"],
+      "paths": [
+        "/wiki/File:*.webm",
+        "/wiki/File:*.ogv",
+        "/wiki/File:*.mpg",
+        "/wiki/File:*.mpeg"
+      ],
+      "examples": [
+        "https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm",
+        "https://commons.wikimedia.org/wiki/File%3AElephants_Dream.ogv"
+      ]
+    },
+    {
+      "site": "Wikimedia Commons",
+      "audio": true,
+      "hosts": ["commons.wikimedia.org", "commons.m.wikimedia.org"],
+      "paths": [
+        "/wiki/File:*.oga",
+        "/wiki/File:*.ogg",
+        "/wiki/File:*.opus",
+        "/wiki/File:*.flac",
+        "/wiki/File:*.wav",
+        "/wiki/File:*.mp3"
+      ],
+      "examples": ["https://commons.wikimedia.org/wiki/File:Beethoven_Moonlight_1st_movement.ogg"]
+    }
+  ],
+  "notPages": [
+    "https://www.youtube.com/",
+    "https://youtube.com",
+    "https://www.youtube.com/watch",
+    "https://www.youtube.com/watch?v=",
+    "https://www.youtube.com/feed/subscriptions",
+    "https://www.youtube.com/@SomeChannel",
+    "https://www.youtube.com/results?search_query=cats",
+    "https://www.youtube.com/playlist",
+    "https://notyoutube.com/watch?v=dQw4w9WgXcQ",
+    "https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ",
+    "https://www.youtube.com@evil.example/watch?v=dQw4w9WgXcQ",
+    "https://evil.example/www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "https://evil.example/?u=https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "https://xn--yutube-wqf.com/watch?v=dQw4w9WgXcQ",
+    "https://myyoutu.be/dQw4w9WgXcQ",
+    "https://youtu.be/",
+    "ftp://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "https://vimeo.com/",
+    "https://vimeo.com/features",
+    "https://vimeo.com/channels/staffpicks",
+    "https://www.dailymotion.com/",
+    "https://www.twitch.tv/somechannel",
+    "https://www.twitch.tv/directory",
+    "https://www.tiktok.com/@someone",
+    "https://www.tiktok.com/explore",
+    "https://www.instagram.com/someone/",
+    "https://www.instagram.com/reels/",
+    "https://x.com/someone",
+    "https://x.com/home",
+    "https://www.facebook.com/somepage",
+    "https://www.facebook.com/watch",
+    "https://www.reddit.com/r/videos/",
+    "https://soundcloud.com/some-artist",
+    "https://soundcloud.com/discover/sets",
+    "https://soundcloud.com/some-artist/followers",
+    "https://someartist.bandcamp.com/",
+    "https://streamable.com/",
+    "https://streamable.com/login",
+    "https://rumble.com/videos?sort=views",
+    "https://rumble.com/c/SomeChannel",
+    "https://kick.com/somechannel",
+    "https://archive.org/",
+    "https://archive.org/search?query=cats",
+    "https://commons.wikimedia.org/wiki/Main_Page",
+    "https://commons.wikimedia.org/wiki/File:A_photo.jpg",
+    "https://en.wikipedia.org/wiki/Video",
+    "https://example.com/watch?v=dQw4w9WgXcQ"
+  ]
+}

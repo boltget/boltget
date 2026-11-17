@@ -24,6 +24,7 @@ use crate::bridge::Bridge;
 use crate::bridge::activity::Notice;
 use crate::bridge::dto::{DownloadId, DownloadState};
 use crate::catalog::{self, Arg};
+use crate::clipboard::ClipboardOffer;
 use crate::shell::{self, ShellRequest};
 
 /// Notices this close together are one moment.
@@ -46,7 +47,8 @@ pub(crate) enum Action {
     Open(DownloadId),
     Reveal(DownloadId),
     Fix(DownloadId),
-    /// Open the add sheet with the links clipboard monitoring offered last.
+    /// Take what clipboard monitoring offered last: the add sheet with its
+    /// links, or the media sheet for its video page.
     Offer,
 }
 
@@ -301,12 +303,12 @@ fn act(app: &AppHandle, action: Action) {
         Action::Select(id) => shell::request(app, &ShellRequest::Select { id, fix: false }),
         Action::Fix(id) => shell::request(app, &ShellRequest::Select { id, fix: true }),
         Action::Offer => {
-            let links = OFFERED
+            let offered = OFFERED
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone();
-            match links {
-                Some(links) => shell::request(app, &ShellRequest::Add { links }),
+            match offered {
+                Some(request) => shell::request(app, &request),
                 None => shell::show(app),
             }
         }
@@ -339,18 +341,53 @@ fn act(app: &AppHandle, action: Action) {
     }
 }
 
-/// The links of the last clipboard offer, for its notification's button.
-static OFFERED: Mutex<Option<String>> = Mutex::new(None);
+/// What taking the last clipboard offer asks of the page, for its
+/// notification.
+static OFFERED: Mutex<Option<ShellRequest>> = Mutex::new(None);
 
-/// Clipboard monitoring found links to offer: while the window is not in
-/// front, a notification offers them too (the page shows its own chip).
-pub(crate) fn offer_links(app: &AppHandle, links: &[String]) {
-    let Some(first) = links.first() else { return };
-    *OFFERED.lock().unwrap_or_else(PoisonError::into_inner) = Some(links.join("\n"));
+/// Clipboard monitoring found something to offer: while the window is not in
+/// front, a notification offers it too (the page shows its own chip).
+pub(crate) fn offer(app: &AppHandle, offer: &ClipboardOffer) {
+    let (request, toast) = match offer {
+        ClipboardOffer::Files { links } => {
+            let list: Vec<&str> = links.lines().collect();
+            let Some(first) = list.first() else { return };
+            (
+                ShellRequest::Add {
+                    links: links.clone(),
+                },
+                offer_toast(first, list.len()),
+            )
+        }
+        ClipboardOffer::Page { url, site, audio } => (
+            ShellRequest::MediaLink { url: url.clone() },
+            page_toast(url, site, *audio),
+        ),
+    };
+    *OFFERED.lock().unwrap_or_else(PoisonError::into_inner) = Some(request);
     if window_in_use(app) || !app.state::<Bridge>().settings().notifications {
         return;
     }
-    show(app, offer_toast(first, links.len()));
+    show(app, toast);
+}
+
+/// The notification for a copied video page: the site, and the page's host.
+fn page_toast(url: &str, site: &str, audio: bool) -> Toast {
+    let host = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_default();
+    let key = if audio {
+        "clipboard.audio"
+    } else {
+        "clipboard.video"
+    };
+    Toast {
+        title: catalog::tr(key, &[("site", Arg::Text(site))]),
+        body: (!host.is_empty()).then_some(host),
+        click: Action::Offer,
+        buttons: vec![(catalog::t("clipboard.offer.action"), Action::Offer)],
+    }
 }
 
 /// The notification for copied links: the first one's name and host.
@@ -610,6 +647,17 @@ mod tests {
         assert_eq!(toast.buttons[0].1, Action::Offer);
         let toast = offer_toast("https://x.test/a.zip", 3);
         assert_eq!(toast.title, "Download 3 copied links?");
+    }
+
+    #[test]
+    fn copied_video_pages_are_offered_by_site() {
+        let toast = page_toast("https://www.youtube.com/watch?v=abc", "YouTube", false);
+        assert_eq!(toast.title, "Download video from this YouTube page?");
+        assert_eq!(toast.body.as_deref(), Some("www.youtube.com"));
+        assert_eq!(toast.click, Action::Offer);
+        assert_eq!(toast.buttons, [("Download…".into(), Action::Offer)]);
+        let toast = page_toast("https://soundcloud.com/a/b", "SoundCloud", true);
+        assert_eq!(toast.title, "Download audio from this SoundCloud page?");
     }
 
     #[test]

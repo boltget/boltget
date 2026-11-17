@@ -389,6 +389,8 @@
   "settings.notifications.description": "Say when downloads finish or need attention while Boltget is in the background.",
   "settings.clipboard": "Offer copied links",
   "settings.clipboard.description": "When you copy a link to a file in another app, Boltget offers to download it. The clipboard is read only while this is on.",
+  "settings.clipboard_video": "Offer to download videos from copied page links",
+  "settings.clipboard_video.description": "When the copied link is a video or music page of a well-known site, Boltget offers to download its video or audio. Works while Offer copied links is on.",
   "settings.capture": "Take over browser downloads",
   "settings.capture.description": "The Boltget extension hands over downloads that match these rules, and follows changes made here.",
   "settings.capture_size": "Smallest file",
@@ -544,6 +546,7 @@
   "keywords.density": "dense rows compact",
   "keywords.search": "find filter",
   "keywords.clipboard": "clipboard monitor copy watch",
+  "keywords.clipboard_video": "clipboard copy video audio music page link media",
   "keywords.capture": "browser extension capture intercept integration take over on off chrome edge firefox",
   "keywords.capture_size": "browser extension capture size threshold minimum small files",
   "keywords.capture_types": "browser extension capture file types extensions archives video audio programs documents",
@@ -579,6 +582,8 @@
     "other": "Download {count} copied links?"
   },
   "clipboard.offer.action": "Download…",
+  "clipboard.video": "Download video from this {site} page?",
+  "clipboard.audio": "Download audio from this {site} page?",
   "notify.offer": "Download {name}?",
   "notify.offer.many": {
     "one": "Download {count} copied link?",

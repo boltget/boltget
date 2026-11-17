@@ -286,6 +286,9 @@ pub(crate) struct AppSettings {
     pub(crate) start_with_windows: bool,
     /// Offer links copied to the clipboard (off by default).
     pub(crate) clipboard: bool,
+    /// While `clipboard` is on, also offer copied links to video pages of
+    /// well-known sites (on by default).
+    pub(crate) clipboard_video: bool,
     /// Downloads the browser hands over open the add sheet first instead of
     /// starting (off by default: docs/BROWSER-INTEGRATION.md, "Capture
     /// flow").
@@ -313,6 +316,7 @@ impl Default for AppSettings {
             close_to_tray: true,
             start_with_windows: false,
             clipboard: false,
+            clipboard_video: true,
             browser_ask: false,
             capture: CaptureSettings::default(),
             forget_private: false,
@@ -336,6 +340,7 @@ pub(crate) struct SettingsPatch {
     pub(crate) close_to_tray: Option<bool>,
     pub(crate) start_with_windows: Option<bool>,
     pub(crate) clipboard: Option<bool>,
+    pub(crate) clipboard_video: Option<bool>,
     pub(crate) browser_ask: Option<bool>,
     /// Some of the capture rules.
     pub(crate) capture: Option<CapturePatch>,
@@ -378,6 +383,7 @@ const KEY_THEME: &str = "theme";
 const KEY_NOTIFICATIONS: &str = "notifications";
 const KEY_CLOSE_TO_TRAY: &str = "close_to_tray";
 const KEY_CLIPBOARD: &str = "clipboard";
+const KEY_CLIPBOARD_VIDEO: &str = "clipboard_video";
 const KEY_BROWSER_ASK: &str = "browser_ask";
 const KEY_CAPTURE: &str = "capture";
 const KEY_FORGET_PRIVATE: &str = "forget_private";
@@ -438,6 +444,9 @@ pub(crate) async fn load(engine: &Engine) -> Result<AppSettings, UiError> {
     }
     if let Some(b) = read(engine, KEY_CLIPBOARD).await {
         s.clipboard = b;
+    }
+    if let Some(b) = read(engine, KEY_CLIPBOARD_VIDEO).await {
+        s.clipboard_video = b;
     }
     if let Some(b) = read(engine, KEY_BROWSER_ASK).await {
         s.browser_ask = b;
@@ -739,6 +748,9 @@ pub(crate) fn patched(
     if let Some(b) = patch.clipboard {
         next.clipboard = b;
     }
+    if let Some(b) = patch.clipboard_video {
+        next.clipboard_video = b;
+    }
     if let Some(b) = patch.browser_ask {
         next.browser_ask = b;
     }
@@ -800,6 +812,9 @@ pub(crate) async fn store(
     }
     if old.clipboard != new.clipboard {
         write(engine, KEY_CLIPBOARD, &new.clipboard).await?;
+    }
+    if old.clipboard_video != new.clipboard_video {
+        write(engine, KEY_CLIPBOARD_VIDEO, &new.clipboard_video).await?;
     }
     if old.browser_ask != new.browser_ask {
         write(engine, KEY_BROWSER_ASK, &new.browser_ask).await?;
@@ -945,6 +960,7 @@ mod tests {
         assert_eq!(s.max_connections, 16);
         assert!(s.notifications && s.close_to_tray);
         assert!(!s.clipboard, "clipboard monitoring is opt-in");
+        assert!(s.clipboard_video, "video page offers come with it");
         assert!(!s.start_with_windows);
         assert_eq!(s.proxy.mode, ProxyMode::None);
         assert_eq!(s.theme, ThemeSetting::System);
@@ -1044,6 +1060,7 @@ mod tests {
             notifications: Some(false),
             close_to_tray: Some(false),
             clipboard: Some(true),
+            clipboard_video: Some(false),
             start_with_windows: Some(true),
             ..patch()
         };
@@ -1051,6 +1068,7 @@ mod tests {
         assert_eq!(next.theme, ThemeSetting::Dark);
         assert!(!next.notifications && !next.close_to_tray);
         assert!(next.clipboard && next.start_with_windows);
+        assert!(!next.clipboard_video);
         // An empty patch changes nothing.
         assert_eq!(patched(&s, &patch()).unwrap(), s);
     }
@@ -1420,6 +1438,26 @@ mod tests {
         assert_eq!(after.capture, before.capture, "not a capture rule");
         store(&engine, &before, &after).await.unwrap();
         assert!(load(&engine).await.unwrap().forget_private);
+        engine.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn video_page_offers_are_on_until_turned_off() {
+        let data = tempfile::tempdir().unwrap();
+        let engine = Engine::open(boltget_engine::EngineConfig::default(), data.path()).unwrap();
+        let before = load(&engine).await.unwrap();
+        assert!(!before.clipboard && before.clipboard_video);
+        let after = patched(
+            &before,
+            &SettingsPatch {
+                clipboard_video: Some(false),
+                ..SettingsPatch::default()
+            },
+        )
+        .unwrap();
+        assert!(!after.clipboard, "monitoring itself stays as it was");
+        store(&engine, &before, &after).await.unwrap();
+        assert!(!load(&engine).await.unwrap().clipboard_video);
         engine.shutdown().await;
     }
 

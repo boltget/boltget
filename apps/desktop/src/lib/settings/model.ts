@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   closeToTray: true,
   startWithWindows: false,
   clipboard: false,
+  clipboardVideo: true,
   browserAsk: false,
   capture: DEFAULT_CAPTURE,
   forgetPrivate: false,

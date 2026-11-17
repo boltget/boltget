@@ -11,7 +11,9 @@
 // tools installed (otherwise "Look for media" walks the install sheet
 // first), `?install=fail` makes their install fail. Queues are kept, not
 // run: nothing starts on its own. Media downloads run a simulated yt-dlp:
-// they download, process for two seconds and complete.
+// they download, process for two seconds and complete. Clipboard
+// monitoring is simulated by mock-clipboard.ts (`?clipboard=on` starts with
+// it on).
 import type {
   AddDownload,
   AppSettings,
@@ -231,7 +233,7 @@ export function mockEngineApi(search: string): EngineApi {
   const random = mulberry(7);
   const now = Date.now();
   const sims = new Map<DownloadId, Sim>();
-  let settings: AppSettings = { ...DEFAULT_SETTINGS };
+  let settings: AppSettings = { ...DEFAULT_SETTINGS, clipboard: params.get("clipboard") === "on" };
   // `?browsers=missing` shows the browsers needing repair.
   let browsers: BrowserIntegration = {
     supported: true,
@@ -1001,6 +1003,7 @@ export function mockEngineApi(search: string): EngineApi {
         if (patch.closeToTray != null) next.closeToTray = patch.closeToTray;
         if (patch.startWithWindows != null) next.startWithWindows = patch.startWithWindows;
         if (patch.clipboard != null) next.clipboard = patch.clipboard;
+        if (patch.clipboardVideo != null) next.clipboardVideo = patch.clipboardVideo;
         if (patch.browserAsk != null) next.browserAsk = patch.browserAsk;
         if (patch.forgetPrivate != null) next.forgetPrivate = patch.forgetPrivate;
         if (patch.video?.container)

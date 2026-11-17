@@ -31,6 +31,7 @@ export type RowId =
   | "tray"
   | "notifications"
   | "clipboard"
+  | "clipboard_video"
   | "folder"
   | "categories"
   | "connections"
@@ -95,6 +96,13 @@ export const ROWS: readonly Row[] = [
     label: "settings.clipboard",
     description: "settings.clipboard.description",
     keywords: "keywords.clipboard",
+  },
+  {
+    id: "clipboard_video",
+    section: "general",
+    label: "settings.clipboard_video",
+    description: "settings.clipboard_video.description",
+    keywords: "keywords.clipboard_video",
   },
   {
     id: "folder",

@@ -325,6 +325,11 @@ export type AppSettings = {
 	/**  Offer links copied to the clipboard (off by default). */
 	clipboard: boolean,
 	/**
+	 *  While `clipboard` is on, also offer copied links to video pages of
+	 *  well-known sites (on by default).
+	 */
+	clipboardVideo: boolean,
+	/**
 	 *  Downloads the browser hands over open the add sheet first instead of
 	 *  starting (off by default: docs/BROWSER-INTEGRATION.md, "Capture
 	 *  flow").
@@ -471,13 +476,21 @@ export type ChecksumInfo = {
 };
 
 /**
- *  Downloadable links were copied (sent to the page without showing the
- *  window).
+ *  Something worth offering was copied (sent to the page without showing
+ *  the window).
  */
-export type ClipboardOffer = {
-	/**  One link per line. */
-	links: string,
-};
+export type ClipboardOffer = 
+/**  Downloadable links, one per line: taking them opens the add sheet. */
+{ kind: "files"; links: string } | 
+/**
+ *  A link to a video page of a well-known site: taking it opens the
+ *  media sheet for it.
+ */
+{ kind: "page"; url: string; 
+/**  The site's name (Vimeo, say). */
+site: string; 
+/**  A music site: the offer says audio rather than video. */
+audio: boolean };
 
 /**  A queue's daily start and stop, in minutes after local midnight. */
 export type DailyTimes = {
@@ -1054,6 +1067,7 @@ export type SettingsPatch = {
 	closeToTray?: boolean | null,
 	startWithWindows?: boolean | null,
 	clipboard?: boolean | null,
+	clipboardVideo?: boolean | null,
 	browserAsk?: boolean | null,
 	/**  Some of the capture rules. */
 	capture?: CapturePatch | null,
@@ -1087,7 +1101,12 @@ export type ShellRequest =
  *  Open the media sheet for the pages the browser extension sent
  *  (`take_media_pages` hands them over).
  */
-{ kind: "mediaPage" };
+{ kind: "mediaPage" } | 
+/**
+ *  Open the media sheet for a page (a copied video page link that
+ *  clipboard monitoring offered, from its notification).
+ */
+{ kind: "mediaLink"; url: string };
 
 /**  Where to move a download within its queue. */
 export type ShiftDirection = "up" | "down" | "top" | "bottom";

@@ -326,6 +326,8 @@ export interface MessageParams {
   "settings.notifications.description": never;
   "settings.clipboard": never;
   "settings.clipboard.description": never;
+  "settings.clipboard_video": never;
+  "settings.clipboard_video.description": never;
   "settings.capture": never;
   "settings.capture.description": never;
   "settings.capture_size": never;
@@ -475,6 +477,7 @@ export interface MessageParams {
   "keywords.density": never;
   "keywords.search": never;
   "keywords.clipboard": never;
+  "keywords.clipboard_video": never;
   "keywords.capture": never;
   "keywords.capture_size": never;
   "keywords.capture_types": never;
@@ -507,6 +510,8 @@ export interface MessageParams {
   "clipboard.offer": { host: string | number; name: string | number };
   "clipboard.offer.many": { count: number };
   "clipboard.offer.action": never;
+  "clipboard.video": { site: string | number };
+  "clipboard.audio": { site: string | number };
   "notify.offer": { name: string | number };
   "notify.offer.many": { count: number };
   "notify.offer.add": never;

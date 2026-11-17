@@ -5,7 +5,7 @@ import { app } from "./lib/app.svelte";
 import { commands } from "./lib/bindings";
 import { downloads } from "./lib/engine";
 import { markWindowShown } from "./lib/lifecycle";
-import { appInfo, showMainWindow } from "./lib/native";
+import { appInfo, showMainWindow, simulateCopy } from "./lib/native";
 import { cachedThemeSetting, enableThemeToggle, parseThemeSetting, startTheme } from "./lib/theme";
 
 const target = document.getElementById("app");
@@ -45,8 +45,9 @@ async function boot(): Promise<void> {
     enableThemeToggle();
     // Debug builds: the store and the generated commands, for the devtools
     // console (`__boltget.commands.addDownload({ url })`, and the window's
-    // state: `__boltget.app.openMedia(url, page)`).
-    Object.assign(window, { __boltget: { downloads, commands, app } });
+    // state: `__boltget.app.openMedia(url, page)`). The UI alone in a
+    // browser also takes `__boltget.copy(text)`: another app copied `text`.
+    Object.assign(window, { __boltget: { downloads, commands, app, copy: simulateCopy } });
   }
 }
 

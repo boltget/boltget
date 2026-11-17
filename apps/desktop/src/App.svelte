@@ -32,6 +32,7 @@
     takeLaunchLinks,
     takeMediaPages,
     type BrowserMediaPage,
+    type ClipboardOffer,
     type ShellRequest,
   } from "./lib/native";
   import Palette from "./lib/palette/Palette.svelte";
@@ -52,6 +53,8 @@
   let incoming = $state<string | null>(null);
   /** A page the browser extension sent, waiting for the engine. */
   let incomingMedia = $state.raw<BrowserMediaPage | null>(null);
+  /** A copied video page link taken from its notification, waiting for the engine. */
+  let incomingPage = $state<string | null>(null);
   /** How long a copied-link offer stays. */
   const OFFER_MS = 12_000;
   let clipboardWanted = $state(false);
@@ -100,9 +103,26 @@
 
   /**
    * Clipboard monitoring found links (APP-DESIGN #9): a quiet offer, never
-   * a download. The add sheet opens only if the user takes it.
+   * a download. The add sheet, or for a video page the media sheet, opens
+   * only if the user takes it.
    */
-  function offer(links: string) {
+  function offer(offered: ClipboardOffer) {
+    if (offered.kind === "page") {
+      const { url, site, audio } = offered;
+      const id = app.toast(
+        t(audio ? "clipboard.audio" : "clipboard.video", { site }),
+        {
+          label: t("clipboard.offer.action"),
+          run: () => {
+            app.dismiss(id);
+            openPage(url);
+          },
+        },
+        OFFER_MS,
+      );
+      return;
+    }
+    const links = offered.links;
     const list = links.split("\n").filter(Boolean);
     const first = list[0];
     if (!first) return;
@@ -135,9 +155,20 @@
     });
   }
 
+  /** The media sheet for a page (the install sheet first, if the tools are missing). */
+  function openPage(url: string) {
+    app.closeSettings();
+    app.closeAdd();
+    app.openMedia(url);
+  }
+
   // The add sheet opens once the engine can probe.
   $effect(() => {
     if (status.state !== "ready") return;
+    if (incomingPage !== null) {
+      openPage(incomingPage);
+      incomingPage = null;
+    }
     if (incomingMedia !== null) {
       app.closeSettings();
       app.closeAdd();
@@ -182,6 +213,9 @@
         break;
       case "mediaPage":
         takeMedia();
+        break;
+      case "mediaLink":
+        incomingPage = request.url;
         break;
     }
   }

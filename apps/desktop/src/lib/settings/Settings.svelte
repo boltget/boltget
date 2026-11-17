@@ -480,6 +480,26 @@
               </SettingRow>
             {/if}
 
+            {#if shown.has("clipboard_video")}
+              <SettingRow
+                id="clipboard_video"
+                label={t("settings.clipboard_video")}
+                description={t("settings.clipboard_video.description")}
+                target={highlighted === "clipboard_video"}
+                problem={problems.clipboard_video}
+              >
+                {#snippet control()}
+                  <Switch
+                    checked={s.clipboardVideo}
+                    disabled={!s.clipboard}
+                    aria-labelledby="setting-clipboard_video"
+                    aria-describedby={describedBy("clipboard_video", "clipboard_video")}
+                    onchange={onswitch("clipboard_video", (clipboardVideo) => ({ clipboardVideo }))}
+                  />
+                {/snippet}
+              </SettingRow>
+            {/if}
+
             {#if shown.has("folder")}
               <SettingRow
                 id="folder"
