@@ -1,5 +1,6 @@
 //! Rows of the `media_job` table (schema version 7; `file_path` and `size`
-//! since version 8).
+//! since version 8; `playlist_id` and `playlist_index` since version 9) and
+//! of `media_playlist` (version 9).
 
 use std::path::PathBuf;
 
@@ -10,12 +11,12 @@ use crate::error::{Error, Result};
 use crate::events::DownloadId;
 use crate::media_job::{
     ContainerPreference, MediaJob, MediaJobError, MediaJobId, MediaJobState, MediaJobUpdate,
-    NewMediaJob, SubtitleChoice,
+    MediaPlaylist, MediaPlaylistId, NewMediaJob, NewMediaPlaylist, SubtitleChoice,
 };
 
 const COLUMNS: &str = "id, download_id, state, page_url, title, format_expression, preset, \
                        container, subtitles, output_template, dest_dir, error_key, error_detail, \
-                       created_at, updated_at, file_path, size";
+                       created_at, updated_at, file_path, size, playlist_id, playlist_index";
 
 fn int(v: u64) -> Result<i64> {
     i64::try_from(v).map_err(|_| Error::Database(format!("value {v} does not fit the database")))
@@ -69,17 +70,32 @@ fn row(r: &Row<'_>) -> rusqlite::Result<MediaJob> {
         updated_at: r.get::<_, i64>(14)?.max(0) as u64,
         file_path: r.get::<_, Option<String>>(15)?.map(PathBuf::from),
         size: r.get::<_, Option<i64>>(16)?.map(|s| s.max(0) as u64),
+        playlist: r
+            .get::<_, Option<i64>>(17)?
+            .map(|p| MediaPlaylistId(p.max(0) as u64)),
+        playlist_index: r
+            .get::<_, Option<i64>>(18)?
+            .and_then(|i| u32::try_from(i).ok()),
     })
 }
 
 /// Inserts a job (state `queued`) and returns its id.
 pub(crate) fn insert(conn: &Connection, job: &NewMediaJob) -> Result<MediaJobId> {
+    insert_in(conn, job, None)
+}
+
+/// Inserts a job of `playlist` (or of none).
+fn insert_in(
+    conn: &Connection,
+    job: &NewMediaJob,
+    playlist: Option<MediaPlaylistId>,
+) -> Result<MediaJobId> {
     let now = now_ms();
     conn.execute(
         "INSERT INTO media_job (download_id, state, page_url, title, format_expression, preset,
                                 container, subtitles, output_template, dest_dir,
-                                created_at, updated_at, size)
-         VALUES (?1, 'queued', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
+                                created_at, updated_at, size, playlist_id, playlist_index)
+         VALUES (?1, 'queued', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11, ?12, ?13)",
         params![
             job.download.map(|d| int(d.0)).transpose()?,
             job.page_url,
@@ -91,10 +107,82 @@ pub(crate) fn insert(conn: &Connection, job: &NewMediaJob) -> Result<MediaJobId>
             job.output_template,
             path_text(&job.dest_dir),
             now,
-            job.size.map(int).transpose()?
+            job.size.map(int).transpose()?,
+            playlist.map(|p| int(p.0)).transpose()?,
+            job.playlist_index.map(i64::from)
         ],
     )?;
     Ok(MediaJobId(conn.last_insert_rowid().max(0) as u64))
+}
+
+const PLAYLIST_COLUMNS: &str = "id, page_url, title, uploader, dest_dir, created_at";
+
+fn playlist_row(r: &Row<'_>) -> rusqlite::Result<MediaPlaylist> {
+    Ok(MediaPlaylist {
+        id: MediaPlaylistId(r.get::<_, i64>(0)?.max(0) as u64),
+        page_url: r.get(1)?,
+        title: r.get(2)?,
+        uploader: r.get(3)?,
+        dest_dir: PathBuf::from(r.get::<_, String>(4)?),
+        created_at: r.get::<_, i64>(5)?.max(0) as u64,
+    })
+}
+
+/// Inserts a playlist and its jobs (state `queued`, in the order given), in
+/// one transaction: all or nothing.
+pub(crate) fn insert_playlist(
+    conn: &mut Connection,
+    playlist: &NewMediaPlaylist,
+    jobs: &[NewMediaJob],
+) -> Result<(MediaPlaylistId, Vec<MediaJobId>)> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT INTO media_playlist (page_url, title, uploader, dest_dir, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            playlist.page_url,
+            playlist.title,
+            playlist.uploader,
+            path_text(&playlist.dest_dir),
+            now_ms()
+        ],
+    )?;
+    let id = MediaPlaylistId(tx.last_insert_rowid().max(0) as u64);
+    let mut ids = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        ids.push(insert_in(&tx, job, Some(id))?);
+    }
+    tx.commit()?;
+    Ok((id, ids))
+}
+
+/// The playlist with this id.
+pub(crate) fn playlist(conn: &Connection, id: MediaPlaylistId) -> Result<Option<MediaPlaylist>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {PLAYLIST_COLUMNS} FROM media_playlist WHERE id = ?1"),
+            [int(id.0)?],
+            playlist_row,
+        )
+        .optional()?)
+}
+
+/// Every playlist, oldest first.
+pub(crate) fn playlists(conn: &Connection) -> Result<Vec<MediaPlaylist>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {PLAYLIST_COLUMNS} FROM media_playlist ORDER BY id"
+    ))?;
+    let rows = stmt.query_map([], playlist_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Deletes playlists that have no jobs left.
+pub(crate) fn delete_empty_playlists(conn: &Connection) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM media_playlist
+         WHERE NOT EXISTS (SELECT 1 FROM media_job WHERE playlist_id = media_playlist.id)",
+        [],
+    )?)
 }
 
 /// The job with this id.
@@ -267,6 +355,63 @@ mod tests {
             .await
             .unwrap();
         o.store.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_playlist_and_its_jobs_are_stored_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = Store::open(dir.path()).unwrap();
+        o.store
+            .call(|c| {
+                let single = insert(c, &NewMediaJob::new("https://v.test/w?v=0", "b", "/m"))?;
+                let list = NewMediaPlaylist {
+                    page_url: "https://v.test/playlist?list=PL1".into(),
+                    title: Some("Weekend projects".into()),
+                    uploader: Some("Chan".into()),
+                    dest_dir: PathBuf::from("/m/Weekend projects"),
+                };
+                let jobs: Vec<NewMediaJob> = [3, 1]
+                    .into_iter()
+                    .map(|i| {
+                        let mut j = NewMediaJob::new(
+                            format!("https://v.test/w?v={i}"),
+                            "bv*+ba/b",
+                            "/m/Weekend projects",
+                        );
+                        j.playlist_index = Some(i);
+                        j
+                    })
+                    .collect();
+                let (id, ids) = insert_playlist(c, &list, &jobs)?;
+                assert_eq!(ids.len(), 2);
+                let stored = playlist(c, id)?.unwrap();
+                assert_eq!(stored.title.as_deref(), Some("Weekend projects"));
+                assert_eq!(stored.dest_dir, PathBuf::from("/m/Weekend projects"));
+                let first = get(c, ids[0])?.unwrap();
+                assert_eq!((first.playlist, first.playlist_index), (Some(id), Some(3)));
+                assert_eq!(get(c, single)?.unwrap().playlist, None);
+                assert_eq!(playlists(c)?.len(), 1);
+                // The playlist stays while it has jobs.
+                delete(c, ids[0])?;
+                assert_eq!(delete_empty_playlists(c)?, 0);
+                delete(c, ids[1])?;
+                assert_eq!(delete_empty_playlists(c)?, 1);
+                assert_eq!(playlists(c)?.len(), 0);
+                // All or nothing: a job that cannot be stored stores none.
+                let mut bad = jobs.clone();
+                bad[1].size = Some(u64::MAX);
+                assert!(insert_playlist(c, &list, &bad).is_err());
+                assert_eq!(playlists(c)?.len(), 0);
+                assert_eq!(list_all(c)?, 1);
+                Ok(())
+            })
+            .await
+            .unwrap();
+        o.store.close().await;
+    }
+
+    fn list_all(c: &Connection) -> Result<usize> {
+        Ok(list(c)?.len())
     }
 
     #[tokio::test]

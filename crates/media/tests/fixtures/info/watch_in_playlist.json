@@ -1,0 +1,17 @@
+{
+  "_type": "playlist",
+  "id": "PLbpi6ZahtOH6Blw3RGYpWkSByi_T7Rygb",
+  "title": "Making a chair: the series",
+  "uploader": "Workshop Notes",
+  "channel": "Workshop Notes",
+  "webpage_url": "https://www.youtube.com/playlist?list=PLbpi6ZahtOH6Blw3RGYpWkSByi_T7Rygb",
+  "extractor": "youtube:tab",
+  "extractor_key": "YoutubeTab",
+  "playlist_count": 4,
+  "entries": [
+    {"_type": "url", "ie_key": "Youtube", "id": "bbbbbbbbbb1", "url": "https://www.youtube.com/watch?v=bbbbbbbbbb1", "title": "Choosing the wood", "duration": 488, "channel": "Workshop Notes", "thumbnails": [{"url": "https://i.ytimg.com/vi/bbbbbbbbbb1/hqdefault.jpg?sqp=a", "height": 94, "width": 168}, {"url": "https://i.ytimg.com/vi/bbbbbbbbbb1/hqdefault.jpg?sqp=b", "height": 188, "width": 336}], "availability": null},
+    {"_type": "url", "ie_key": "Youtube", "id": "dQw4w9WgXcQ", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "title": "A Video About Downloading", "duration": 212, "channel": "Workshop Notes", "thumbnails": [{"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", "height": 188, "width": 336}]},
+    {"_type": "url", "ie_key": "Youtube", "id": "bbbbbbbbbb3", "url": "https://www.youtube.com/watch?v=bbbbbbbbbb3", "title": "[Private video]", "duration": null, "thumbnails": [{"url": "https://i.ytimg.com/img/no_thumbnail.jpg", "height": 90, "width": 120}]},
+    {"_type": "url", "ie_key": "Youtube", "id": "bbbbbbbbbb4", "url": "https://www.youtube.com/watch?v=bbbbbbbbbb4", "title": "Joints and glue", "duration": 1306.0, "channel": "Workshop Notes"}
+  ]
+}

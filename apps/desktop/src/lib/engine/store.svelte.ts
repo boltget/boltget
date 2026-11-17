@@ -25,6 +25,8 @@ import type {
   LimitScope,
   MediaChannel,
   MediaInstallEvent,
+  MediaPlaylistMode,
+  MediaPlaylistRequest,
   MediaProbe,
   MediaRequest,
   MediaRowInfo,
@@ -67,6 +69,9 @@ export interface EngineApi {
     | "probeMedia"
     | "mediaThumbnail"
     | "addMediaDownload"
+    | "addMediaPlaylist"
+    | "pauseMediaPlaylist"
+    | "resumeMediaPlaylist"
     | "mediaTools"
     | "mediaInstallPlan"
     | "updateMediaTools"
@@ -296,10 +301,17 @@ export class DownloadStore {
   /**
    * Video or audio on a web page (yt-dlp), for the media sheet; `page`, a
    * page the browser extension sent, gives yt-dlp the browser's cookies and
-   * headers.
+   * headers. `playlist` looks at the video an address names (`single`) or
+   * the playlist it belongs to (`entries`); a playlist's entries come a page
+   * at a time from place `start`.
    */
-  probeMedia(url: string, page: number | null = null): Promise<Result<MediaProbe>> {
-    return this.#api.commands.probeMedia(url, page);
+  probeMedia(
+    url: string,
+    page: number | null = null,
+    playlist: MediaPlaylistMode | null = null,
+    start: number | null = null,
+  ): Promise<Result<MediaProbe>> {
+    return this.#api.commands.probeMedia(url, page, playlist, start);
   }
 
   /**
@@ -319,6 +331,31 @@ export class DownloadStore {
   async addMedia(request: MediaRequest): Promise<Result<DownloadRow>> {
     const result = await this.#api.commands.addMediaDownload(request);
     if (!this.#failed(result) && this.#upsert(result.data)) this.#syncIds();
+    return result;
+  }
+
+  /** Starts a playlist's chosen entries; their rows appear at once. */
+  async addMediaPlaylist(request: MediaPlaylistRequest): Promise<Result<DownloadRow[]>> {
+    const result = await this.#api.commands.addMediaPlaylist(request);
+    if (!this.#failed(result)) {
+      let added = false;
+      for (const row of result.data) added = this.#upsert(row) || added;
+      if (added) this.#syncIds();
+    }
+    return result;
+  }
+
+  /** Pauses every entry of a playlist that runs or waits. */
+  async pausePlaylist(playlist: number): Promise<Result<null>> {
+    const result = await this.#api.commands.pauseMediaPlaylist(playlist);
+    this.#failed(result);
+    return result;
+  }
+
+  /** Lets a playlist's paused and failed entries wait their turn again. */
+  async resumePlaylist(playlist: number): Promise<Result<null>> {
+    const result = await this.#api.commands.resumeMediaPlaylist(playlist);
+    this.#failed(result);
     return result;
   }
 

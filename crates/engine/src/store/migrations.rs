@@ -52,6 +52,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 8,
         sql: include_str!("migrations/0008_media_job_file.sql"),
     },
+    Migration {
+        version: 9,
+        sql: include_str!("migrations/0009_media_playlist.sql"),
+    },
 ];
 
 /// The schema version this build writes.
@@ -299,6 +303,52 @@ mod tests {
             .collect::<rusqlite::Result<_>>()
             .unwrap();
         assert_eq!(left, [None]);
+    }
+
+    #[test]
+    fn media_jobs_of_an_older_database_belong_to_no_playlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut c, p) = open(dir.path());
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut c, &p, &MIGRATIONS[..8]).unwrap();
+        c.execute(
+            "INSERT INTO media_job (state, page_url, format_expression, container,
+                                    output_template, dest_dir, created_at, updated_at)
+             VALUES ('completed', 'https://v.test/watch', 'b', 'mp4', 't', '/d', 0, 0)",
+            [],
+        )
+        .unwrap();
+        migrate(&mut c, &p, MIGRATIONS).unwrap();
+        let (list, index): (Option<i64>, Option<i64>) = c
+            .query_row(
+                "SELECT playlist_id, playlist_index FROM media_job",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((list, index), (None, None));
+        // A job of a playlist that goes keeps its row.
+        c.execute(
+            "INSERT INTO media_playlist (id, page_url, dest_dir, created_at)
+             VALUES (5, 'https://v.test/playlist', '/d/P', 0)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE media_job SET playlist_id = 5, playlist_index = 2",
+            [],
+        )
+        .unwrap();
+        assert!(
+            c.execute("UPDATE media_job SET playlist_id = 6", [])
+                .is_err(),
+            "only a playlist that exists"
+        );
+        c.execute("DELETE FROM media_playlist", []).unwrap();
+        let list: Option<i64> = c
+            .query_row("SELECT playlist_id FROM media_job", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(list, None);
     }
 
     #[test]

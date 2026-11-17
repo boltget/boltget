@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bytesParts,
+  childFolder,
   displayName,
   formatBytes,
   formatDuration,
@@ -139,5 +140,13 @@ describe("paths", () => {
     });
     expect(splitFolder("D:\\")).toEqual({ parent: "", leaf: "D:" });
     expect(splitFolder("/home/me/")).toEqual({ parent: "/home/", leaf: "me" });
+  });
+
+  it("names a folder inside another with its separator", () => {
+    expect(childFolder("C:\\Users\\you\\Videos\\", "List")).toBe(
+      String.raw`C:\Users\you\Videos\List`,
+    );
+    expect(childFolder("Videos", "List")).toBe(String.raw`Videos\List`);
+    expect(childFolder("/home/me/Videos", "List")).toBe("/home/me/Videos/List");
   });
 });

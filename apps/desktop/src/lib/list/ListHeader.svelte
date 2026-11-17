@@ -5,7 +5,8 @@
 
   A queue's view adds what concerns the queue itself: how it runs (its
   limit, daily times and finish action, in one muted line), Start or Stop,
-  and its settings.
+  and its settings. A playlist's view says how it runs and how far it is,
+  with Pause all or Resume all.
 -->
 <script lang="ts">
   import Button from "@boltget/ui/components/Button.svelte";
@@ -16,7 +17,8 @@
   import { downloads } from "../engine";
   import Icon from "../Icon.svelte";
   import { popupMenu } from "../menu";
-  import { queueOfView, type Sort } from "./model";
+  import { playlistOfView, queueOfView, type Sort } from "./model";
+  import { playlistsOf } from "./playlist";
   import { timeValue } from "./queue";
 
   interface Props {
@@ -30,6 +32,14 @@
   const queue = $derived.by(() => {
     const id = queueOfView(app.view);
     return id === null ? undefined : downloads.queue(id);
+  });
+
+  const playlist = $derived.by(() => {
+    const id = playlistOfView(app.view);
+    if (id === null) return undefined;
+    return playlistsOf(downloads.downloads.filter((d) => !app.hidden.has(d.id))).find(
+      (p) => p.id === id,
+    );
   });
 
   /** How the queue runs, in one line. */
@@ -52,6 +62,7 @@
   const title = $derived.by((): string => {
     if (queue) return app.queueName(queue);
     if (queueOfView(app.view) !== null) return "";
+    if (playlistOfView(app.view) !== null) return playlist?.title || t("playlist.untitled");
     const key = (
       ["all", "active", "completed", "scheduled"].includes(app.view)
         ? `view.${app.view}`
@@ -92,6 +103,8 @@
   <span class="count" aria-label={t("list.count", { count })}>{count}</span>
   {#if queue}
     <span class="how">{how}</span>
+  {:else if playlist}
+    <span class="how">{t("playlist.status", { done: playlist.done, total: playlist.total })}</span>
   {/if}
   <span class="options">
     {#if queue}
@@ -102,6 +115,19 @@
       <IconButton label={t("queue.settings")} onclick={() => app.editQueue(queue.id)}>
         <Icon name="settings" />
       </IconButton>
+      <span class="divider" aria-hidden="true"></span>
+    {:else if playlist && (playlist.active > 0 || playlist.stopped > 0)}
+      {@const pause = playlist.active > 0}
+      <Button
+        variant="ghost"
+        onclick={() =>
+          void (pause
+            ? downloads.pausePlaylist(playlist.id)
+            : downloads.resumePlaylist(playlist.id))}
+      >
+        {#snippet icon()}<Icon name={pause ? "pause" : "play"} size={14} />{/snippet}
+        {t(pause ? "playlist.pause_all" : "playlist.resume_all")}
+      </Button>
       <span class="divider" aria-hidden="true"></span>
     {/if}
     <IconButton
@@ -130,7 +156,11 @@
     flex: none;
   }
   .title {
+    min-width: 0;
     margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-family: var(--font-display);
     font-size: var(--text-15);
     line-height: var(--leading-15);

@@ -29,6 +29,7 @@
     buildLayout,
     entryAt,
     offsets,
+    playlistOfView,
     queueOfView,
     scrollToReveal,
     visibleRange,
@@ -90,6 +91,8 @@
         queue: d.queue,
         queuePosition: d.queuePosition,
         startAt: d.startAt,
+        playlist: d.media?.playlist?.id ?? null,
+        playlistIndex: d.media?.playlist?.index ?? null,
       })),
   );
 
@@ -393,6 +396,7 @@
     if (app.query.trim()) return t("empty.search", { query: app.query.trim() });
     const queue = queueOfView(app.view);
     if (queue !== null) return t("empty.view.queue", { queue: app.queueName(queue) });
+    if (playlistOfView(app.view) !== null) return t("empty.view.playlist");
     switch (app.view) {
       case "all":
         return "";
@@ -403,7 +407,7 @@
       default:
         return t("empty.view.category", {
           category: t(
-            `category.${app.view as Exclude<typeof app.view, `queue:${number}`>}`,
+            `category.${app.view as Exclude<typeof app.view, `queue:${number}` | `playlist:${number}`>}`,
           ).toLowerCase(),
         });
     }

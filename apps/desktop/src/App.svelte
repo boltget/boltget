@@ -348,6 +348,8 @@
   .window {
     display: grid;
     grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
+    /* A long title or status line in the list's header never widens the window. */
+    grid-template-columns: minmax(0, 1fr);
     height: 100vh;
     background: var(--color-chrome);
   }

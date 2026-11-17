@@ -8,9 +8,10 @@ use std::time::{Duration, SystemTime};
 
 use boltget_engine::{CookieJar, EngineConfig, ProxyRules};
 use boltget_media::{
-    Channel, ContainerPreference, DownloadOptions, DownloadOutcome, Error, InstallEvent, MediaInfo,
-    MediaProgress, Outcome, Phase, PlaylistMode, Preset, ProbeOptions, ResolvedPreset, Sidecars,
-    Sources, Status, SubtitleChoice, Tool, ToolStatus, codec_label, presets,
+    Channel, ContainerPreference, DownloadOptions, DownloadOutcome, Downloader, Error,
+    InstallEvent, MediaInfo, MediaProgress, Outcome, Phase, PlaylistMode, Preset, ProbeOptions,
+    ResolvedPreset, Sidecars, Sources, Status, SubtitleChoice, Tool, ToolStatus, codec_label,
+    playlist, presets,
 };
 use clap::{Args, Subcommand, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -53,22 +54,36 @@ ALL_PROXY, NO_PROXY), as for `boltget get`.
 
 Ctrl-C stops the download and keeps yt-dlp's partial files: running the same
 command again continues it. The tools are not installed by this command:
-install them first with `boltget media install`.";
+install them first with `boltget media install`.
+
+Playlists: a playlist's page (or, with --playlist, a video's page that names
+a list) is refused unless --playlist is given. With it, the entries (all, or
+those --items names: places from 1 such as 1-5,8 or 10-; only places up to
+the last one named are listed) are downloaded one after another into a
+folder named after the playlist inside the output folder, each named \"<place> - <title> [<id>].<ext>\", with the same preset
+for all: entries are not probed one by one, so a preset is used as yt-dlp's
+format expression with its own fallbacks, and sizes are not known before.
+Private and deleted entries are skipped. Each finished file's path is
+printed; an entry that fails is reported and the others go on (exit code 4
+at the end if any failed).";
 
 const PROBE_HELP: &str = "\
 Asks yt-dlp what the page offers, without downloading anything: the title,
 length, the picker's presets (Best quality, 1080p, 720p, Smaller file, Audio
 only; presets that would give the same file are shown once) with their
 resolution, container, codecs and size (\"about\" when estimated), and the
-subtitle languages. A playlist page lists its entries instead. Due updates of
-the tools are installed first (yt-dlp at most once a day).
+subtitle languages. A playlist page lists its entries instead (with
+--playlist, also the list a video's page names), each with its place, title
+and length, \"(unavailable)\" for private and deleted ones. Due updates of the
+tools are installed first (yt-dlp at most once a day).
 
 --cookies passes a Netscape cookies.txt (as browser export extensions write
 it); yt-dlp receives a private copy that is deleted afterwards.
 
 With --json, stdout carries one JSON object:
   {title, id, uploader, duration, webpage_url, extractor, thumbnail,
-   is_playlist, entry_count, entries: [{id, title, url, duration}], drm,
+   is_playlist, entry_count, entries: [{index, id, title, url, duration,
+   uploader, thumbnail, available}], drm,
    container, presets: [{preset, expression, format_ids, audio_only, width,
    height, fps, dynamic_range, video_codec, audio_codec, container,
    size: {bytes, approximate} | null}],
@@ -133,6 +148,10 @@ pub(crate) enum MediaAction {
 }
 
 #[derive(Debug, Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "command-line switches, each its own flag"
+)]
 pub(crate) struct GetArgs {
     /// The web page.
     url: String,
@@ -160,6 +179,17 @@ pub(crate) struct GetArgs {
     /// A Netscape cookies.txt file for the site.
     #[arg(long, value_name = "FILE")]
     cookies: Option<PathBuf>,
+    /// Download a playlist's entries (also the list a video's page names),
+    /// one after another, into a folder named after it.
+    #[arg(long)]
+    playlist: bool,
+    /// Only these places of the playlist (from 1): e.g. 1-5,8 or 10-.
+    #[arg(long, value_name = "PLACES", requires = "playlist", value_parser = parse_items)]
+    items: Option<playlist::Items>,
+}
+
+fn parse_items(s: &str) -> Result<playlist::Items, String> {
+    playlist::parse_items(s)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -514,11 +544,16 @@ async fn get(sidecars: &Sidecars, shown: &Shown, args: GetArgs) -> u8 {
     }
     shown.finish();
     match download(sidecars, &args).await {
-        Ok(Some(path)) => {
+        Ok(Got::File(path)) => {
             println!("{}", path.display());
             0
         }
-        Ok(None) => {
+        Ok(Got::Playlist { failed: 0 }) => 0,
+        Ok(Got::Playlist { failed }) => {
+            eprintln!("boltget: {failed} entries failed");
+            4
+        }
+        Ok(Got::Stopped) => {
             eprintln!("boltget: stopped; run the same command again to continue");
             130
         }
@@ -544,7 +579,7 @@ fn resolve(
     };
     if info.is_playlist() {
         return Err(refuse(
-            "this page is a playlist; playlists come in a later version (try the address of one video)",
+            "this page is a playlist; add --playlist to download its entries",
         ));
     }
     if info.drm_only() {
@@ -569,8 +604,30 @@ fn resolve(
     ))
 }
 
-/// Probes, resolves, downloads. `None`: stopped with Ctrl-C.
-async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<Option<PathBuf>> {
+/// What `get` ended with.
+enum Got {
+    /// The page's file.
+    File(PathBuf),
+    /// A playlist's entries went one after another; `failed` did not finish.
+    Playlist { failed: usize },
+    /// Ctrl-C.
+    Stopped,
+}
+
+/// The expression and whether it is audio only, for a playlist's entries:
+/// the preset's expression (its `/` fallbacks choose for each entry), or
+/// `--format`.
+fn playlist_format(args: &GetArgs, container: ContainerPreference) -> (String, bool) {
+    if let Some(expr) = &args.format {
+        (expr.trim().to_owned(), false)
+    } else {
+        let preset = args.preset.preset();
+        (preset.expression(container), preset.audio_only())
+    }
+}
+
+/// Probes, resolves, downloads.
+async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<Got> {
     let downloader = sidecars.downloader()?;
     let cookies = match &args.cookies {
         Some(path) => Some(CookieJar::load(path)?),
@@ -590,11 +647,21 @@ async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<
             &ProbeOptions {
                 cookies: cookies.clone(),
                 proxy: proxy.clone(),
+                playlist: if args.playlist {
+                    PlaylistMode::Entries
+                } else {
+                    PlaylistMode::Single
+                },
+                // Places up to the last one named are enough to list.
+                items: args
+                    .items
+                    .as_ref()
+                    .and_then(playlist::Items::last)
+                    .map(|end| boltget_media::ItemRange { start: 1, end }),
                 ..ProbeOptions::default()
             },
         )
         .await?;
-    let (format, audio_only, expected) = resolve(&info, args, container)?;
     let dest = match &args.output_dir {
         Some(d) => d.clone(),
         None => PathBuf::from("."),
@@ -603,13 +670,31 @@ async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<
         context: format!("resolving {}", dest.display()),
         source: e,
     })?;
+    if args.playlist && info.is_playlist() {
+        return download_playlist(&downloader, &info, args, container, cookies, &dest).await;
+    }
+    let (format, audio_only, expected) = resolve(&info, args, container)?;
     let mut opts = DownloadOptions::new(format, dest);
     opts.container = container;
     opts.audio_only = audio_only;
     opts.expected_size = expected;
     opts.cookies = cookies;
     opts.proxy = proxy;
-    opts.subtitles = args.subs.as_ref().map(|langs| SubtitleChoice {
+    opts.subtitles = subtitles(args);
+    if let Some(title) = &info.title {
+        eprintln!("{title}");
+    }
+    Ok(
+        match run_one(&downloader, url, &opts, expected.unwrap_or(0)).await? {
+            DownloadOutcome::Completed { path, .. } => Got::File(path),
+            DownloadOutcome::Stopped => Got::Stopped,
+        },
+    )
+}
+
+/// The subtitles `--subs` asks for.
+fn subtitles(args: &GetArgs) -> Option<SubtitleChoice> {
+    args.subs.as_ref().map(|langs| SubtitleChoice {
         languages: langs
             .split(',')
             .map(|l| l.trim().to_owned())
@@ -617,11 +702,71 @@ async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<
             .collect(),
         automatic: args.auto_subs,
         embed: args.embed_subs,
-    });
-    if let Some(title) = &info.title {
-        eprintln!("{title}");
+    })
+}
+
+/// A playlist's chosen entries, one after another, into its folder.
+async fn download_playlist(
+    downloader: &Downloader,
+    info: &MediaInfo,
+    args: &GetArgs,
+    container: ContainerPreference,
+    cookies: Option<CookieJar>,
+    dest: &Path,
+) -> boltget_media::Result<Got> {
+    let entries = playlist::entries(info, 1);
+    let chosen: Vec<&boltget_media::PlaylistEntry> = entries
+        .iter()
+        .filter(|e| args.items.as_ref().is_none_or(|i| i.contains(e.index)))
+        .collect();
+    let folder = dest.join(playlist::folder_name(
+        info.title.as_deref(),
+        info.id.as_deref(),
+    ));
+    let last = u32::try_from(info.entry_count()).unwrap_or(u32::MAX);
+    let (format, audio_only) = playlist_format(args, container);
+    eprintln!(
+        "{}: {} of {} entries into {}",
+        info.title.as_deref().unwrap_or("playlist"),
+        chosen.len(),
+        info.entry_count(),
+        folder.display()
+    );
+    let mut failed = 0;
+    for e in chosen {
+        let name = e.title.as_deref().unwrap_or("?");
+        let Some(url) = e.url.as_deref().filter(|_| e.available) else {
+            eprintln!("{:>4}. {name}: unavailable, skipped", e.index);
+            continue;
+        };
+        eprintln!("{:>4}. {name}", e.index);
+        let mut opts = DownloadOptions::new(format.clone(), folder.clone());
+        opts.container = container;
+        opts.audio_only = audio_only;
+        opts.cookies.clone_from(&cookies);
+        opts.proxy = boltget_media::proxy_for(&ProxyRules::from_env(), url);
+        opts.subtitles = subtitles(args);
+        opts.output_template = playlist::entry_template(e.index, last);
+        match run_one(downloader, url, &opts, 0).await {
+            Ok(DownloadOutcome::Completed { path, .. }) => println!("{}", path.display()),
+            Ok(DownloadOutcome::Stopped) => return Ok(Got::Stopped),
+            Err(err) => {
+                eprintln!("      failed: {err}");
+                failed += 1;
+            }
+        }
     }
-    let bar = ProgressBar::new(expected.unwrap_or(0));
+    Ok(Got::Playlist { failed })
+}
+
+/// One download with a progress bar on stderr, until done or Ctrl-C.
+async fn run_one(
+    downloader: &Downloader,
+    url: &str,
+    opts: &DownloadOptions,
+    expected: u64,
+) -> boltget_media::Result<DownloadOutcome> {
+    let bar = ProgressBar::new(expected);
     bar.set_style(
         ProgressStyle::with_template("  {msg} [{bar:30}] {bytes}/{total_bytes} {bytes_per_sec}")
             .unwrap_or_else(|_| ProgressStyle::default_bar())
@@ -643,13 +788,10 @@ async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<
             stop.send_replace(true);
         }
     });
-    let outcome = downloader.run(url, &opts, &on_progress, stop_rx).await;
+    let outcome = downloader.run(url, opts, &on_progress, stop_rx).await;
     ctrl_c.abort();
     bar.finish_and_clear();
-    Ok(match outcome? {
-        DownloadOutcome::Completed { path, .. } => Some(path),
-        DownloadOutcome::Stopped => None,
-    })
+    outcome
 }
 
 fn preset_name(p: Preset) -> &'static str {
@@ -700,6 +842,19 @@ fn preset_line(r: &ResolvedPreset) -> String {
     format!("  {:<14}{}", preset_name(r.preset), parts.join("  "))
 }
 
+/// A playlist's entry as a line: place, title, length.
+fn entry_line(e: &boltget_media::PlaylistEntry) -> String {
+    let title = e.title.as_deref().or(e.url.as_deref()).unwrap_or("?");
+    let mut line = format!("  {:>3}. {title}", e.index);
+    if let Some(d) = e.duration {
+        let _ = write!(line, "  {}", duration_text(d));
+    }
+    if !e.available {
+        line.push_str("  (unavailable)");
+    }
+    line
+}
+
 fn print_probe(info: &MediaInfo, container: ContainerPreference) {
     println!("{}", info.title.as_deref().unwrap_or("(untitled)"));
     if let Some(who) = info.publisher() {
@@ -710,13 +865,8 @@ fn print_probe(info: &MediaInfo, container: ContainerPreference) {
     }
     if info.is_playlist() {
         println!("playlist, {} entries:", info.entry_count());
-        for (i, e) in info.entries.iter().enumerate() {
-            let length = e.duration.map(duration_text).unwrap_or_default();
-            println!(
-                "  {:>3}. {}  {length}",
-                i + 1,
-                e.title.as_deref().or(e.url.as_deref()).unwrap_or("?")
-            );
+        for e in playlist::entries(info, 1) {
+            println!("{}", entry_line(&e));
         }
         return;
     }
@@ -759,7 +909,7 @@ fn probe_json(info: &MediaInfo, container: ContainerPreference) -> serde_json::V
         "thumbnail": info.best_thumbnail(),
         "is_playlist": info.is_playlist(),
         "entry_count": info.entry_count(),
-        "entries": info.entries,
+        "entries": playlist::entries(info, 1),
         "drm": info.drm_only(),
         "container": container,
         "presets": presets(info, container),
@@ -871,6 +1021,78 @@ mod tests {
         assert_eq!(p.url, "https://x.test/v");
         assert_eq!(p.cookies.as_deref(), Some(Path::new("c.txt")));
         assert!(p.original && p.json && !p.playlist);
+    }
+
+    #[test]
+    fn parses_get_with_a_playlist() {
+        use clap::Parser as _;
+        let cli = crate::Cli::try_parse_from([
+            "boltget",
+            "media",
+            "get",
+            "https://x.test/playlist?list=PL1",
+            "--playlist",
+            "--items",
+            "1-5,8",
+            "--preset",
+            "720p",
+        ])
+        .unwrap();
+        let crate::Command::Media(MediaArgs {
+            action: MediaAction::Get(g),
+        }) = cli.command
+        else {
+            panic!("expected media get");
+        };
+        assert!(g.playlist);
+        let items = g.items.as_ref().unwrap();
+        assert!(items.contains(8) && !items.contains(6));
+        assert_eq!(
+            playlist_format(&g, ContainerPreference::Mp4),
+            (Preset::P720.expression(ContainerPreference::Mp4), false)
+        );
+        // --items needs --playlist, and only places.
+        for bad in [
+            vec![
+                "boltget",
+                "media",
+                "get",
+                "https://x.test/p",
+                "--items",
+                "1-3",
+            ],
+            vec![
+                "boltget",
+                "media",
+                "get",
+                "https://x.test/p",
+                "--playlist",
+                "--items",
+                "1;calc",
+            ],
+        ] {
+            assert!(crate::Cli::try_parse_from(bad).is_err());
+        }
+    }
+
+    #[test]
+    fn playlist_entries_as_lines_and_json() {
+        let info = MediaInfo::from_json(
+            br#"{"_type": "playlist", "title": "P", "entries": [
+                {"id": "a", "url": "https://v.test/w?v=a", "title": "First", "duration": 61},
+                {"id": "b", "url": "https://v.test/w?v=b", "title": "[Private video]"}
+            ]}"#,
+        )
+        .unwrap();
+        let list = playlist::entries(&info, 1);
+        assert_eq!(entry_line(&list[0]), "    1. First  1:01");
+        assert_eq!(
+            entry_line(&list[1]),
+            "    2. [Private video]  (unavailable)"
+        );
+        let json = probe_json(&info, ContainerPreference::Mp4);
+        assert_eq!(json["entries"][1]["index"], 2);
+        assert_eq!(json["entries"][1]["available"], false);
     }
 
     #[test]

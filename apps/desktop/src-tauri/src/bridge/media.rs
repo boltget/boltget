@@ -9,9 +9,13 @@
 //!   the number. The job's own `download_id` column stays empty: a
 //!   `download` row is something the engine itself would run.
 //! - **Running.** At most [`MAX_RUNNING`] jobs run at once; more wait
-//!   (`queued`) and start as others end. They do not take slots of the
-//!   engine's queues: those count connections of the engine's downloads,
-//!   and a yt-dlp process is not one of them.
+//!   (`queued`) and start as others end, in the order they were added. They
+//!   do not take slots of the engine's queues: those count connections of
+//!   the engine's downloads, and a yt-dlp process is not one of them.
+//! - **Playlists** (docs/VIDEO.md, "Playlists: as built"): each chosen entry
+//!   is a job of its own, and the entries of one playlist run
+//!   [`PLAYLIST_RUNNING`] at a time, as a queue of their own inside the
+//!   media slots, so a long playlist leaves the other slot to the rest.
 //! - **Progress** goes through the hub like the engine's
 //!   ([`Request::MediaSample`]), so speeds, the tray and the taskbar treat
 //!   both alike; merging or converting is the `processing` state.
@@ -31,7 +35,7 @@ use std::time::{Duration, SystemTime};
 
 use boltget_engine::{
     CookieJar, Engine, EngineConfig, MediaJob, MediaJobError, MediaJobId, MediaJobState,
-    MediaJobUpdate, NewMediaJob,
+    MediaJobUpdate, MediaPlaylist, MediaPlaylistId, NewMediaJob, NewMediaPlaylist,
 };
 use boltget_media::{
     DownloadOptions, DownloadOutcome, Downloader, MediaProgress, Phase, Prober, Program, Sidecars,
@@ -41,7 +45,8 @@ use tokio::sync::watch;
 
 use super::Bridge;
 use super::dto::{
-    DownloadError, DownloadId, DownloadRow, DownloadState, ErrorKind, MediaRowInfo, QueueId,
+    DownloadError, DownloadId, DownloadRow, DownloadState, ErrorKind, MediaRowInfo,
+    MediaRowPlaylist, QueueId,
 };
 use super::hub::{HubHandle, Request};
 use super::model::Sample;
@@ -54,6 +59,10 @@ pub(crate) const ROW_BASE: u64 = 1 << 50;
 
 /// Media jobs that run at once.
 pub(crate) const MAX_RUNNING: usize = 2;
+
+/// Entries of one playlist that run at once: a playlist is a queue that
+/// downloads its entries in order, one by one.
+pub(crate) const PLAYLIST_RUNNING: usize = 1;
 
 /// The row id of a job.
 pub(crate) fn row_id(id: MediaJobId) -> DownloadId {
@@ -161,11 +170,25 @@ fn expected_name(job: &MediaJob) -> Option<String> {
         (_, boltget_engine::ContainerPreference::Original) => "mkv",
         _ => "mp4",
     };
-    Some(format!("{title}.{ext}"))
+    // A playlist's entry is numbered as its template numbers it ("07 - ").
+    let place = job
+        .output_template
+        .split_once(" - ")
+        .map(|(n, _)| n)
+        .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    Some(match place {
+        Some(n) => format!("{n} - {title}.{ext}"),
+        None => format!("{title}.{ext}"),
+    })
 }
 
 /// A job as a row of the list.
 pub(crate) fn row(job: &MediaJob) -> DownloadRow {
+    row_in(job, None)
+}
+
+/// A job as a row of the list, with its playlist (when it has one).
+pub(crate) fn row_in(job: &MediaJob, playlist: Option<&MediaPlaylist>) -> DownloadRow {
     let state = row_state(job.state);
     let completed = state == DownloadState::Completed;
     let file_name = job
@@ -197,6 +220,13 @@ pub(crate) fn row(job: &MediaJob) -> DownloadRow {
         media: Some(MediaRowInfo {
             title: job.title.clone(),
             preset: job.preset.clone(),
+            playlist: job.playlist.map(|id| MediaRowPlaylist {
+                id: id.0,
+                title: playlist
+                    .filter(|p| p.id == id)
+                    .and_then(|p| p.title.clone()),
+                index: job.playlist_index,
+            }),
         }),
     }
 }
@@ -251,8 +281,25 @@ struct Runs {
     /// The browser's cookies and headers of jobs from the extension, until
     /// they complete or are removed.
     auth: HashMap<MediaJobId, MediaAuth>,
+    /// The playlist of each job that has one, for [`PLAYLIST_RUNNING`].
+    playlists: HashMap<MediaJobId, MediaPlaylistId>,
     /// The app is quitting: runs end without changing their jobs.
     closing: bool,
+}
+
+impl Runs {
+    /// Whether `id` must wait although a slot is free: as many entries of
+    /// its playlist as may run already do.
+    fn blocked(&self, id: MediaJobId) -> bool {
+        let Some(list) = self.playlists.get(&id) else {
+            return false;
+        };
+        self.running
+            .keys()
+            .filter(|r| self.playlists.get(r) == Some(list))
+            .count()
+            >= PLAYLIST_RUNNING
+    }
 }
 
 /// The media jobs that run now. Bridge state.
@@ -326,8 +373,83 @@ impl Bridge {
         }
         let row = row(&job);
         self.upsert(row.clone());
-        launch(&ctx, job.id);
+        launch(&ctx, job.id, false);
         Ok(row)
+    }
+
+    /// Records a playlist and a job for each chosen entry, shows their rows
+    /// and lets them run, one at a time ([`PLAYLIST_RUNNING`]), in the order
+    /// given; with `auth`, every run of each gets the browser's cookies and
+    /// headers in this session.
+    pub(crate) async fn add_media_playlist(
+        &self,
+        playlist: NewMediaPlaylist,
+        jobs: Vec<NewMediaJob>,
+        auth: Option<MediaAuth>,
+    ) -> Result<Vec<DownloadRow>, UiError> {
+        let ctx = self.media_ctx()?;
+        let (list, jobs) = ctx.engine.add_media_playlist(playlist, jobs).await?;
+        {
+            let mut runs = lock(&ctx.runs);
+            for job in &jobs {
+                runs.playlists.insert(job.id, list.id);
+                if let Some(auth) = &auth {
+                    runs.auth.insert(job.id, auth.clone());
+                }
+            }
+        }
+        let rows: Vec<DownloadRow> = jobs.iter().map(|j| row_in(j, Some(&list))).collect();
+        for row in &rows {
+            self.upsert(row.clone());
+        }
+        for job in &jobs {
+            launch(&ctx, job.id, false);
+        }
+        Ok(rows)
+    }
+
+    /// The jobs of a playlist, in its order.
+    async fn playlist_jobs(&self, list: MediaPlaylistId) -> Result<Vec<MediaJob>, UiError> {
+        let mut jobs: Vec<MediaJob> = self
+            .engine()?
+            .media_jobs()
+            .await?
+            .into_iter()
+            .filter(|j| j.playlist == Some(list))
+            .collect();
+        jobs.sort_by_key(|j| (j.playlist_index.unwrap_or(u32::MAX), j.id));
+        Ok(jobs)
+    }
+
+    /// Pauses every entry of a playlist that runs or waits ("Pause all" of
+    /// the playlist's view).
+    pub(crate) async fn pause_media_playlist(&self, list: MediaPlaylistId) -> Result<(), UiError> {
+        // The waiting ones first, so none starts as the running one stops.
+        let mut jobs = self.playlist_jobs(list).await?;
+        jobs.sort_by_key(|j| j.state != MediaJobState::Queued);
+        for job in jobs {
+            if matches!(
+                job.state,
+                MediaJobState::Queued | MediaJobState::Downloading | MediaJobState::Processing
+            ) {
+                self.pause_media(job.id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Lets every paused or failed entry of a playlist wait its turn again,
+    /// in the playlist's order ("Resume all" of the playlist's view).
+    pub(crate) async fn resume_media_playlist(&self, list: MediaPlaylistId) -> Result<(), UiError> {
+        let ctx = self.media_ctx()?;
+        for job in self.playlist_jobs(list).await? {
+            if matches!(job.state, MediaJobState::Paused | MediaJobState::Failed) {
+                lock(&ctx.runs).playlists.insert(job.id, list);
+                set_state(&ctx, job.id, MediaJobState::Queued, None).await;
+                launch(&ctx, job.id, false);
+            }
+        }
+        Ok(())
     }
 
     /// Stops a media job and leaves it paused (its partial files stay).
@@ -359,11 +481,18 @@ impl Bridge {
         if job.state == MediaJobState::Completed {
             return Err(UiError::key("error.invalid_state"));
         }
-        if lock(&ctx.runs).running.contains_key(&id) {
-            return Ok(());
+        {
+            let mut runs = lock(&ctx.runs);
+            if runs.running.contains_key(&id) {
+                return Ok(());
+            }
+            if let Some(list) = job.playlist {
+                runs.playlists.insert(id, list);
+            }
         }
         set_state(&ctx, id, MediaJobState::Queued, None).await;
-        launch(&ctx, id);
+        // The user asked for this one: it goes first in line.
+        launch(&ctx, id, true);
         Ok(())
     }
 
@@ -404,6 +533,7 @@ impl Bridge {
         let files = {
             let mut runs = lock(&ctx.runs);
             runs.auth.remove(&id);
+            runs.playlists.remove(&id);
             runs.files.remove(&id).unwrap_or_default()
         };
         if let Some(job) = &job {
@@ -422,8 +552,9 @@ impl Bridge {
     }
 
     /// The rows of the stored media jobs, and those to run again: jobs that
-    /// were running when the app ended (killed, or quit) or waited.
-    pub(crate) async fn media_rows(engine: &Engine) -> (Vec<DownloadRow>, Vec<MediaJobId>) {
+    /// were running when the app ended (killed, or quit) or waited, in the
+    /// order they were added, with their playlists.
+    pub(crate) async fn media_rows(engine: &Engine) -> (Vec<DownloadRow>, Vec<MediaRerun>) {
         let jobs = match engine.media_jobs().await {
             Ok(jobs) => jobs,
             Err(e) => {
@@ -431,6 +562,14 @@ impl Bridge {
                 return (Vec::new(), Vec::new());
             }
         };
+        let playlists: HashMap<MediaPlaylistId, MediaPlaylist> =
+            match engine.media_playlists().await {
+                Ok(list) => list.into_iter().map(|p| (p.id, p)).collect(),
+                Err(e) => {
+                    tracing::warn!(error = %e, "could not read the media playlists");
+                    HashMap::new()
+                }
+            };
         let rerun = jobs
             .iter()
             .filter(|j| {
@@ -439,17 +578,32 @@ impl Bridge {
                     MediaJobState::Queued | MediaJobState::Downloading | MediaJobState::Processing
                 )
             })
-            .map(|j| j.id)
+            .map(|j| MediaRerun {
+                id: j.id,
+                playlist: j.playlist,
+            })
             .collect();
-        (jobs.iter().map(row).collect(), rerun)
+        let rows = jobs
+            .iter()
+            .map(|j| row_in(j, j.playlist.and_then(|p| playlists.get(&p))))
+            .collect();
+        (rows, rerun)
     }
 
     /// Runs the jobs [`Bridge::media_rows`] found unfinished.
-    pub(crate) fn rerun_media(&self, ids: &[MediaJobId]) {
+    pub(crate) fn rerun_media(&self, jobs: &[MediaRerun]) {
         let Ok(ctx) = self.media_ctx() else { return };
-        for &id in ids {
-            tracing::info!(job = id.0, "continuing a media download");
-            launch(&ctx, id);
+        {
+            let mut runs = lock(&ctx.runs);
+            for job in jobs {
+                if let Some(list) = job.playlist {
+                    runs.playlists.insert(job.id, list);
+                }
+            }
+        }
+        for job in jobs {
+            tracing::info!(job = job.id.0, "continuing a media download");
+            launch(&ctx, job.id, false);
         }
     }
 
@@ -533,32 +687,62 @@ async fn set_state(ctx: &Ctx, id: MediaJobId, state: MediaJobState, error: Optio
     ));
 }
 
-/// Starts a job's run, or puts it in line when [`MAX_RUNNING`] run.
-fn launch(ctx: &Ctx, id: MediaJobId) {
-    let stop = {
+/// A job [`Bridge::media_rows`] found unfinished, to run again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MediaRerun {
+    id: MediaJobId,
+    playlist: Option<MediaPlaylistId>,
+}
+
+/// Puts a job in line (at its end, or first with `front`) and starts what
+/// may start.
+fn launch(ctx: &Ctx, id: MediaJobId, front: bool) {
+    {
         let mut runs = lock(&ctx.runs);
         if runs.closing || runs.running.contains_key(&id) {
             return;
         }
-        if runs.running.len() >= MAX_RUNNING {
-            if !runs.waiting.contains(&id) {
-                runs.waiting.push_back(id);
-            }
-            return;
+        if front {
+            runs.waiting.retain(|w| *w != id);
+            runs.waiting.push_front(id);
+        } else if !runs.waiting.contains(&id) {
+            runs.waiting.push_back(id);
         }
-        runs.waiting.retain(|w| *w != id);
-        let (tx, rx) = watch::channel(false);
-        runs.running.insert(
-            id,
-            Running {
-                stop: tx,
-                then: Then::Pause,
-            },
-        );
-        rx
+    }
+    pump(ctx);
+}
+
+/// Starts waiting jobs, first in line first, while fewer than
+/// [`MAX_RUNNING`] run; an entry of a playlist that already runs
+/// [`PLAYLIST_RUNNING`] waits and the next one in line goes instead.
+fn pump(ctx: &Ctx) {
+    let started: Vec<(MediaJobId, watch::Receiver<bool>)> = {
+        let mut runs = lock(&ctx.runs);
+        let mut started = Vec::new();
+        let mut i = 0;
+        while !runs.closing && runs.running.len() < MAX_RUNNING && i < runs.waiting.len() {
+            let id = runs.waiting[i];
+            if runs.blocked(id) {
+                i += 1;
+                continue;
+            }
+            runs.waiting.remove(i);
+            let (tx, rx) = watch::channel(false);
+            runs.running.insert(
+                id,
+                Running {
+                    stop: tx,
+                    then: Then::Pause,
+                },
+            );
+            started.push((id, rx));
+        }
+        started
     };
-    let ctx = ctx.clone();
-    tokio::spawn(async move { run(ctx, id, stop).await });
+    for (id, stop) in started {
+        let ctx = ctx.clone();
+        tokio::spawn(async move { run(ctx, id, stop).await });
+    }
 }
 
 /// One run of a job, from start to its end, then the next waiting job.
@@ -603,17 +787,7 @@ async fn run(ctx: Ctx, id: MediaJobId, stop: watch::Receiver<bool>) {
             }
         }
     }
-    let next = {
-        let mut runs = lock(&ctx.runs);
-        if runs.closing {
-            None
-        } else {
-            runs.waiting.pop_front()
-        }
-    };
-    if let Some(next) = next {
-        launch(&ctx, next);
-    }
+    pump(&ctx);
 }
 
 /// Downloads a job's media with yt-dlp, reporting progress to the hub.

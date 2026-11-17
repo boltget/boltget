@@ -11,7 +11,10 @@
 // tools installed (otherwise "Look for media" walks the install sheet
 // first), `?install=fail` makes their install fail. Queues are kept, not
 // run: nothing starts on its own. Media downloads run a simulated yt-dlp:
-// they download, process for two seconds and complete. Clipboard
+// they download, process for two seconds and complete; a playlist's entries
+// run one at a time. Links with `list` are a 60-video playlist (two
+// private, one deleted; `biglist`: 450, listed 200 at a time), and a
+// `watch` link with `list` offers this video or the whole playlist. Clipboard
 // monitoring is simulated by mock-clipboard.ts (`?clipboard=on` starts with
 // it on).
 import type {
@@ -28,7 +31,10 @@ import type {
   FinishCountdown,
   LimitScope,
   MediaFormat,
+  MediaEntry,
   MediaInstallEvent,
+  MediaPlaylistMode,
+  MediaPlaylistRequest,
   MediaPreset,
   MediaRequest,
   MediaSummary,
@@ -77,7 +83,7 @@ interface Sim {
   /** Target speed while running, before limits. */
   rate: number;
   /** A media download: when its processing ends (while processing). */
-  media?: { until: number | null; name: string };
+  media?: { until: number | null; name: string; playlist?: number };
 }
 
 const VIDEOS = String.raw`C:\Users\you\Videos`;
@@ -188,9 +194,47 @@ function videoPage(url: string, remembered: string | null): MediaSummary {
     ],
     isPlaylist: false,
     entryCount: 0,
+    playlist: null,
+    inPlaylist: false,
     drm: false,
     remembered,
   };
+}
+
+const ENTRY_TITLES = [
+  "Choosing the wood",
+  "Measuring twice",
+  "Rough cuts",
+  "Planing by hand",
+  "Marking the joints",
+  "Cutting tenons",
+  "Chopping mortises",
+  "Dry fit",
+  "Shaping the back",
+  "Glue-up day",
+  "Sanding without tears",
+  "The first coat",
+];
+
+/** The simulated playlist's entries (`count` in all): a few unavailable. */
+function playlistEntries(count: number): MediaEntry[] {
+  return Array.from({ length: count }, (_, i) => {
+    const index = i + 1;
+    const gone =
+      index === 8 || index === 24 ? "[Private video]" : index === 41 ? "[Deleted video]" : null;
+    return {
+      index,
+      id: `vid${String(index).padStart(5, "0")}`,
+      title:
+        gone ??
+        `${ENTRY_TITLES[i % ENTRY_TITLES.length]}${i >= ENTRY_TITLES.length ? ` (part ${Math.floor(i / ENTRY_TITLES.length) + 1})` : ""}`,
+      url: `https://www.youtube.com/watch?v=vid${String(index).padStart(5, "0")}`,
+      duration: gone ? null : 180 + ((index * 137) % 1500),
+      uploader: null,
+      thumbnail: gone ? null : `https://i.example.test/vid${index}.jpg`,
+      available: gone === null,
+    };
+  });
 }
 
 /** A thumbnail for the simulated page, as the backend would send it. */
@@ -296,6 +340,7 @@ export function mockEngineApi(search: string): EngineApi {
     };
   }
   let nextMedia = 1;
+  let nextPlaylist = 1;
   const rememberedPresets = new Map<string, string>();
   const forcedCountdown = params.get("countdown") as FinishAction | null;
   let countdown: FinishCountdown | null = forcedCountdown
@@ -435,6 +480,13 @@ export function mockEngineApi(search: string): EngineApi {
         sim.row.path = `${VIDEOS}${SEP}${media.name}`;
         changed.push({ ...sim.row });
         events.push({ kind: "completed", id: sim.row.id, path: sim.row.path });
+        if (media.playlist !== undefined) {
+          const next = nextOfPlaylist(media.playlist);
+          if (next) {
+            next.row.state = "downloading";
+            changed.push({ ...next.row });
+          }
+        }
       }
       return;
     }
@@ -496,6 +548,30 @@ export function mockEngineApi(search: string): EngineApi {
     if (progress.length || changed.length) {
       emit({ type: "batch", rows: changed, removed: [], progress, events });
     }
+  }
+
+  /**
+   * The entry of a playlist to start next, while none of its entries runs
+   * (a playlist downloads one video at a time).
+   */
+  function nextOfPlaylist(playlist: number): Sim | null {
+    const entries = [...sims.values()].filter((x) => x.media?.playlist === playlist);
+    if (entries.some((x) => x.row.state === "downloading" || x.row.state === "processing")) {
+      return null;
+    }
+    return (
+      entries
+        .filter((x) => x.row.state === "queued")
+        .sort(
+          (a, b) => (a.row.media?.playlist?.index ?? 0) - (b.row.media?.playlist?.index ?? 0),
+        )[0] ?? null
+    );
+  }
+
+  function advancePlaylist(playlist: number | undefined): void {
+    if (playlist === undefined) return;
+    const next = nextOfPlaylist(playlist);
+    if (next) changeRow(next, { state: "downloading", error: null });
   }
 
   function changeRow(sim: Sim, patch: Partial<DownloadRow>): void {
@@ -652,7 +728,12 @@ export function mockEngineApi(search: string): EngineApi {
             : null,
         });
       },
-      async probeMedia(url: string) {
+      async probeMedia(
+        url: string,
+        _page: number | null,
+        playlist: MediaPlaylistMode | null,
+        start: number | null,
+      ) {
         // Simulated answers by link: "tools" (not installed), "nomedia",
         // "drm", "list" (a playlist) and "broken" (yt-dlp fails) pick a
         // case; anything else is a video. Until the tools are installed
@@ -687,21 +768,36 @@ export function mockEngineApi(search: string): EngineApi {
             media: { ...empty, title: "Premium Series S1E1", duration: 2940, drm: true },
           });
         }
-        if (/list/.test(url)) {
+        const watchInList = /watch/.test(url) && /[?&]list=/.test(url);
+        if (/list/.test(url) && (!watchInList || playlist === "entries")) {
+          const all = playlistEntries(/biglist/.test(url) ? 450 : 60);
+          const from = Math.max(1, start ?? 1);
+          const entries = all.slice(from - 1, from - 1 + 200);
           return ok({
             kind: "found" as const,
             media: {
               ...empty,
-              title: "Weekend projects",
+              title: "Weekend projects: building a chair",
               uploader: "Example Channel",
               isPlaylist: true,
-              entryCount: 12,
+              entryCount: all.length,
+              playlist: {
+                id: "PLmock",
+                start: from,
+                entries,
+                more: from - 1 + entries.length < all.length,
+                folder: "Weekend projects_ building a chair",
+              },
             },
           });
         }
         return ok({
           kind: "found" as const,
-          media: { ...page, remembered: rememberedPresets.get(page.site) ?? null },
+          media: {
+            ...page,
+            inPlaylist: watchInList,
+            remembered: rememberedPresets.get(page.site) ?? null,
+          },
         });
       },
       async mediaThumbnail() {
@@ -740,7 +836,7 @@ export function mockEngineApi(search: string): EngineApi {
             queuePosition: Number.MAX_SAFE_INTEGER,
             startAt: null,
             private: false,
-            media: { title: request.title ?? null, preset: request.preset ?? null },
+            media: { title: request.title ?? null, preset: request.preset ?? null, playlist: null },
           },
           segments: [],
           rate: (4 + random() * 10) * MIB,
@@ -757,6 +853,77 @@ export function mockEngineApi(search: string): EngineApi {
         sims.set(id, sim);
         if (request.site && request.preset) rememberedPresets.set(request.site, request.preset);
         return ok({ ...sim.row });
+      },
+      async addMediaPlaylist(request: MediaPlaylistRequest) {
+        await wait(200);
+        if (request.entries.length === 0) return err("error.media.entries");
+        const playlist = nextPlaylist++;
+        const audio = request.preset === "audio";
+        const ext = audio ? "m4a" : request.container === "mp4" ? "mp4" : "webm";
+        const width = Math.max(2, String(request.entryCount).length);
+        const rows: DownloadRow[] = [];
+        for (const [i, entry] of request.entries.entries()) {
+          const id = 2 ** 50 + nextMedia++;
+          const place = String(entry.index).padStart(width, "0");
+          const title = entry.title ?? "video";
+          const sim: Sim = {
+            row: {
+              id,
+              state: i === 0 ? "downloading" : "queued",
+              url: entry.url.split("?")[0] ?? entry.url,
+              fileName: `${place} - ${title}.${ext}`,
+              path: null,
+              total: (20 + ((entry.index * 37) % 90)) * MIB,
+              downloaded: 0,
+              bps: 0,
+              connections: 0,
+              resumable: true,
+              speedLimit: null,
+              error: null,
+              createdAt: Date.now(),
+              completedAt: null,
+              queue: 0,
+              queuePosition: Number.MAX_SAFE_INTEGER,
+              startAt: null,
+              private: false,
+              media: {
+                title: entry.title ?? null,
+                preset: request.preset,
+                playlist: { id: playlist, title: request.title ?? null, index: entry.index },
+              },
+            },
+            segments: [],
+            rate: (6 + random() * 10) * MIB,
+            media: {
+              until: null,
+              name: `${place} - ${title} [vid${entry.index}].${ext}`,
+              playlist,
+            },
+          };
+          sims.set(id, sim);
+          rows.push({ ...sim.row });
+        }
+        return ok(rows);
+      },
+      async pauseMediaPlaylist(playlist: number) {
+        for (const sim of sims.values()) {
+          if (sim.media?.playlist !== playlist) continue;
+          if (["queued", "downloading", "processing"].includes(sim.row.state)) {
+            sim.media.until = null;
+            changeRow(sim, { state: "paused", bps: 0 });
+          }
+        }
+        return ok(null);
+      },
+      async resumeMediaPlaylist(playlist: number) {
+        for (const sim of sims.values()) {
+          if (sim.media?.playlist !== playlist) continue;
+          if (sim.row.state === "paused" || sim.row.state === "failed") {
+            changeRow(sim, { state: "queued", error: null });
+          }
+        }
+        advancePlaylist(playlist);
+        return ok(null);
       },
       async mediaTools() {
         await wait(150);
@@ -844,6 +1011,7 @@ export function mockEngineApi(search: string): EngineApi {
         if (sim.media) sim.media.until = null;
         for (const s of sim.segments) s.connection = null;
         changeRow(sim, { state: "paused", bps: 0, connections: 0 });
+        advancePlaylist(sim.media?.playlist);
         return ok("paused" as const);
       },
       async resumeDownload(id: DownloadId, restart: boolean) {
@@ -851,6 +1019,13 @@ export function mockEngineApi(search: string): EngineApi {
         if (!sim) return err("error.unknown_download");
         if (sim.row.state === "completed") return err("error.invalid_state");
         if (sim.media) {
+          const playlist = sim.media.playlist;
+          if (playlist !== undefined) {
+            // An entry waits while another of its playlist runs.
+            changeRow(sim, { state: "queued", error: null });
+            setTimeout(() => advancePlaylist(playlist), 300);
+            return ok(null);
+          }
           setTimeout(() => changeRow(sim, { state: "downloading", error: null }), 300);
           return ok(null);
         }
@@ -954,8 +1129,10 @@ export function mockEngineApi(search: string): EngineApi {
         emit({ type: "countdown", countdown });
       },
       async removeDownload(id: DownloadId) {
+        const playlist = sims.get(id)?.media?.playlist;
         if (!sims.delete(id)) return err("error.unknown_download");
         emit({ type: "batch", rows: [], removed: [id], progress: [], events: [] });
+        advancePlaylist(playlist);
         return ok(null);
       },
       async refreshLink(id: DownloadId, url: string) {

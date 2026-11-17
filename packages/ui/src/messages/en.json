@@ -599,6 +599,11 @@
   "offer.refused.sheet": "{reason} Add {name} as a new download if you want it.",
   "add.folder.category": "The {category} folder, from Settings.",
   "sidebar.queues": "Queues",
+  "sidebar.playlists": "Playlists",
+  "playlist.untitled": "Playlist",
+  "playlist.pause_all": "Pause all",
+  "playlist.resume_all": "Resume all",
+  "playlist.status": "One video at a time · {done} of {total} done",
   "queue.main": "Main",
   "queue.new": "New queue",
   "queue.settings": "Queue settings",
@@ -688,6 +693,7 @@
   "shortcuts.reorder": "Move the selection up or down in its queue",
   "shortcuts.reorder_ends": "Move the selection to the top or bottom of its queue",
   "empty.view.queue": "Nothing waits in {queue}. Add downloads here, or drag them onto it.",
+  "empty.view.playlist": "This playlist has no downloads left.",
   "announce.moved": {
     "one": "Moved {name} to place {place} of {total}.",
     "other": "Moved {count} downloads to place {place} of {total}."
@@ -706,6 +712,7 @@
   "error.media.in_use": "Video downloads are running. Pause or remove them first.",
   "error.media.expression": "yt-dlp cannot use that format expression.",
   "error.media.subtitles": "Those subtitle languages cannot be used.",
+  "error.media.entries": "Choose at least one video of the playlist.",
   "error.media.page_gone": "Boltget no longer has this page from the browser. Send it again from the browser.",
   "media.title": "Download video or audio",
   "media.close": "Close",
@@ -750,9 +757,35 @@
   "media.destination": "Saves to {folder}",
   "media.download": "Download",
   "media.added": "Downloading {name}",
-  "media.playlist": {
-    "one": "This is a playlist with {count} video. Playlists come in a later version: open the video’s own page to download it.",
-    "other": "This is a playlist with {count} videos. Playlists come in a later version: open one video’s page to download it."
+  "media.scope": "Download",
+  "media.scope.video": "This video",
+  "media.scope.playlist": "The whole playlist",
+  "media.playlist.count": {
+    "one": "{count} video",
+    "other": "{count} videos"
+  },
+  "media.playlist.entries": "Videos in the playlist",
+  "media.playlist.selected": "{count} of {total} selected",
+  "media.playlist.select_all": "Select all",
+  "media.playlist.select_none": "Select none",
+  "media.playlist.unavailable": "Unavailable",
+  "media.playlist.untitled": "Untitled video",
+  "media.playlist.keys": "Space selects a video, Shift selects a range, Ctrl+A selects all.",
+  "media.playlist.load_more": "Load more",
+  "media.playlist.loading_more": "Loading more…",
+  "media.playlist.best": "The best each video has",
+  "media.playlist.up_to": "Up to {height}p",
+  "media.playlist.audio": "The audio alone",
+  "media.playlist.original": "original format",
+  "media.playlist.sizes": "One quality for all: each video gets it, or the nearest it has. Sizes are known once each one starts.",
+  "media.playlist.subtitles.language": "{name}, if available",
+  "media.playlist.download": {
+    "one": "Download {count} video",
+    "other": "Download {count} videos"
+  },
+  "media.playlist.added": {
+    "one": "Downloading {count} video of {name}",
+    "other": "Downloading {count} videos of {name}"
   },
   "media.drm": "DRM-protected: Boltget cannot download this.",
   "media.none": "No video or audio found on this page.",

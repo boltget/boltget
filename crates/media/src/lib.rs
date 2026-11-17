@@ -19,7 +19,8 @@
 //! - [`Prober`] describes a web page with `yt-dlp -J` ([`MediaInfo`]: formats,
 //!   subtitles, thumbnails, playlist entries), passing cookies through a
 //!   temporary file ([`CookieFile`]), and [`presets()`] turns the formats into
-//!   the picker's presets.
+//!   the picker's presets; [`playlist`] lists a playlist's entries and names
+//!   their folder and files.
 //! - [`Downloader`] downloads a page's media with yt-dlp, reading its
 //!   progress from machine-readable `--progress-template` lines
 //!   ([`progress`]), and can be stopped and restarted (yt-dlp continues from
@@ -39,6 +40,7 @@ mod manager;
 mod manifest;
 pub mod pgp;
 mod platform;
+pub mod playlist;
 pub mod presets;
 mod probe;
 pub mod progress;
@@ -59,6 +61,7 @@ pub use info::{Codec, Entry, Format, MediaInfo, SubtitleLanguage, SubtitleTrack,
 pub use manager::{
     DAILY, FAILURE_RECHECK, InstallEvent, Outcome, Release, Sidecars, Status, ToolStatus,
 };
+pub use playlist::{ItemRange, PlaylistEntry};
 pub use presets::{Preset, ResolvedPreset, SizeEstimate, codec_label, presets};
 pub use probe::{MAX_INFO_JSON, PROBE_TIMEOUT, PlaylistMode, ProbeOptions, Prober};
 pub use progress::{MediaProgress, Phase, ProgressTracker};

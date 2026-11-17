@@ -4,6 +4,7 @@ import type {
   DownloadRow,
   DownloadState,
   EngineMessage,
+  MediaPlaylistRequest,
   ProgressItem,
   QueueInfo,
   UiError,
@@ -82,8 +83,30 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
     probeMedia: vi.fn(() => ok({ kind: "notInstalled" as const })),
     mediaThumbnail: vi.fn(() => ok("data:image/png;base64,")),
     addMediaDownload: vi.fn((req) =>
-      ok(row(2 ** 50 + 1, { url: req.url, media: { title: req.title ?? null, preset: null } })),
+      ok(
+        row(2 ** 50 + 1, {
+          url: req.url,
+          media: { title: req.title ?? null, preset: null, playlist: null },
+        }),
+      ),
     ),
+    addMediaPlaylist: vi.fn((req: MediaPlaylistRequest) =>
+      ok(
+        req.entries.map((e, i) =>
+          row(2 ** 50 + 10 + i, {
+            url: e.url,
+            state: i === 0 ? "downloading" : "queued",
+            media: {
+              title: e.title ?? null,
+              preset: req.preset,
+              playlist: { id: 1, title: req.title ?? null, index: e.index },
+            },
+          }),
+        ),
+      ),
+    ),
+    pauseMediaPlaylist: vi.fn(() => ok(null)),
+    resumeMediaPlaylist: vi.fn(() => ok(null)),
     mediaTools: vi.fn(() => ok(TOOLS)),
     mediaInstallPlan: vi.fn(() => ok([])),
     updateMediaTools: vi.fn(() => ok(TOOLS)),
@@ -461,14 +484,38 @@ describe("media downloads", () => {
     expect(result.status).toBe("ok");
     expect(commands.addMediaDownload).toHaveBeenCalledOnce();
     const row = store.get(2 ** 50 + 1);
-    expect(row?.media).toEqual({ title: "A Video", preset: null });
+    expect(row?.media).toEqual({ title: "A Video", preset: null, playlist: null });
     expect(store.ids).toContain(2 ** 50 + 1);
+  });
+
+  it("shows every chosen entry of a playlist at once, in its order", async () => {
+    const { store, commands } = await connected();
+    const result = await store.addMediaPlaylist({
+      url: "https://v.test/playlist?list=PL1",
+      title: "Weekend",
+      preset: "720p",
+      container: "mp4",
+      entryCount: 12,
+      entries: [
+        { index: 2, url: "https://v.test/watch?v=b", title: "B" },
+        { index: 5, url: "https://v.test/watch?v=e", title: "E" },
+      ],
+    });
+    expect(result.status).toBe("ok");
+    expect(commands.addMediaPlaylist).toHaveBeenCalledOnce();
+    const rows = store.downloads.filter((d) => d.media?.playlist?.id === 1);
+    expect(rows.map((d) => d.media?.playlist?.index)).toEqual([2, 5]);
+    expect(rows.map((d) => d.state)).toEqual(["downloading", "queued"]);
+    await store.pausePlaylist(1);
+    expect(commands.pauseMediaPlaylist).toHaveBeenCalledWith(1);
+    await store.resumePlaylist(1);
+    expect(commands.resumeMediaPlaylist).toHaveBeenCalledWith(1);
   });
 
   it("a processing media download takes progress like a running one", async () => {
     const id = 2 ** 50 + 2;
     const { store, emit } = await connected({}, [
-      row(id, { state: "processing", media: { title: "x", preset: "best" } }),
+      row(id, { state: "processing", media: { title: "x", preset: "best", playlist: null } }),
     ]);
     emit(batch({ progress: [progress(id, 600, { connections: 0 })] }));
     expect(store.get(id)?.downloaded).toBe(600);

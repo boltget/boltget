@@ -6,6 +6,10 @@
 
   A queue takes downloads dropped on it (dragged from the list), and its
   context menu starts or stops it, opens its settings or deletes it.
+
+  Playlists (docs/VIDEO.md, "Playlists: as built") follow the queues while
+  they have entries still to download, each with that count; a playlist's
+  context menu pauses or resumes all of its entries.
 -->
 <script lang="ts">
   import IconButton from "@boltget/ui/components/IconButton.svelte";
@@ -15,7 +19,8 @@
   import { downloads } from "./engine";
   import Icon, { type IconName } from "./Icon.svelte";
   import { dragIds, isDownloadDrag } from "./list/drag";
-  import { queueView, viewCounts, type View } from "./list/model";
+  import { playlistOfView, playlistView, queueView, viewCounts, type View } from "./list/model";
+  import { playlistsOf, sidebarPlaylists, type PlaylistInfo } from "./list/playlist";
   import { queueCounts } from "./list/queue";
   import { popupMenu } from "./menu";
 
@@ -49,6 +54,30 @@
 
   // Counts read only each download's state and queue.
   const perQueue = $derived(queueCounts(downloads.downloads.filter((d) => !app.hidden.has(d.id))));
+  // Playlists read only each row's state and playlist.
+  const playlists = $derived(
+    sidebarPlaylists(
+      playlistsOf(downloads.downloads.filter((d) => !app.hidden.has(d.id))),
+      playlistOfView(app.view),
+    ),
+  );
+
+  function playlistMenu(p: PlaylistInfo, event: MouseEvent) {
+    event.preventDefault();
+    void popupMenu([
+      {
+        text: t("playlist.pause_all"),
+        enabled: p.active > 0,
+        run: () => void downloads.pausePlaylist(p.id),
+      },
+      {
+        text: t("playlist.resume_all"),
+        enabled: p.stopped > 0,
+        run: () => void downloads.resumePlaylist(p.id),
+      },
+    ]);
+  }
+
   /** The queue a drag is over, for its highlight. */
   let dropping = $state<number | null>(null);
 
@@ -170,6 +199,33 @@
       </li>
     {/each}
   </ul>
+
+  {#if playlists.length}
+    <h2 class="heading" id="sidebar-playlists">{t("sidebar.playlists")}</h2>
+    <ul class="group" aria-labelledby="sidebar-playlists">
+      {#each playlists as p (p.id)}
+        {@const name = p.title || t("playlist.untitled")}
+        {@const count = p.total - p.done}
+        {@const view = playlistView(p.id)}
+        <li>
+          <button
+            class="item"
+            type="button"
+            aria-current={app.view === view ? "page" : undefined}
+            title={name}
+            onclick={() => (app.view = view)}
+            oncontextmenu={(event) => playlistMenu(p, event)}
+          >
+            <Icon name="video" />
+            <span class="label">{name}</span>
+            <span class="count" aria-label={t("view.count", { count })}
+              >{numbers.format(count)}</span
+            >
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
 
   <ul class="group footer">
     {@render item({ id: "settings", label: "sidebar.settings", icon: "settings" })}

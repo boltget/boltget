@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use boltget_engine::{Cookie, CookieJar};
 use boltget_media::{
-    ContainerPreference, Error, MediaInfo, PlaylistMode, Preset, ProbeOptions, Prober,
-    ResolvedPreset, SizeEstimate, presets,
+    ContainerPreference, Error, ItemRange, MediaInfo, PlaylistMode, Preset, ProbeOptions, Prober,
+    ResolvedPreset, SizeEstimate, playlist, presets,
 };
 
 fn info(name: &str) -> MediaInfo {
@@ -327,6 +327,72 @@ fn flat_playlist() {
     );
     assert_eq!(presets(&page, ContainerPreference::Mp4).len(), 0);
     assert!(!page.drm_only());
+}
+
+#[test]
+fn flat_playlist_entries_for_the_picker() {
+    let list = playlist::entries(&info("flat_playlist.json"), 1);
+    let index: Vec<u32> = list.iter().map(|e| e.index).collect();
+    assert_eq!(index, [1, 2, 3]);
+    let available: Vec<bool> = list.iter().map(|e| e.available).collect();
+    assert_eq!(
+        available,
+        [true, true, false],
+        "the private video is shown disabled"
+    );
+}
+
+/// A watch page that belongs to a playlist (`watch?v=…&list=…`): "this
+/// video" (`--no-playlist`) is the video, "the whole playlist"
+/// (`--yes-playlist`) lists the playlist's entries, a page at a time.
+#[tokio::test]
+async fn a_watch_page_in_a_playlist_is_the_video_or_the_playlist() {
+    let (_tmp, dir, prober) = fake();
+    let fixtures = support::fixture("info");
+    std::fs::copy(
+        fixtures.join("youtube_like.json"),
+        dir.join("fake-info.json"),
+    )
+    .unwrap();
+    std::fs::copy(
+        fixtures.join("watch_in_playlist.json"),
+        dir.join("fake-info-playlist.json"),
+    )
+    .unwrap();
+    let url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLbpi6ZahtOH6Blw3RGYpWkSByi_T7Rygb";
+
+    let video = prober.probe(url, &ProbeOptions::default()).await.unwrap();
+    assert!(!video.is_playlist());
+    let args = std::fs::read_to_string(dir.join("fake-args.txt")).unwrap();
+    assert!(args.lines().any(|a| a == "--no-playlist"), "{args}");
+    assert!(!args.contains("--playlist-items"), "{args}");
+
+    let opts = ProbeOptions {
+        playlist: PlaylistMode::Entries,
+        items: Some(ItemRange::page(1)),
+        ..ProbeOptions::default()
+    };
+    let list = prober.probe(url, &opts).await.unwrap();
+    assert!(list.is_playlist());
+    assert_eq!(list.title.as_deref(), Some("Making a chair: the series"));
+    assert_eq!(list.publisher(), Some("Workshop Notes"));
+    let args = std::fs::read_to_string(dir.join("fake-args.txt")).unwrap();
+    let args: Vec<&str> = args.lines().collect();
+    assert!(args.contains(&"--yes-playlist") && args.contains(&"--flat-playlist"));
+    let i = args.iter().position(|a| *a == "--playlist-items").unwrap();
+    assert_eq!(args[i + 1], "1:200");
+    let entries = playlist::entries(&list, 1);
+    assert_eq!(entries.len(), 4);
+    assert_eq!(
+        entries[0].thumbnail.as_deref(),
+        Some("https://i.ytimg.com/vi/bbbbbbbbbb1/hqdefault.jpg?sqp=b")
+    );
+    assert!(!entries[2].available);
+    assert_eq!(entries[3].duration, Some(1306.0));
+    assert_eq!(
+        playlist::folder_name(list.title.as_deref(), list.id.as_deref()),
+        "Making a chair_ the series"
+    );
 }
 
 #[test]

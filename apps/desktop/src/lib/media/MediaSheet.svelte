@@ -7,6 +7,11 @@
   every format with a free format expression. One decision: Enter
   downloads the chosen preset into the Video folder.
 
+  A playlist (VIDEO.md, "Playlists: as built") lists its entries to choose
+  from, with one quality for all; a video's page that names a list offers
+  "This video" or "The whole playlist". Each chosen entry becomes a download
+  of its own, and the playlist runs them one at a time.
+
   When yt-dlp or FFmpeg is missing it first asks to install them (VIDEO.md,
   "First-use install flow"), with their sizes from the release metadata and
   the one line about rights, shows the install's progress, then looks at
@@ -33,7 +38,9 @@
   import type {
     BrowserMediaPage,
     MediaContainer,
+    MediaEntry,
     MediaHintInfo,
+    MediaPlaylistMode,
     MediaInstallEvent,
     MediaSummary,
     MediaTool,
@@ -41,10 +48,21 @@
     UiError,
   } from "../bindings";
   import { downloads, errorText } from "../engine";
-  import { splitFolder } from "../format";
+  import { childFolder, splitFolder } from "../format";
   import { trapTab } from "../focus";
   import Icon from "../Icon.svelte";
+  import { playlistView } from "../list/model";
   import { folderFor } from "../settings/model";
+  import PlaylistEntries from "./PlaylistEntries.svelte";
+  import {
+    PLAYLIST_PRESETS,
+    mergeEntries,
+    playlistPresetDetails,
+    playlistRequest,
+    playlistSubtitleOptions,
+    selectAll,
+    type PlaylistPreset,
+  } from "./playlist";
   import {
     expressionFor,
     expressionIsAudio,
@@ -100,6 +118,19 @@
   let submitting = $state(false);
   let submitError = $state<string | null>(null);
 
+  // A playlist.
+  /** The video an address names, or the playlist it belongs to. */
+  let scope = $state<MediaPlaylistMode>("single");
+  /** The address names a list: offer the choice. */
+  let offerScope = $state(false);
+  let entries = $state.raw<MediaEntry[]>([]);
+  let selected = $state.raw<ReadonlySet<number>>(new Set());
+  let more = $state(false);
+  let loadingMore = $state(false);
+  let listPreset = $state<PlaylistPreset>("best");
+  let listSubtitle = $state("none");
+  const listSubtitles = playlistSubtitleOptions();
+
   const reduced =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -123,9 +154,14 @@
     if (!media) return [];
     return [
       ...(media.uploader ? [media.uploader] : []),
+      ...(media.isPlaylist ? [t("media.playlist.count", { count: media.entryCount })] : []),
       ...(media.duration !== null ? [mediaLength(media.duration)] : []),
     ];
   });
+  const isList = $derived(notice === "playlist" && !!media?.playlist);
+  const chosenCount = $derived(
+    entries.filter((e) => selected.has(e.index) && e.available && e.url).length,
+  );
   const hints = $derived(
     browserPage && (phase === "failed" || phase === "picker")
       ? offeredHints(browserPage.hints, phase === "failed" ? "failed" : notice, url)
@@ -133,7 +169,9 @@
   );
   let hintBusy = $state(false);
   const canDownload = $derived(
-    phase === "picker" && notice === null && (typed || chosen !== null) && !submitting,
+    phase === "picker" &&
+      !submitting &&
+      (isList ? chosenCount > 0 : notice === null && (typed || chosen !== null)),
   );
 
   // Opening and closing -------------------------------------------------------
@@ -172,6 +210,14 @@
     expressionError = null;
     submitting = false;
     submitError = null;
+    scope = "single";
+    offerScope = false;
+    entries = [];
+    selected = new Set();
+    more = false;
+    loadingMore = false;
+    listPreset = "best";
+    listSubtitle = "none";
     void downloads.addDefaults().then((r) => {
       if (r.status === "ok") downloadsFolder = r.data.downloadsFolder;
     });
@@ -210,8 +256,9 @@
     const page = url;
     phase = "looking";
     failure = null;
-    const result = await downloads.probeMedia(page, browserPage?.page ?? null);
-    if (page !== url || !open) return;
+    const wanted = scope;
+    const result = await downloads.probeMedia(page, browserPage?.page ?? null, wanted, null);
+    if (page !== url || !open || wanted !== scope) return;
     if (result.status === "error") {
       failure = result.error;
       phase = "failed";
@@ -225,6 +272,12 @@
     const found = result.data.media;
     media = found;
     preset = initialPreset(presetsFor(found, container), null, found.remembered);
+    if (found.inPlaylist) offerScope = true;
+    entries = found.playlist?.entries ?? [];
+    selected = selectAll(entries);
+    more = found.playlist?.more ?? false;
+    const remembered = PLAYLIST_PRESETS.find((p) => p === found.remembered);
+    listPreset = remembered ?? "best";
     phase = "picker";
     focusFirst();
     if (found.thumbnail) {
@@ -237,10 +290,42 @@
   function focusFirst() {
     queueMicrotask(() => {
       const first =
+        dialog?.querySelector<HTMLElement>(".entries [role=listbox]") ??
         dialog?.querySelector<HTMLInputElement>(".preset input:checked") ??
         dialog?.querySelector<HTMLElement>(".foot button");
       first?.focus();
     });
+  }
+
+  // Playlists -----------------------------------------------------------------
+
+  /** "This video" or "The whole playlist": looks at the page again. */
+  function setScope(next: MediaPlaylistMode) {
+    if (next === scope) return;
+    scope = next;
+    media = null;
+    thumbnail = null;
+    void look();
+  }
+
+  /** The next page of entries; new ones are chosen when all were. */
+  async function loadMore() {
+    if (!media?.playlist || loadingMore) return;
+    const page = url;
+    const all = selectAll(entries).size === selected.size;
+    const start = Math.max(0, ...entries.map((e) => e.index)) + 1;
+    loadingMore = true;
+    const result = await downloads.probeMedia(page, browserPage?.page ?? null, scope, start);
+    loadingMore = false;
+    if (page !== url || !open || result.status === "error" || result.data.kind !== "found") {
+      if (result.status === "error") submitError = errorText(result.error);
+      return;
+    }
+    const next = result.data.media.playlist;
+    if (!next) return;
+    entries = mergeEntries(entries, next.entries);
+    more = next.more && next.entries.length > 0;
+    if (all) selected = selectAll(entries);
   }
 
   // Installing ----------------------------------------------------------------
@@ -319,9 +404,45 @@
     expressionError = null;
   }
 
+  async function submitPlaylist() {
+    if (!media) return;
+    const list = media;
+    submitting = true;
+    submitError = null;
+    const result = await downloads.addMediaPlaylist(
+      playlistRequest(list, entries, selected, {
+        preset: listPreset,
+        container,
+        subtitle: listSubtitle === "none" ? null : listSubtitle,
+        embed: subtitleMode === "embed",
+        page: browserPage?.page ?? null,
+      }),
+    );
+    submitting = false;
+    if (result.status === "error") {
+      submitError = errorText(result.error);
+      return;
+    }
+    const rows = result.data;
+    const playlist = rows[0]?.media?.playlist;
+    if (playlist) app.view = playlistView(playlist.id);
+    app.select(rows.slice(0, 1).map((r) => r.id));
+    app.announce(
+      t("media.playlist.added", {
+        count: rows.length,
+        name: list.title ?? t("playlist.untitled"),
+      }),
+    );
+    app.closeMedia();
+  }
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (!media || !canDownload) return;
+    if (isList) {
+      await submitPlaylist();
+      return;
+    }
     let request;
     if (typed) {
       const problem = expressionProblem(expression);
@@ -390,6 +511,39 @@
       </ul>
     </section>
   {/if}
+{/snippet}
+
+{#snippet mp4Option()}
+  <div class="option">
+    <div class="option-text">
+      <span class="label" id="media-mp4">{t("media.prefer_mp4")}</span>
+      <span class="hint" id="media-mp4-hint">{t("media.prefer_mp4.description")}</span>
+    </div>
+    <Switch
+      checked={container === "mp4"}
+      aria-labelledby="media-mp4"
+      aria-describedby="media-mp4-hint"
+      onchange={(e) => setContainer(e.currentTarget.checked)}
+    />
+  </div>
+{/snippet}
+
+{#snippet scopeChoice()}
+  <fieldset class="scope">
+    <legend class="visually-hidden">{t("media.scope")}</legend>
+    {#each [["single", "media.scope.video"], ["entries", "media.scope.playlist"]] as const as [value, key] (value)}
+      <label class="scope-option" class:checked={scope === value}>
+        <input
+          type="radio"
+          name="media-scope"
+          {value}
+          checked={scope === value}
+          onchange={() => setScope(value)}
+        />
+        <span>{t(key)}</span>
+      </label>
+    {/each}
+  </fieldset>
 {/snippet}
 
 {#snippet dots(parts: string[])}
@@ -531,11 +685,70 @@
             </div>
           </div>
 
+          {#if offerScope}
+            {@render scopeChoice()}
+          {/if}
+
           {#if notice === "playlist"}
-            <p class="line info">
-              <Icon name="info" size={14} />
-              <span>{t("media.playlist", { count: media.entryCount })}</span>
-            </p>
+            <PlaylistEntries
+              {entries}
+              {selected}
+              onselect={(next) => (selected = next)}
+              {more}
+              {loadingMore}
+              onmore={() => void loadMore()}
+            />
+
+            <div class="option">
+              <div class="option-text">
+                <span class="label" id="media-list-quality">{t("media.presets")}</span>
+                <span class="hint" id="media-list-quality-hint"
+                  >{@render dots(playlistPresetDetails(listPreset, container))}</span
+                >
+              </div>
+              <Select
+                bind:value={listPreset}
+                aria-labelledby="media-list-quality"
+                aria-describedby="media-list-quality-hint media-list-sizes"
+                options={PLAYLIST_PRESETS.map((p) => ({ value: p, label: presetName(p) }))}
+              />
+            </div>
+            <p class="hint" id="media-list-sizes">{t("media.playlist.sizes")}</p>
+
+            {@render mp4Option()}
+
+            <div class="option">
+              <span class="label" id="media-list-subs">{t("media.subtitles")}</span>
+              <div class="subs">
+                <Select
+                  bind:value={listSubtitle}
+                  aria-labelledby="media-list-subs"
+                  options={[{ value: "none", label: t("media.subtitles.none") }, ...listSubtitles]}
+                />
+                {#if listSubtitle !== "none" && listPreset !== "audio"}
+                  <Select
+                    bind:value={subtitleMode}
+                    aria-label={t("media.subtitles.how")}
+                    options={[
+                      { value: "embed", label: t("media.subtitles.embed") },
+                      { value: "file", label: t("media.subtitles.file") },
+                    ]}
+                  />
+                {/if}
+              </div>
+            </div>
+
+            {#if folder && media.playlist}
+              {@const parts = splitFolder(folder)}
+              <p class="line muted" title={childFolder(folder, media.playlist.folder)}>
+                <Icon name="folder" size={14} />
+                <span class="folder"
+                  >{t("media.destination", {
+                    folder: childFolder(parts.leaf || folder, media.playlist.folder),
+                  })}</span
+                >
+              </p>
+            {/if}
           {:else if notice === "drm"}
             <p class="line warning">
               <Icon name="lock" size={14} /><span>{t("media.drm")}</span>
@@ -567,18 +780,7 @@
               {/each}
             </fieldset>
 
-            <div class="option">
-              <div class="option-text">
-                <span class="label" id="media-mp4">{t("media.prefer_mp4")}</span>
-                <span class="hint" id="media-mp4-hint">{t("media.prefer_mp4.description")}</span>
-              </div>
-              <Switch
-                checked={container === "mp4"}
-                aria-labelledby="media-mp4"
-                aria-describedby="media-mp4-hint"
-                onchange={(e) => setContainer(e.currentTarget.checked)}
-              />
-            </div>
+            {@render mp4Option()}
 
             {#if subtitles.length}
               <div class="option">
@@ -734,7 +936,9 @@
         {:else}
           <Button onclick={() => cancel()}>{t("action.cancel")}</Button>
           <Button variant="primary" type="submit" disabled={!canDownload}
-            >{t("media.download")}</Button
+            >{isList
+              ? t("media.playlist.download", { count: chosenCount })
+              : t("media.download")}</Button
           >
         {/if}
       </footer>
@@ -934,6 +1138,50 @@
     font-size: var(--text-12);
     overflow-wrap: anywhere;
     user-select: text;
+  }
+
+  /* This video or the whole playlist: a segmented choice. */
+  .scope {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 2px;
+    margin: 0;
+    padding: 2px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-control);
+    background: var(--color-content);
+  }
+  .scope-option {
+    position: relative;
+    padding: 4px var(--space-3);
+    border-radius: calc(var(--radius-control) - 2px);
+    color: var(--color-text-muted);
+    font-size: var(--text-12);
+    font-weight: var(--weight-medium);
+  }
+  .scope-option:hover {
+    background: var(--color-overlay-hover);
+    color: var(--color-text);
+  }
+  .scope-option.checked {
+    background: var(--color-raised);
+    box-shadow: 0 0 0 1px var(--color-hairline-strong);
+    color: var(--color-text);
+  }
+  .scope-option input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+  }
+  .scope-option:has(input:focus-visible) {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  @media (forced-colors: active) {
+    .scope-option.checked {
+      outline: 1px solid Highlight;
+    }
   }
 
   /* Presets: one obvious choice, a short list. */

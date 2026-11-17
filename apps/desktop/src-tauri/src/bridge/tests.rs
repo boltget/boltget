@@ -1061,3 +1061,222 @@ https://v.test/watch?v=v1"
     );
     bridge.shutdown().await;
 }
+
+/// Two fake tools (yt-dlp and FFmpeg) in a folder, a bridge whose Settings
+/// name them, and its stream; each run reports `lines` progress lines 50 ms
+/// apart, so runs that could overlap do.
+async fn media_bridge(
+    fake: &Path,
+    state: &Path,
+    tools: &Path,
+    lines: usize,
+) -> (Bridge, mpsc::UnboundedReceiver<EngineMessage>) {
+    let ext = if cfg!(windows) { ".exe" } else { "" };
+    let yt_dlp = tools.join(format!("yt-dlp{ext}"));
+    let ffmpeg = tools.join(format!("ffmpeg{ext}"));
+    std::fs::copy(fake, &yt_dlp).unwrap();
+    std::fs::copy(fake, &ffmpeg).unwrap();
+    let line = "[boltget] download {\"status\": \"downloading\", \"downloaded_bytes\": 50, \"total_bytes\": 100, \"filename\": \"f.mp4\"}\n";
+    std::fs::write(tools.join("fake-progress.txt"), line.repeat(lines)).unwrap();
+    std::fs::write(tools.join("fake-slow"), "").unwrap();
+    let bridge = bridge();
+    bridge.set_tools_dir(state.join("tools"));
+    bridge
+        .open(state.into(), cfg(), Duration::from_millis(50))
+        .await;
+    let patch = crate::settings::SettingsPatch {
+        video: Some(crate::settings::VideoPatch {
+            yt_dlp_path: Some(yt_dlp.to_string_lossy().into_owned()),
+            ffmpeg_path: Some(ffmpeg.to_string_lossy().into_owned()),
+            ..crate::settings::VideoPatch::default()
+        }),
+        ..crate::settings::SettingsPatch::default()
+    };
+    bridge.update_settings(&patch).await.unwrap();
+    let mut rx = subscribe(&bridge);
+    let _snapshot = next(&mut rx).await;
+    (bridge, rx)
+}
+
+fn entry_request(index: u32) -> crate::media::MediaEntryRequest {
+    crate::media::MediaEntryRequest {
+        index,
+        url: format!("https://v.test/watch?v=e{index}"),
+        title: Some(format!("Entry {index}")),
+    }
+}
+
+/// How many fake downloads ran when each one started.
+fn overlaps(tools: &Path) -> Vec<usize> {
+    std::fs::read_to_string(tools.join("fake-overlap.txt"))
+        .unwrap()
+        .lines()
+        .map(|l| l.parse().unwrap())
+        .collect()
+}
+
+/// A playlist (docs/VIDEO.md, "Playlists: as built"): each chosen entry is a
+/// job and a row of its own, numbered into the playlist's folder; the
+/// entries run one at a time while a single page's job may use the other
+/// slot; Pause all and Resume all act on the playlist; the playlist goes
+/// with its last entry.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_playlists_entries_run_one_at_a_time_as_rows() {
+    let Some(fake) = fake_sidecar() else {
+        eprintln!("skipped: boltget-fake-sidecar is not built (cargo test --workspace builds it)");
+        return;
+    };
+    let state = tempfile::tempdir().unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let videos = state.path().join("Videos");
+    let (bridge, mut rx) = media_bridge(&fake, state.path(), tools.path(), 6).await;
+
+    // Three chosen entries of a twelve-entry playlist.
+    let request = crate::media::MediaPlaylistRequest {
+        url: "https://v.test/playlist?list=PL1".into(),
+        title: Some("Weekend: projects".into()),
+        uploader: None,
+        id: Some("PL1".into()),
+        preset: "720p".into(),
+        container: crate::settings::MediaContainer::Mp4,
+        subtitles: None,
+        entry_count: 12,
+        entries: vec![entry_request(1), entry_request(2), entry_request(4)],
+        page: None,
+    };
+    let (list, jobs) = crate::media::playlist_jobs(&request, &videos).unwrap();
+    let folder = list.dest_dir.clone();
+    assert_eq!(folder, videos.join("Weekend_ projects"));
+    let rows = bridge.add_media_playlist(list, jobs, None).await.unwrap();
+    assert_eq!(rows.len(), 3);
+    let first = rows[0]
+        .media
+        .as_ref()
+        .and_then(|m| m.playlist.clone())
+        .unwrap();
+    assert_eq!(first.title.as_deref(), Some("Weekend: projects"));
+    assert_eq!(first.index, Some(1));
+    assert_eq!(rows[2].file_name.as_deref(), Some("04 - Entry 4.mp4"));
+    // A single page at the same time takes the other slot.
+    let single = bridge
+        .add_media(
+            boltget_engine::NewMediaJob::new("https://v.test/watch?v=s", "b", &videos),
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+
+    let mut ids: Vec<DownloadId> = rows.iter().map(|r| r.id).collect();
+    ids.push(single);
+    let mut done = std::collections::HashSet::new();
+    until(&mut rx, |m| {
+        for id in &ids {
+            if media_completed(m, *id).is_some() {
+                done.insert(*id);
+            }
+        }
+        done.len() == ids.len()
+    })
+    .await;
+    for name in [
+        "01 - fake video [v1].mp4",
+        "02 - fake video [v1].mp4",
+        "04 - fake video [v1].mp4",
+    ] {
+        assert!(folder.join(name).is_file(), "{name} missing");
+    }
+    // Never more than two at once; only the single page ran beside an entry.
+    let counts = overlaps(tools.path());
+    assert_eq!(counts.len(), 4, "{counts:?}");
+    assert!(counts.iter().all(|&n| n <= 2), "{counts:?}");
+    assert!(
+        counts.iter().filter(|&&n| n == 2).count() <= 1,
+        "{counts:?}"
+    );
+
+    // Pause all and Resume all act on the playlist: all are done, so
+    // nothing changes and nothing fails.
+    let playlist = boltget_engine::MediaPlaylistId(first.id);
+    bridge.pause_media_playlist(playlist).await.unwrap();
+    bridge.resume_media_playlist(playlist).await.unwrap();
+    // Removing every entry removes the playlist too.
+    for row in &rows {
+        let job = super::media::job_id(row.id).unwrap();
+        bridge.remove_media(job, false).await.unwrap();
+    }
+    assert_eq!(
+        bridge
+            .engine()
+            .unwrap()
+            .media_playlists()
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
+    bridge.shutdown().await;
+}
+
+/// The entries of one playlist wait for each other: with three entries and
+/// nothing else, no two ever run together; paused, they wait; resumed, they
+/// go on in order.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_playlist_alone_runs_one_entry_at_a_time() {
+    let Some(fake) = fake_sidecar() else {
+        eprintln!("skipped: boltget-fake-sidecar is not built (cargo test --workspace builds it)");
+        return;
+    };
+    let state = tempfile::tempdir().unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let videos = state.path().join("Videos");
+    let (bridge, mut rx) = media_bridge(&fake, state.path(), tools.path(), 4).await;
+    let request = crate::media::MediaPlaylistRequest {
+        url: "https://v.test/playlist?list=PL2".into(),
+        title: None,
+        uploader: None,
+        id: Some("PL2".into()),
+        preset: "audio".into(),
+        container: crate::settings::MediaContainer::Original,
+        subtitles: None,
+        entry_count: 3,
+        entries: (1..=3).map(entry_request).collect(),
+        page: None,
+    };
+    let (list, jobs) = crate::media::playlist_jobs(&request, &videos).unwrap();
+    assert_eq!(list.dest_dir, videos.join("PL2"), "named by its id");
+    let rows = bridge.add_media_playlist(list, jobs, None).await.unwrap();
+    assert!(rows.iter().all(|r| r.state == DownloadState::Queued));
+    let playlist = rows[0]
+        .media
+        .as_ref()
+        .and_then(|m| m.playlist.as_ref())
+        .map(|p| boltget_engine::MediaPlaylistId(p.id))
+        .unwrap();
+    // Paused at once: the first stops (or never starts), the rest wait.
+    bridge.pause_media_playlist(playlist).await.unwrap();
+    let mut paused = std::collections::HashSet::new();
+    until(&mut rx, |m| {
+        for r in &rows {
+            if state_of(m, r.id) == Some(DownloadState::Paused) {
+                paused.insert(r.id);
+            }
+        }
+        paused.len() == rows.len()
+    })
+    .await;
+    let _ = std::fs::remove_file(tools.path().join("fake-overlap.txt"));
+    bridge.resume_media_playlist(playlist).await.unwrap();
+    let mut done = std::collections::HashSet::new();
+    until(&mut rx, |m| {
+        for r in &rows {
+            if media_completed(m, r.id).is_some() {
+                done.insert(r.id);
+            }
+        }
+        done.len() == rows.len()
+    })
+    .await;
+    assert_eq!(overlaps(tools.path()), [1, 1, 1]);
+    bridge.shutdown().await;
+}

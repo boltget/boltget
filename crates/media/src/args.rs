@@ -356,6 +356,9 @@ const SUBTITLE_FORMATS: &[&str] = &["srt", "vtt", "ass", "lrc", "none", "best"];
 /// - `--add-headers`: `User-Agent:` or `Referer:` with a value, nothing else
 ///   (the browser's two; no cookies or credentials this way).
 /// - `--referer`: an `http` or `https` URL.
+/// - `-I`/`--playlist-items`: places and ranges of places only: digits,
+///   `:` and `-` between them, `,` between items (`1:200`, `1-5,8`); no
+///   negative places, nothing else.
 fn yt_dlp_value(option: &str, value: &str) -> Result<()> {
     let program = Program::YtDlp.name();
     let bad = |what: &str| Err(refused(program, format!("{option} {value:?}: {what}")));
@@ -412,6 +415,20 @@ fn yt_dlp_value(option: &str, value: &str) -> Result<()> {
                 .is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.has_host());
             if !ok || value.chars().any(char::is_control) {
                 return bad("not an http(s) URL");
+            }
+        }
+        "-I" | "--playlist-items" => {
+            let ok = !value.is_empty()
+                && value.len() <= 256
+                && value.split(',').all(|item| {
+                    item.split([':', '-']).enumerate().all(|(i, n)| {
+                        // `a:b`, `a-b`, `a:`; the first place must be there.
+                        (n.is_empty() && i > 0)
+                            || (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                    }) && item.bytes().filter(|b| matches!(b, b':' | b'-')).count() <= 2
+                });
+            if !ok {
+                return bad("places and ranges of places of the playlist");
             }
         }
         "--merge-output-format" if !MERGE_FORMATS.contains(&value) => {
@@ -609,6 +626,14 @@ mod tests {
     }
 
     #[test]
+    fn playlist_choices_are_flags() {
+        // "This video" or "the whole playlist" of a watch page in a list.
+        for flag in ["--no-playlist", "--yes-playlist", "--flat-playlist"] {
+            check_yt_dlp(&v(&[flag])).unwrap();
+        }
+    }
+
+    #[test]
     fn values_that_name_places_proxies_and_languages_are_checked() {
         let folder = if cfg!(windows) {
             r"C:\Users\you\Videos"
@@ -632,6 +657,9 @@ mod tests {
             ),
             ("--add-headers", "referer: https://v.test/watch"),
             ("--referer", "https://v.test/watch?v=1"),
+            ("--playlist-items", "1:200"),
+            ("-I", "201:400"),
+            ("-I", "1-5,8,10:"),
         ] {
             check_yt_dlp(&v(&[opt, good])).unwrap_or_else(|e| panic!("{opt} {good}: {e}"));
         }

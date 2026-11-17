@@ -128,6 +128,11 @@
       case "processing":
         return join(d.total ? formatBytes(d.total) : "", t("row.processing"));
       case "queued":
+        if (d.media?.playlist)
+          return join(
+            t("row.waiting_in", { queue: d.media.playlist.title || t("playlist.untitled") }),
+            hostOf(d.url),
+          );
         if (d.media) return join(t("row.media_waiting"), hostOf(d.url));
         return d.startAt !== null
           ? join(t("row.starts", { time: formatUpcoming(d.startAt, clock.now) }), hostOf(d.url))

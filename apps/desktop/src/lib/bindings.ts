@@ -48,9 +48,13 @@ export const commands = {
 	 *  version), then probes through the app's proxy. yt-dlp's own failure is
 	 *  `error.media.extraction`, with its message. With `page`, a page the
 	 *  browser extension sent (or one of its hints), yt-dlp gets the browser's
-	 *  cookies, `User-Agent` and `Referer`.
+	 *  cookies, `User-Agent` and `Referer`. `playlist` chooses between the
+	 *  video an address names and the playlist it belongs to (`single` when
+	 *  absent); a playlist's entries are listed a page at a time
+	 *  (`boltget_media::playlist::PAGE_SIZE`) from place `start` (1 when
+	 *  absent).
 	 */
-	probeMedia: (url: string, page: number | null) => typedError<MediaProbe, UiError>(__TAURI_INVOKE("probe_media", { url, page })),
+	probeMedia: (url: string, page: number | null, playlist: MediaPlaylistMode | null, start: number | null) => typedError<MediaProbe, UiError>(__TAURI_INVOKE("probe_media", { url, page, playlist, start })),
 	/**
 	 *  A page's thumbnail as a `data:` URL (JPEG, PNG or WebP, at most 2 MiB),
 	 *  fetched through the app's proxy.
@@ -61,6 +65,17 @@ export const commands = {
 	 *  a row of the list. Returns the row.
 	 */
 	addMediaDownload: (request: MediaRequest) => typedError<DownloadRow, UiError>(__TAURI_INVOKE("add_media_download", { request })),
+	/**
+	 *  Starts downloading a playlist's chosen entries into a folder named
+	 *  after it in the Video category's folder: each entry its own media job
+	 *  and row, the same preset for all, run one at a time. Returns the rows,
+	 *  in the playlist's order.
+	 */
+	addMediaPlaylist: (request: MediaPlaylistRequest) => typedError<DownloadRow[], UiError>(__TAURI_INVOKE("add_media_playlist", { request })),
+	/**  Pauses every entry of a playlist that runs or waits. */
+	pauseMediaPlaylist: (playlist: number) => typedError<null, UiError>(__TAURI_INVOKE("pause_media_playlist", { playlist })),
+	/**  Lets every paused or failed entry of a playlist wait its turn again. */
+	resumeMediaPlaylist: (playlist: number) => typedError<null, UiError>(__TAURI_INVOKE("resume_media_playlist", { playlist })),
 	/**  The video tools: what is installed, what the user chose, the channel. */
 	mediaTools: () => typedError<MediaToolsInfo, UiError>(__TAURI_INVOKE("media_tools")),
 	/**
@@ -693,6 +708,35 @@ export type MediaChannel = "stable" | "nightly";
  */
 export type MediaContainer = "mp4" | "original";
 
+/**  One entry of a playlist. */
+export type MediaEntry = {
+	/**  Its place in the playlist, from 1. */
+	index: number,
+	id: string | null,
+	title: string | null,
+	/**  Its page, which its download fetches. */
+	url: string | null,
+	/**  Seconds. */
+	duration: number | null,
+	uploader: string | null,
+	/**
+	 *  A thumbnail's address, when the flat entry carries one;
+	 *  `media_thumbnail` fetches it.
+	 */
+	thumbnail: string | null,
+	/**  It can be downloaded (not private or deleted, and it has a page). */
+	available: boolean,
+};
+
+/**  An entry of a playlist to download. */
+export type MediaEntryRequest = {
+	/**  Its place in the playlist, from 1. */
+	index: number,
+	/**  Its page. */
+	url: string,
+	title?: string | null,
+};
+
 /**  One format of the page, for the advanced table. */
 export type MediaFormat = {
 	/**  yt-dlp's format id. */
@@ -739,6 +783,73 @@ export type MediaInstallEvent = {
 
 /**  A step of an install. */
 export type MediaInstallStep = "checking" | "downloading" | "verifying" | "unpacking" | "testing" | "done";
+
+/**
+ *  Whether to look at the video an address names or at the playlist it
+ *  belongs to.
+ */
+export type MediaPlaylistMode = 
+/**
+ *  The video (`--no-playlist`); a page that is only a playlist still
+ *  lists its entries.
+ */
+"single" | 
+/**  The playlist the address belongs to (`--yes-playlist`). */
+"entries";
+
+/**
+ *  A page of a playlist's entries, as yt-dlp listed them with
+ *  `--flat-playlist` (not probed one by one).
+ */
+export type MediaPlaylistPage = {
+	/**
+	 *  The site's id for the playlist (the folder's name when it has no
+	 *  title).
+	 */
+	id: string | null,
+	/**  The place of the first entry asked for, from 1. */
+	start: number,
+	entries: MediaEntry[],
+	/**
+	 *  More entries may follow: "Load more" probes the next page from
+	 *  `start + PAGE_SIZE`.
+	 */
+	more: boolean,
+	/**  The folder the entries go to, in the Video folder. */
+	folder: string,
+};
+
+/**
+ *  A playlist's entries to download, one preset for all (docs/VIDEO.md,
+ *  "Playlists: as built").
+ */
+export type MediaPlaylistRequest = {
+	/**  The playlist's page. */
+	url: string,
+	title?: string | null,
+	uploader?: string | null,
+	/**  The site's id for the playlist (the folder's name without a title). */
+	id?: string | null,
+	/**
+	 *  `best`, `1080p`, `720p`, `small` or `audio`: a preset is an
+	 *  expression with its own fallbacks, so each entry gets what it has.
+	 */
+	preset: string,
+	container: MediaContainer,
+	/**
+	 *  Subtitles in these languages where an entry has them (its own, else
+	 *  automatic captions).
+	 */
+	subtitles?: MediaSubtitlesChoice | null,
+	/**  The playlist's size, for numbering the files with as many digits. */
+	entryCount: number,
+	entries: MediaEntryRequest[],
+	/**
+	 *  The page the browser extension sent: every entry's runs get the
+	 *  browser's cookies and headers in this session (never saved).
+	 */
+	page?: number | null,
+};
 
 /**  One preset with what it resolves to. */
 export type MediaPreset = {
@@ -806,6 +917,21 @@ export type MediaRowInfo = {
 	 *  user chose in the advanced table.
 	 */
 	preset: string | null,
+	/**  The playlist it is an entry of, if any. */
+	playlist: MediaRowPlaylist | null,
+};
+
+/**
+ *  The playlist a media download belongs to (docs/VIDEO.md, "Playlists: as
+ *  built"): its entries run one at a time, as a queue of their own.
+ */
+export type MediaRowPlaylist = {
+	/**  The playlist's id (`media_playlist`). */
+	id: number,
+	/**  Its title. */
+	title: string | null,
+	/**  The entry's place in the playlist, from 1. */
+	index: number | null,
 };
 
 /**  A subtitle language. */
@@ -850,6 +976,13 @@ export type MediaSummary = {
 	subtitles: MediaSubtitle[],
 	isPlaylist: boolean,
 	entryCount: number,
+	/**  A playlist's entries (a page of them), when the page is a playlist. */
+	playlist: MediaPlaylistPage | null,
+	/**
+	 *  One video whose address names a list it belongs to (`list=`): the
+	 *  sheet offers "this video" or "the whole playlist".
+	 */
+	inPlaylist: boolean,
 	/**  Everything on the page is DRM-protected. */
 	drm: boolean,
 	/**  The preset last used on this site, if any. */

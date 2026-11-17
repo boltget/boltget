@@ -7,11 +7,11 @@ use std::collections::VecDeque;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use boltget_engine::{ContainerPreference, NewMediaJob, SubtitleChoice};
+use boltget_engine::{ContainerPreference, NewMediaJob, NewMediaPlaylist, SubtitleChoice};
 use boltget_ipc::browser::{MediaKind, MediaPage};
 use boltget_media::{
-    Channel as ToolChannel, Format, InstallEvent, MediaInfo, Program, ResolvedPreset, Tool,
-    codec_label, presets,
+    Channel as ToolChannel, Format, InstallEvent, ItemRange, MediaInfo, PlaylistEntry,
+    PlaylistMode, Preset, Program, ResolvedPreset, Tool, codec_label, playlist, presets,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -416,10 +416,80 @@ pub(crate) struct MediaSummary {
     pub(crate) subtitles: Vec<MediaSubtitle>,
     pub(crate) is_playlist: bool,
     pub(crate) entry_count: u32,
+    /// A playlist's entries (a page of them), when the page is a playlist.
+    pub(crate) playlist: Option<MediaPlaylistPage>,
+    /// One video whose address names a list it belongs to (`list=`): the
+    /// sheet offers "this video" or "the whole playlist".
+    pub(crate) in_playlist: bool,
     /// Everything on the page is DRM-protected.
     pub(crate) drm: bool,
     /// The preset last used on this site, if any.
     pub(crate) remembered: Option<String>,
+}
+
+/// A page of a playlist's entries, as yt-dlp listed them with
+/// `--flat-playlist` (not probed one by one).
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaPlaylistPage {
+    /// The site's id for the playlist (the folder's name when it has no
+    /// title).
+    pub(crate) id: Option<String>,
+    /// The place of the first entry asked for, from 1.
+    pub(crate) start: u32,
+    pub(crate) entries: Vec<MediaEntry>,
+    /// More entries may follow: "Load more" probes the next page from
+    /// `start + PAGE_SIZE`.
+    pub(crate) more: bool,
+    /// The folder the entries go to, in the Video folder.
+    pub(crate) folder: String,
+}
+
+/// One entry of a playlist.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaEntry {
+    /// Its place in the playlist, from 1.
+    pub(crate) index: u32,
+    pub(crate) id: Option<String>,
+    pub(crate) title: Option<String>,
+    /// Its page, which its download fetches.
+    pub(crate) url: Option<String>,
+    /// Seconds.
+    pub(crate) duration: Option<f64>,
+    pub(crate) uploader: Option<String>,
+    /// A thumbnail's address, when the flat entry carries one;
+    /// `media_thumbnail` fetches it.
+    pub(crate) thumbnail: Option<String>,
+    /// It can be downloaded (not private or deleted, and it has a page).
+    pub(crate) available: bool,
+}
+
+impl From<PlaylistEntry> for MediaEntry {
+    fn from(e: PlaylistEntry) -> Self {
+        Self {
+            index: e.index,
+            id: e.id,
+            title: e.title,
+            url: e.url,
+            duration: e.duration,
+            uploader: e.uploader,
+            thumbnail: e.thumbnail,
+            available: e.available,
+        }
+    }
+}
+
+/// Whether to look at the video an address names or at the playlist it
+/// belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum MediaPlaylistMode {
+    /// The video (`--no-playlist`); a page that is only a playlist still
+    /// lists its entries.
+    Single,
+    /// The playlist the address belongs to (`--yes-playlist`).
+    Entries,
 }
 
 /// One preset with what it resolves to.
@@ -574,8 +644,24 @@ pub(crate) fn site_of(url: &str) -> String {
 }
 
 impl MediaSummary {
-    fn new(info: &MediaInfo, url: &str, remembered: Option<String>) -> Self {
+    /// A page's summary, a playlist's entries listed from place `start`.
+    fn listed(info: &MediaInfo, url: &str, remembered: Option<String>, start: u32) -> Self {
         let page = info.webpage_url.clone().unwrap_or_else(|| url.to_owned());
+        let list = info.is_playlist().then(|| {
+            let entries: Vec<MediaEntry> = playlist::entries(info, start)
+                .into_iter()
+                .map(MediaEntry::from)
+                .collect();
+            let listed = u64::from(start) - 1 + entries.len() as u64;
+            MediaPlaylistPage {
+                id: info.id.clone(),
+                start,
+                more: entries.len() >= playlist::PAGE_SIZE as usize
+                    || info.playlist_count.is_some_and(|n| n > listed),
+                entries,
+                folder: playlist::folder_name(info.title.as_deref(), info.id.as_deref()),
+            }
+        });
         Self {
             site: site_of(&page),
             url: page,
@@ -610,6 +696,8 @@ impl MediaSummary {
                 .collect(),
             is_playlist: info.is_playlist(),
             entry_count: u32::try_from(info.entry_count()).unwrap_or(u32::MAX),
+            playlist: list,
+            in_playlist: !info.is_playlist() && playlist::names_a_list(url),
             drm: info.drm_only(),
             remembered,
         }
@@ -860,7 +948,11 @@ pub(crate) async fn set_media_tool_path(
 /// version), then probes through the app's proxy. yt-dlp's own failure is
 /// `error.media.extraction`, with its message. With `page`, a page the
 /// browser extension sent (or one of its hints), yt-dlp gets the browser's
-/// cookies, `User-Agent` and `Referer`.
+/// cookies, `User-Agent` and `Referer`. `playlist` chooses between the
+/// video an address names and the playlist it belongs to (`single` when
+/// absent); a playlist's entries are listed a page at a time
+/// (`boltget_media::playlist::PAGE_SIZE`) from place `start` (1 when
+/// absent).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn probe_media(
@@ -868,6 +960,8 @@ pub(crate) async fn probe_media(
     pages: State<'_, MediaPages>,
     url: String,
     page: Option<u32>,
+    playlist: Option<MediaPlaylistMode>,
+    start: Option<u32>,
 ) -> Result<MediaProbe, UiError> {
     let sidecars = bridge.media_sidecars()?;
     let settings = bridge.settings();
@@ -879,8 +973,14 @@ pub(crate) async fn probe_media(
     }
     let prober = media::prober(&sidecars, &settings.video)?;
     let url = url.trim();
+    let start = start.unwrap_or(1).max(1);
     let mut opts = boltget_media::ProbeOptions {
         proxy: media::proxy_for(&settings, url),
+        playlist: match playlist {
+            Some(MediaPlaylistMode::Entries) => PlaylistMode::Entries,
+            _ => PlaylistMode::Single,
+        },
+        items: Some(ItemRange::page(start)),
         ..boltget_media::ProbeOptions::default()
     };
     if let Some(auth) = pages.auth(page) {
@@ -899,7 +999,7 @@ pub(crate) async fn probe_media(
         .find(|(s, _)| *s == site)
         .map(|(_, p)| p);
     Ok(MediaProbe::Found {
-        media: Box::new(MediaSummary::new(&info, url, remembered)),
+        media: Box::new(MediaSummary::listed(&info, url, remembered, start)),
     })
 }
 
@@ -952,25 +1052,7 @@ pub(crate) async fn add_media_download(
     {
         return Err(UiError::key("error.media.expression"));
     }
-    let subtitles = match request.subtitles {
-        Some(s) if !s.languages.is_empty() => {
-            let ok = s.languages.iter().all(|l| {
-                !l.is_empty()
-                    && l.len() <= 32
-                    && l.chars()
-                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
-            });
-            if !ok {
-                return Err(UiError::key("error.media.subtitles"));
-            }
-            Some(SubtitleChoice {
-                languages: s.languages,
-                automatic: s.automatic,
-                embed: s.embed,
-            })
-        }
-        _ => None,
-    };
+    let subtitles = subtitle_choice(request.subtitles)?;
     let preset = request
         .preset
         .filter(|p| boltget_media::Preset::parse(p).is_some());
@@ -986,6 +1068,169 @@ pub(crate) async fn add_media_download(
         remember_preset(&bridge, site, preset).await;
     }
     Ok(row)
+}
+
+/// The most entries of a playlist one request may start.
+const MAX_ENTRIES: usize = 5000;
+
+/// An entry of a playlist to download.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaEntryRequest {
+    /// Its place in the playlist, from 1.
+    pub(crate) index: u32,
+    /// Its page.
+    pub(crate) url: String,
+    #[specta(optional)]
+    pub(crate) title: Option<String>,
+}
+
+/// A playlist's entries to download, one preset for all (docs/VIDEO.md,
+/// "Playlists: as built").
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaPlaylistRequest {
+    /// The playlist's page.
+    pub(crate) url: String,
+    #[specta(optional)]
+    pub(crate) title: Option<String>,
+    #[specta(optional)]
+    pub(crate) uploader: Option<String>,
+    /// The site's id for the playlist (the folder's name without a title).
+    #[specta(optional)]
+    pub(crate) id: Option<String>,
+    /// `best`, `1080p`, `720p`, `small` or `audio`: a preset is an
+    /// expression with its own fallbacks, so each entry gets what it has.
+    pub(crate) preset: String,
+    pub(crate) container: MediaContainer,
+    /// Subtitles in these languages where an entry has them (its own, else
+    /// automatic captions).
+    #[specta(optional)]
+    pub(crate) subtitles: Option<MediaSubtitlesChoice>,
+    /// The playlist's size, for numbering the files with as many digits.
+    pub(crate) entry_count: u32,
+    pub(crate) entries: Vec<MediaEntryRequest>,
+    /// The page the browser extension sent: every entry's runs get the
+    /// browser's cookies and headers in this session (never saved).
+    #[specta(optional)]
+    pub(crate) page: Option<u32>,
+}
+
+fn subtitle_choice(
+    subtitles: Option<MediaSubtitlesChoice>,
+) -> Result<Option<SubtitleChoice>, UiError> {
+    match subtitles {
+        Some(s) if !s.languages.is_empty() => {
+            let ok = s.languages.iter().all(|l| {
+                !l.is_empty()
+                    && l.len() <= 32
+                    && l.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            });
+            if !ok {
+                return Err(UiError::key("error.media.subtitles"));
+            }
+            Ok(Some(SubtitleChoice {
+                languages: s.languages,
+                automatic: s.automatic,
+                embed: s.embed,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// The jobs for a playlist's chosen entries into `folder`: each its own
+/// page with the preset's expression, numbered by its place.
+pub(crate) fn playlist_jobs(
+    request: &MediaPlaylistRequest,
+    folder: &std::path::Path,
+) -> Result<(NewMediaPlaylist, Vec<NewMediaJob>), UiError> {
+    let preset =
+        Preset::parse(&request.preset).ok_or_else(|| UiError::key("error.media.expression"))?;
+    if request.entries.is_empty() || request.entries.len() > MAX_ENTRIES {
+        return Err(UiError::key("error.media.entries"));
+    }
+    let container: ContainerPreference = request.container.into();
+    let subtitles = subtitle_choice(request.subtitles.clone())?;
+    let last = request
+        .entries
+        .iter()
+        .map(|e| e.index)
+        .max()
+        .unwrap_or(1)
+        .max(request.entry_count);
+    let title = request.title.clone().filter(|t| !t.trim().is_empty());
+    let dir = folder.join(playlist::folder_name(
+        title.as_deref(),
+        request.id.as_deref(),
+    ));
+    let mut seen = std::collections::HashSet::new();
+    let mut jobs = Vec::with_capacity(request.entries.len());
+    for e in &request.entries {
+        if e.index == 0 || !seen.insert(e.index) {
+            return Err(UiError::key("error.media.entries"));
+        }
+        let mut job = NewMediaJob::new(e.url.trim(), preset.expression(container), &dir);
+        job.title = e.title.clone().filter(|t| !t.trim().is_empty());
+        job.preset = Some(preset.id().to_owned());
+        job.container = container;
+        job.subtitles.clone_from(&subtitles);
+        job.output_template = playlist::entry_template(e.index, last);
+        job.playlist_index = Some(e.index);
+        jobs.push(job);
+    }
+    let list = NewMediaPlaylist {
+        page_url: request.url.trim().to_owned(),
+        title,
+        uploader: request.uploader.clone().filter(|t| !t.trim().is_empty()),
+        dest_dir: dir,
+    };
+    Ok((list, jobs))
+}
+
+/// Starts downloading a playlist's chosen entries into a folder named
+/// after it in the Video category's folder: each entry its own media job
+/// and row, the same preset for all, run one at a time. Returns the rows,
+/// in the playlist's order.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn add_media_playlist(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+    pages: State<'_, MediaPages>,
+    request: MediaPlaylistRequest,
+) -> Result<Vec<DownloadRow>, UiError> {
+    let folder = crate::bridge::commands::default_folder(&app, &bridge, Some("video.mp4"))?;
+    let (list, mut jobs) = playlist_jobs(&request, &folder)?;
+    jobs.sort_by_key(|j| j.playlist_index);
+    bridge
+        .add_media_playlist(list, jobs, pages.auth(request.page))
+        .await
+}
+
+/// Pauses every entry of a playlist that runs or waits.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn pause_media_playlist(
+    bridge: State<'_, Bridge>,
+    playlist: u64,
+) -> Result<(), UiError> {
+    bridge
+        .pause_media_playlist(boltget_engine::MediaPlaylistId(playlist))
+        .await
+}
+
+/// Lets every paused or failed entry of a playlist wait its turn again.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn resume_media_playlist(
+    bridge: State<'_, Bridge>,
+    playlist: u64,
+) -> Result<(), UiError> {
+    bridge
+        .resume_media_playlist(boltget_engine::MediaPlaylistId(playlist))
+        .await
 }
 
 #[cfg(test)]
@@ -1007,7 +1252,7 @@ mod tests {
 
     #[test]
     fn a_summary_shows_presets_formats_and_the_site() {
-        let s = MediaSummary::new(&info(), "https://video.test/w", Some("720p".into()));
+        let s = MediaSummary::listed(&info(), "https://video.test/w", Some("720p".into()), 1);
         assert_eq!(s.uploader.as_deref(), Some("Chan"));
         assert_eq!(s.site, "video.test");
         assert_eq!(s.url, "https://www.video.test/watch?v=1");
@@ -1034,6 +1279,88 @@ mod tests {
         assert_eq!(s.subtitles[0].code, "en");
         assert_eq!(s.remembered.as_deref(), Some("720p"));
         assert!(!s.drm && !s.is_playlist);
+    }
+
+    #[test]
+    fn a_playlist_summary_lists_a_page_of_entries() {
+        let list = MediaInfo::from_json(
+            br#"{"_type": "playlist", "id": "PL1", "title": "Weekend: projects",
+                 "uploader": "Chan", "playlist_count": 450, "entries": [
+                {"id": "a", "url": "https://v.test/w?v=a", "title": "A", "duration": 61},
+                {"id": "b", "url": "https://v.test/w?v=b", "title": "[Private video]"}
+            ]}"#,
+        )
+        .unwrap();
+        let s = MediaSummary::listed(&list, "https://v.test/playlist?list=PL1", None, 201);
+        assert!(s.is_playlist && !s.in_playlist);
+        assert!(s.presets.is_empty(), "entries are not probed one by one");
+        let list = s.playlist.unwrap();
+        assert_eq!(list.start, 201);
+        assert_eq!(list.entries[0].index, 201);
+        assert!(list.entries[0].available && !list.entries[1].available);
+        assert!(list.more, "450 entries, 202 listed");
+        assert_eq!(list.folder, "Weekend_ projects");
+        // A watch page in a list offers the playlist.
+        let s = MediaSummary::listed(&info(), "https://v.test/w?v=1&list=PL1", None, 1);
+        assert!(s.in_playlist && s.playlist.is_none());
+    }
+
+    #[test]
+    fn a_playlist_request_becomes_one_job_per_entry() {
+        let request = MediaPlaylistRequest {
+            url: "https://v.test/playlist?list=PL1".into(),
+            title: Some("Weekend: projects".into()),
+            uploader: Some("Chan".into()),
+            id: Some("PL1".into()),
+            preset: "720p".into(),
+            container: MediaContainer::Mp4,
+            subtitles: Some(MediaSubtitlesChoice {
+                languages: vec!["en".into()],
+                automatic: true,
+                embed: true,
+            }),
+            entry_count: 120,
+            entries: vec![
+                MediaEntryRequest {
+                    index: 3,
+                    url: "https://v.test/w?v=c".into(),
+                    title: Some("C".into()),
+                },
+                MediaEntryRequest {
+                    index: 1,
+                    url: "https://v.test/w?v=a".into(),
+                    title: None,
+                },
+            ],
+            page: None,
+        };
+        let folder = std::path::Path::new("/videos");
+        let (list, jobs) = playlist_jobs(&request, folder).unwrap();
+        assert_eq!(list.dest_dir, folder.join("Weekend_ projects"));
+        assert_eq!(list.title.as_deref(), Some("Weekend: projects"));
+        assert_eq!(jobs.len(), 2);
+        let c = &jobs[0];
+        assert_eq!(c.page_url, "https://v.test/w?v=c");
+        assert_eq!(c.output_template, "003 - %(title)s [%(id)s].%(ext)s");
+        assert_eq!(c.playlist_index, Some(3));
+        assert_eq!(c.dest_dir, list.dest_dir);
+        assert_eq!(c.preset.as_deref(), Some("720p"));
+        assert_eq!(
+            c.format_expression,
+            Preset::P720.expression(ContainerPreference::Mp4)
+        );
+        assert!(c.subtitles.as_ref().is_some_and(|s| s.automatic));
+        // Refused: an unknown preset, no entries, a place twice or zero.
+        for change in [
+            |r: &mut MediaPlaylistRequest| r.preset = "bv*".into(),
+            |r: &mut MediaPlaylistRequest| r.entries.clear(),
+            |r: &mut MediaPlaylistRequest| r.entries[1].index = 3,
+            |r: &mut MediaPlaylistRequest| r.entries[0].index = 0,
+        ] {
+            let mut bad = request.clone();
+            change(&mut bad);
+            assert!(playlist_jobs(&bad, folder).is_err());
+        }
     }
 
     fn browser_page() -> MediaPage {

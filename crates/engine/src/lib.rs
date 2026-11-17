@@ -65,7 +65,8 @@ pub use headers::Validators;
 pub use integrity::{Checksum, ChecksumSource, HashAlgo};
 pub use media_job::{
     ContainerPreference, DEFAULT_OUTPUT_TEMPLATE, MediaJob, MediaJobError, MediaJobId,
-    MediaJobState, MediaJobUpdate, NewMediaJob, SubtitleChoice,
+    MediaJobState, MediaJobUpdate, MediaPlaylist, MediaPlaylistId, NewMediaJob, NewMediaPlaylist,
+    SubtitleChoice,
 };
 pub use platform::{Preallocation, available_space, is_sparse, mark_of_the_web};
 pub use probe::{ProbeResult, RangeSupport, ServerDigest};
@@ -83,6 +84,15 @@ pub use store::{
 
 /// Re-exported so callers can build headers for [`RequestContext::header`].
 pub use ::http::{HeaderName, HeaderValue, header};
+
+/// Makes `name` safe as a single file or folder name on Windows (applied on
+/// every platform): folders before the last separator are dropped, the
+/// characters Windows refuses become `_`, trailing dots and spaces go, a
+/// reserved name (`CON`, `COM1`, ...) gets a leading `_`, and the result is
+/// at most 255 UTF-16 units. Empty when nothing usable is left.
+pub fn safe_file_name(name: &str) -> String {
+    filename::sanitize(name)
+}
 
 /// The suffix of in-progress files (`<name>.boltget`).
 pub const PARTIAL_SUFFIX: &str = download::PARTIAL_SUFFIX;

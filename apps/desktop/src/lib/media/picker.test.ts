@@ -56,6 +56,8 @@ function summary(over: Partial<MediaSummary> = {}): MediaSummary {
     subtitles: [],
     isPlaylist: false,
     entryCount: 0,
+    playlist: null,
+    inPlaylist: false,
     drm: false,
     remembered: null,
     ...over,

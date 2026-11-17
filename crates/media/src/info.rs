@@ -229,6 +229,72 @@ pub struct Entry {
     /// Length in seconds.
     #[serde(default, deserialize_with = "float")]
     pub duration: Option<f64>,
+    /// Who published it (some sites name each entry's channel).
+    #[serde(default, deserialize_with = "string")]
+    pub uploader: Option<String>,
+    /// The channel, where the site has one.
+    #[serde(default, deserialize_with = "string")]
+    pub channel: Option<String>,
+    /// The thumbnails a flat entry carries (some sites give them), worst
+    /// first.
+    #[serde(default, deserialize_with = "list")]
+    pub thumbnails: Vec<Thumbnail>,
+    /// One thumbnail, where the site names a single one.
+    #[serde(default, deserialize_with = "string")]
+    pub thumbnail: Option<String>,
+    /// Its place in the playlist (from 1), when yt-dlp says.
+    #[serde(default, deserialize_with = "unsigned")]
+    pub playlist_index: Option<u64>,
+    /// `public`, `unlisted`, `private`, `needs_auth`, ... where the site
+    /// says.
+    #[serde(default, deserialize_with = "string")]
+    pub availability: Option<String>,
+}
+
+/// The titles sites give entries that cannot be watched (placeholders for
+/// private and deleted videos).
+const PLACEHOLDER_TITLES: &[&str] = &["[Private video]", "[Deleted video]", "[Unavailable video]"];
+
+impl Entry {
+    /// Whether the entry can be downloaded on its own: it has an `http(s)`
+    /// page and is not a placeholder for a private or deleted video.
+    pub fn available(&self) -> bool {
+        let page = self.url.as_deref().is_some_and(|u| {
+            url::Url::parse(u).is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.has_host())
+        });
+        let placeholder = self
+            .title
+            .as_deref()
+            .is_some_and(|t| PLACEHOLDER_TITLES.contains(&t.trim()));
+        page && !placeholder && self.availability.as_deref() != Some("private")
+    }
+
+    /// The best thumbnail: the largest with known dimensions, else the one
+    /// named, else the last listed.
+    pub fn best_thumbnail(&self) -> Option<&str> {
+        best_thumbnail(&self.thumbnails, self.thumbnail.as_deref())
+    }
+
+    /// Who published it: the uploader, else the channel.
+    pub fn publisher(&self) -> Option<&str> {
+        self.uploader.as_deref().or(self.channel.as_deref())
+    }
+}
+
+fn best_thumbnail<'a>(thumbnails: &'a [Thumbnail], named: Option<&'a str>) -> Option<&'a str> {
+    let sized = thumbnails
+        .iter()
+        .filter(|t| !t.url.is_empty())
+        .filter_map(|t| Some((u64::from(t.width?) * u64::from(t.height?), t)))
+        .max_by_key(|(area, _)| *area)
+        .map(|(_, t)| t.url.as_str());
+    sized.or(named).or_else(|| {
+        thumbnails
+            .iter()
+            .rev()
+            .find(|t| !t.url.is_empty())
+            .map(|t| t.url.as_str())
+    })
 }
 
 /// A language offered as subtitles or automatic captions.
@@ -289,20 +355,7 @@ impl MediaInfo {
     /// The best thumbnail: the largest one with known dimensions, else the one
     /// yt-dlp chose, else the last listed.
     pub fn best_thumbnail(&self) -> Option<&str> {
-        let sized = self
-            .thumbnails
-            .iter()
-            .filter(|t| !t.url.is_empty())
-            .filter_map(|t| Some((u64::from(t.width?) * u64::from(t.height?), t)))
-            .max_by_key(|(area, _)| *area)
-            .map(|(_, t)| t.url.as_str());
-        sized.or(self.thumbnail.as_deref()).or_else(|| {
-            self.thumbnails
-                .iter()
-                .rev()
-                .find(|t| !t.url.is_empty())
-                .map(|t| t.url.as_str())
-        })
+        best_thumbnail(&self.thumbnails, self.thumbnail.as_deref())
     }
 
     /// Every subtitle language, then every automatic-caption language, each

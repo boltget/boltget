@@ -21,6 +21,50 @@ impl fmt::Display for MediaJobId {
     }
 }
 
+/// Identifies a playlist of media jobs. Persistent and never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct MediaPlaylistId(pub u64);
+
+impl fmt::Display for MediaPlaylistId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A playlist to record with [`Engine::add_media_playlist`](crate::Engine::add_media_playlist):
+/// the page its entries came from, and the folder they go to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewMediaPlaylist {
+    /// The playlist's page (`http` or `https`).
+    pub page_url: String,
+    /// Its title, as the probe found it.
+    pub title: Option<String>,
+    /// Who published it.
+    pub uploader: Option<String>,
+    /// The folder its entries go to.
+    pub dest_dir: PathBuf,
+}
+
+/// A stored playlist: a group of media jobs, one per entry the user chose
+/// (`docs/VIDEO.md`, "Playlists: as built").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct MediaPlaylist {
+    /// Its id.
+    pub id: MediaPlaylistId,
+    /// The playlist's page.
+    pub page_url: String,
+    /// Its title.
+    pub title: Option<String>,
+    /// Who published it.
+    pub uploader: Option<String>,
+    /// The folder its entries go to.
+    pub dest_dir: PathBuf,
+    /// Creation time, Unix milliseconds.
+    pub created_at: u64,
+}
+
 /// The yt-dlp output template a job uses unless it names another: the title,
 /// then the site's id for the video, which keeps two videos with one title
 /// apart (`docs/VIDEO.md`, "Format and quality picker UX").
@@ -156,6 +200,10 @@ pub struct NewMediaJob {
     pub download: Option<DownloadId>,
     /// The expected size in bytes (the picker's estimate), if known.
     pub size: Option<u64>,
+    /// The entry's place in its playlist (from 1), for a job of a playlist.
+    /// [`Engine::add_media_playlist`](crate::Engine::add_media_playlist) sets
+    /// the playlist itself.
+    pub playlist_index: Option<u32>,
 }
 
 impl NewMediaJob {
@@ -177,6 +225,7 @@ impl NewMediaJob {
             dest_dir: dest_dir.into(),
             download: None,
             size: None,
+            playlist_index: None,
         }
     }
 }
@@ -213,6 +262,10 @@ pub struct MediaJob {
     pub file_path: Option<PathBuf>,
     /// Bytes: the expected size until it completes, then the file's size.
     pub size: Option<u64>,
+    /// The playlist it belongs to, if any.
+    pub playlist: Option<MediaPlaylistId>,
+    /// Its place in that playlist (from 1).
+    pub playlist_index: Option<u32>,
     /// Creation time, Unix milliseconds.
     pub created_at: u64,
     /// Last change, Unix milliseconds.
@@ -257,15 +310,20 @@ pub(crate) fn validate(
     format_expression: &str,
     output_template: &str,
 ) -> crate::Result<()> {
-    match url::Url::parse(page_url) {
-        Ok(u) if matches!(u.scheme(), "http" | "https") && u.has_host() => {}
-        Ok(u) => return Err(crate::Error::InvalidUrl(crate::redact_url(&u))),
-        Err(e) => return Err(crate::Error::InvalidUrl(e.to_string())),
-    }
+    validate_page(page_url)?;
     if format_expression.trim().is_empty() || output_template.trim().is_empty() {
         return Err(crate::Error::InvalidMediaJob(
             "it needs a format expression and an output template".into(),
         ));
     }
     Ok(())
+}
+
+/// Checks that a page URL is `http` or `https` with a host.
+pub(crate) fn validate_page(page_url: &str) -> crate::Result<()> {
+    match url::Url::parse(page_url) {
+        Ok(u) if matches!(u.scheme(), "http" | "https") && u.has_host() => Ok(()),
+        Ok(u) => Err(crate::Error::InvalidUrl(crate::redact_url(&u))),
+        Err(e) => Err(crate::Error::InvalidUrl(e.to_string())),
+    }
 }

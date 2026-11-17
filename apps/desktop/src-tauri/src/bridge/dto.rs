@@ -213,6 +213,21 @@ pub(crate) struct MediaRowInfo {
     /// `best`, `1080p`, `720p`, `small` or `audio`; `null` for a format the
     /// user chose in the advanced table.
     pub(crate) preset: Option<String>,
+    /// The playlist it is an entry of, if any.
+    pub(crate) playlist: Option<MediaRowPlaylist>,
+}
+
+/// The playlist a media download belongs to (docs/VIDEO.md, "Playlists: as
+/// built"): its entries run one at a time, as a queue of their own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaRowPlaylist {
+    /// The playlist's id (`media_playlist`).
+    pub(crate) id: u64,
+    /// Its title.
+    pub(crate) title: Option<String>,
+    /// The entry's place in the playlist, from 1.
+    pub(crate) index: Option<u32>,
 }
 
 pub(crate) fn path_string(p: &Path) -> String {

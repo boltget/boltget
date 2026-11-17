@@ -7,15 +7,20 @@
 //! hangs if `fake-hang` does. With `fake-spawn` it first starts `gc/<its own
 //! name>`. As yt-dlp with `-J` it copies the `--cookies` file (if any) to
 //! `fake-cookies.txt`, then prints `fake-probe-error.txt` to stderr and
-//! fails if that exists, or prints `fake-info.json`. As yt-dlp with
+//! fails if that exists, or prints `fake-info.json` (with `--yes-playlist`,
+//! `fake-info-playlist.json` when that exists). As yt-dlp with
 //! `--progress-template` (a download) it copies the cookies the same way,
 //! prints `fake-download-error.txt` to stderr and fails if that exists,
 //! otherwise prints the lines of `fake-progress.txt` (if any; 50 ms apart
 //! with `fake-slow`), hangs with `fake-hang-download` (leaving
 //! `fake video [v1].mp4.part` in the `-P` folder), then writes
-//! `fake video [v1].mp4` there (`fake-resumed.txt` records whether a
-//! `.part` file was there to continue from) and reports it as yt-dlp's
-//! `--print after_move:` template would.
+//! `fake video [v1].mp4` there (the `-o` template with `%(title)s` as
+//! `fake video`, `%(id)s` as `v1`, `%(ext)s` as `mp4`; `fake-resumed.txt`
+//! records whether a `.part` file was there to continue from) and reports
+//! it as yt-dlp's `--print after_move:` template would. While a download
+//! runs it keeps a `fake-running-<pid>` file next to it, and appends how
+//! many there were when it started to `fake-overlap.txt`, so tests can see
+//! how many ran at once.
 #![allow(clippy::print_stdout)]
 
 use std::path::Path;
@@ -65,13 +70,37 @@ fn main() -> ExitCode {
             eprint!("{message}");
             return ExitCode::from(1);
         }
+        let playlist = dir.join("fake-info-playlist.json");
+        if args.iter().any(|a| a == "--yes-playlist")
+            && let Ok(json) = std::fs::read_to_string(&playlist)
+        {
+            print!("{json}");
+            return ExitCode::SUCCESS;
+        }
         if let Ok(json) = std::fs::read_to_string(dir.join("fake-info.json")) {
             print!("{json}");
             return ExitCode::SUCCESS;
         }
     }
     if name == "yt-dlp" && args.iter().any(|a| a == "--progress-template") {
-        return fake_download(dir, &args);
+        let marker = dir.join(format!("fake-running-{}", std::process::id()));
+        let _ = std::fs::write(&marker, b"");
+        let running = std::fs::read_dir(dir).map_or(0, |d| {
+            d.flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with("fake-running-"))
+                .count()
+        });
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("fake-overlap.txt"))
+        {
+            use std::io::Write as _;
+            let _ = writeln!(f, "{running}");
+        }
+        let code = fake_download(dir, &args);
+        let _ = std::fs::remove_file(&marker);
+        return code;
     }
     if name == "yt-dlp" && args.last().is_some_and(|a| a == "--version") {
         println!("{version}");
@@ -116,8 +145,13 @@ fn fake_download(dir: &Path, args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
     let dest = std::path::PathBuf::from(value("-P").unwrap_or_default());
-    let out = dest.join("fake video [v1].mp4");
-    let part = dest.join("fake video [v1].mp4.part");
+    let name = value("-o")
+        .unwrap_or_else(|| "%(title)s [%(id)s].%(ext)s".into())
+        .replace("%(title)s", "fake video")
+        .replace("%(id)s", "v1")
+        .replace("%(ext)s", "mp4");
+    let out = dest.join(&name);
+    let part = dest.join(format!("{name}.part"));
     let _ = std::fs::write(
         dir.join("fake-resumed.txt"),
         if part.exists() { "yes" } else { "no" },

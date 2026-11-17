@@ -11,7 +11,10 @@ import { inQueue } from "./queue";
 
 /** A queue's own view: its downloads in its order. */
 export type QueueView = `queue:${number}`;
-export type View = "all" | "active" | "completed" | "scheduled" | Category | QueueView;
+/** A playlist's view: its entries in the playlist's order. */
+export type PlaylistView = `playlist:${number}`;
+export type View =
+  "all" | "active" | "completed" | "scheduled" | Category | QueueView | PlaylistView;
 
 /** The view of a queue. */
 export function queueView(id: QueueId): QueueView {
@@ -21,6 +24,15 @@ export function queueView(id: QueueId): QueueView {
 /** The queue a view shows, if it is a queue's view. */
 export function queueOfView(view: View): QueueId | null {
   return view.startsWith("queue:") ? Number(view.slice(6)) : null;
+}
+/** The view of a playlist (docs/VIDEO.md, "Playlists: as built"). */
+export function playlistView(id: number): PlaylistView {
+  return `playlist:${id}`;
+}
+
+/** The playlist a view shows, if it is a playlist's view. */
+export function playlistOfView(view: View): number | null {
+  return view.startsWith("playlist:") ? Number(view.slice(9)) : null;
 }
 export type Sort = "default" | "name" | "size" | "added";
 export type Section = "active" | "waiting" | "today" | "yesterday" | "week" | "earlier";
@@ -38,6 +50,9 @@ export interface ListItem {
   queuePosition: number;
   /** When it starts on its own, if the user chose a time. */
   startAt: number | null;
+  /** The playlist a media download is an entry of, and its place there. */
+  playlist?: number | null;
+  playlistIndex?: number | null;
 }
 
 export type Entry =
@@ -105,6 +120,8 @@ export function isScheduled(item: Pick<ListItem, "state" | "startAt">): boolean 
 export function inView(item: ListItem, view: View): boolean {
   const queue = queueOfView(view);
   if (queue !== null) return inQueue(item, queue);
+  const playlist = playlistOfView(view);
+  if (playlist !== null) return item.playlist === playlist;
   switch (view) {
     case "all":
       return true;
@@ -174,14 +191,17 @@ export function buildLayout(items: readonly ListItem[], options: BuildOptions): 
   const entries: Entry[] = [];
   const order: DownloadId[] = [];
 
-  // A queue shows its order and Scheduled the times, each as one flat list:
-  // the order is what the user arranges there.
+  // A queue shows its order, a playlist its places and Scheduled the
+  // times, each as one flat list: the order is what counts there.
   const flat =
     queueOfView(options.view) !== null
       ? (a: ListItem, b: ListItem) => a.queuePosition - b.queuePosition || a.id - b.id
-      : options.view === "scheduled"
-        ? (a: ListItem, b: ListItem) => (a.startAt ?? 0) - (b.startAt ?? 0) || a.id - b.id
-        : null;
+      : playlistOfView(options.view) !== null
+        ? (a: ListItem, b: ListItem) =>
+            (a.playlistIndex ?? 0) - (b.playlistIndex ?? 0) || a.id - b.id
+        : options.view === "scheduled"
+          ? (a: ListItem, b: ListItem) => (a.startAt ?? 0) - (b.startAt ?? 0) || a.id - b.id
+          : null;
   if (options.sort !== "default" || flat) {
     shown.sort(options.sort !== "default" ? compare(options.sort) : (flat ?? compare("default")));
     for (const item of shown) {

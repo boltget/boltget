@@ -234,3 +234,9 @@ export function splitFolder(path: string): { parent: string; leaf: string } {
   if (cut < 0) return { parent: "", leaf: trimmed || path };
   return { parent: trimmed.slice(0, cut + 1), leaf: trimmed.slice(cut + 1) || trimmed };
 }
+
+/** A folder inside `parent`, with the separator `parent` uses (`\` by default). */
+export function childFolder(parent: string, name: string): string {
+  const sep = parent.includes("/") && !parent.includes("\\") ? "/" : "\\";
+  return `${parent.replace(/[\\/]+$/, "")}${sep}${name}`;
+}

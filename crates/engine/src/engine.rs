@@ -19,7 +19,9 @@ use crate::events::{Completed, DownloadId, DownloadInfo, EngineEvent, Progress, 
 use crate::filename::{self, NameSources};
 use crate::http::{self, Connector, Origin};
 use crate::integrity::{self, Checksum, ChecksumSource};
-use crate::media_job::{self, MediaJob, MediaJobId, MediaJobUpdate, NewMediaJob};
+use crate::media_job::{
+    self, MediaJob, MediaJobId, MediaJobUpdate, MediaPlaylist, NewMediaJob, NewMediaPlaylist,
+};
 use crate::probe::{self, ProbeKind, ProbeResult, RangeSupport, ServerDigest};
 use crate::proxy::ProxyChoice;
 use crate::queue::{
@@ -1362,6 +1364,50 @@ impl Engine {
             .await
     }
 
+    /// Records a playlist and a media job for each entry chosen from it
+    /// (`docs/VIDEO.md`, "Playlists: as built"), all in state `queued` and
+    /// in the order given, in one transaction: all of them or none. Each
+    /// job belongs to the new playlist. Needs a database; the URLs and jobs
+    /// are checked as [`Engine::add_media_job`] checks them, and the list
+    /// must not be empty.
+    pub async fn add_media_playlist(
+        &self,
+        playlist: NewMediaPlaylist,
+        jobs: Vec<NewMediaJob>,
+    ) -> Result<(MediaPlaylist, Vec<MediaJob>)> {
+        let store = self.store()?;
+        if jobs.is_empty() {
+            return Err(Error::InvalidMediaJob(
+                "a playlist needs at least one entry".into(),
+            ));
+        }
+        media_job::validate_page(&playlist.page_url)?;
+        for job in &jobs {
+            media_job::validate(&job.page_url, &job.format_expression, &job.output_template)?;
+        }
+        store
+            .call(move |c| {
+                let (id, ids) = media_jobs::insert_playlist(c, &playlist, &jobs)?;
+                let list = media_jobs::playlist(c, id)?
+                    .ok_or_else(|| Error::Database("the playlist was not stored".into()))?;
+                let mut out = Vec::with_capacity(ids.len());
+                for id in ids {
+                    out.push(media_jobs::get(c, id)?.ok_or(Error::UnknownMediaJob(id))?);
+                }
+                Ok((list, out))
+            })
+            .await
+    }
+
+    /// Every playlist that still has media jobs, oldest first (empty
+    /// without a database).
+    pub async fn media_playlists(&self) -> Result<Vec<MediaPlaylist>> {
+        match &self.inner.store {
+            Some(store) => store.call(|c| media_jobs::playlists(c)).await,
+            None => Ok(Vec::new()),
+        }
+    }
+
     /// The media job with this id.
     pub async fn media_job(&self, id: MediaJobId) -> Result<MediaJob> {
         let store = self.store()?;
@@ -1395,12 +1441,14 @@ impl Engine {
             .await
     }
 
-    /// Forgets a media job (its files stay where they are).
+    /// Forgets a media job (its files stay where they are); a playlist left
+    /// without jobs goes with its last one.
     pub async fn remove_media_job(&self, id: MediaJobId) -> Result<()> {
         let store = self.store()?;
         store
             .call(move |c| {
                 if media_jobs::delete(c, id)? {
+                    media_jobs::delete_empty_playlists(c)?;
                     Ok(())
                 } else {
                     Err(Error::UnknownMediaJob(id))

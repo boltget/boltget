@@ -9,6 +9,7 @@ use boltget_engine::CookieJar;
 
 use crate::cookies::{CookieFile, JOBS_DIR};
 use crate::info::MediaInfo;
+use crate::playlist::ItemRange;
 use crate::runner::Invocation;
 use crate::{Error, Program, Result, Sidecars};
 
@@ -49,6 +50,10 @@ pub struct ProbeOptions {
     pub proxy: Option<String>,
     /// Playlist handling.
     pub playlist: PlaylistMode,
+    /// Which of a playlist's entries to list (`--playlist-items`); `None`
+    /// lists them all. A probe lists at most a page of them
+    /// ([`crate::playlist::PAGE_SIZE`]) when the caller asks for a range.
+    pub items: Option<ItemRange>,
     /// The time limit ([`PROBE_TIMEOUT`] when `None`).
     pub timeout: Option<Duration>,
 }
@@ -102,6 +107,9 @@ impl Prober {
             }
             .into(),
         );
+        if let Some(items) = opts.items {
+            args.extend(["--playlist-items".into(), items.to_string()]);
+        }
         // A page whose formats are all DRM-protected (or that has none) is
         // still described, with `_has_drm` set, instead of failing.
         args.push("--ignore-no-formats-error".into());
@@ -234,6 +242,7 @@ mod tests {
             user_agent: Some("Mozilla/5.0 (Windows NT 10.0)".into()),
             referer: Some("https://example.com/".into()),
             playlist: PlaylistMode::Entries,
+            items: Some(ItemRange::page(201)),
             ..ProbeOptions::default()
         };
         let args = p
@@ -249,6 +258,8 @@ mod tests {
                 "-J",
                 "--flat-playlist",
                 "--yes-playlist",
+                "--playlist-items",
+                "201:400",
                 "--ignore-no-formats-error",
                 "--encoding",
                 "utf-8",
