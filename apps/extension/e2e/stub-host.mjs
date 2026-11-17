@@ -4,6 +4,7 @@
 // answers as $BOLTGET_STUB_DIR/mode.json says:
 //
 //   { "capture": "accept" | "reject" | "unavailable" | "hang" | "exit" | "garbage",
+//     "media": "accept" | "unsupported",
 //     "app": "Boltget 0.3.0" | null, "rules": {...} | null }
 //
 // The browser passes its own environment to the host, so the tests set
@@ -34,7 +35,7 @@ let downloads = 0;
 function answer(message) {
   appendFileSync(join(dir, "log.jsonl"), JSON.stringify({ at: Date.now(), message }) + "\n");
   const m = mode();
-  const base = { v: 1, id: message.id ?? null };
+  const base = { v: typeof message.v === "number" ? message.v : 1, id: message.id ?? null };
   switch (message.type) {
     case "hello":
       return send({
@@ -43,7 +44,7 @@ function answer(message) {
         app: m.app === undefined ? "Boltget 0.3.0" : m.app,
         host: "0.3.0",
         oldest: 1,
-        current: 1,
+        current: 2,
         rules: m.rules ?? null,
       });
     case "capture":
@@ -65,7 +66,10 @@ function answer(message) {
     case "add_links":
       return send({ ...base, type: "accepted", download: null, confirm: true });
     case "media_page":
-      return send({ ...base, type: "rejected", reason: "unsupported", message: "stub" });
+      if (m.media === "unsupported") {
+        return send({ ...base, type: "rejected", reason: "unsupported", message: "stub" });
+      }
+      return send({ ...base, type: "accepted", download: null, confirm: true });
     case "status":
       return send({ ...base, type: "status", active: 0, queued: 0, speed: 0 });
     default:

@@ -2,8 +2,11 @@
 // Firefox (docs/BROWSER-INTEGRATION.md, "Capture flow"). It watches new
 // downloads, decides with lib/capture.ts, and hands the ones it captures to
 // the app through lib/handoff.ts, which keeps the browser's download unless
-// the app accepts it. Every listener is registered synchronously at the top,
-// so an event that wakes the worker reaches it.
+// the app accepts it. It also notices the media pages load (lib/media.ts,
+// with site access only) for the popup and the toolbar badge, and sends a
+// page to the app's media sheet (`media_page`), never on the sites the store
+// policy excludes (lib/policy.ts). Every listener is registered synchronously
+// at the top, so an event that wakes the worker reaches it.
 import { browser, type Browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
 import { shouldCapture, isFetchable, type CaptureEvent } from "../lib/capture";
@@ -12,6 +15,15 @@ import { collectCookies } from "../lib/cookies";
 import { handOff } from "../lib/handoff";
 import { HeaderLog } from "../lib/headers";
 import { t } from "../lib/i18n";
+import {
+  badgeText,
+  classifyResponse,
+  hintsToSend,
+  readMediaRequest,
+  TabMediaStore,
+  type MediaSendResult,
+  type MediaState,
+} from "../lib/media";
 import { addLinksMessage, captureMessage, mediaPageMessage } from "../lib/message";
 import { isLinkClick, ModifierLog, modifiersOf } from "../lib/modifiers";
 import {
@@ -25,20 +37,21 @@ import {
   leaveNotice,
   localStore,
   nativeClient,
+  sessionArea,
+  setMediaBadge,
   setToolbarIcon,
+  STORE_POLICY,
 } from "../lib/platform";
-import { onAnySite } from "../lib/rules";
+import { hintAllowed, mediaAllowed } from "../lib/policy";
 import { captureSettings, loadSettings } from "../lib/settings";
 import { RulesSync } from "../lib/sync";
-
-/** Sites where the store builds offer no page or media actions (store policy). */
-const MEDIA_EXCLUDED = ["youtube.com", "youtu.be", "youtube-nocookie.com"];
 
 const MENU = {
   link: "boltget-link",
   selection: "boltget-selection",
   page: "boltget-page",
   sendPage: "boltget-send-page",
+  media: "boltget-media",
 } as const;
 
 const CONTENT_SCRIPT_ID = "boltget-modifiers";
@@ -78,12 +91,106 @@ export default defineBackground({
       extraInfo,
     );
 
-    // --- Modifier keys from the content script -----------------------------
+    // --- Media the pages load (only with site access) ----------------------
 
-    browser.runtime.onMessage.addListener((message, sender) => {
-      if (sender.id !== browser.runtime.id || !sender.tab || !isLinkClick(message)) return;
+    const tabMedia = new TabMediaStore(sessionArea, (tabId, count) => {
+      void setMediaBadge(tabId, badgeText(count));
+    });
+
+    /** The page a tab shows: as last seen, else as the browser says. */
+    async function tabPage(tabId: number): Promise<string | null> {
+      const seen = (await tabMedia.get(tabId)).page;
+      if (seen !== null) return seen;
+      try {
+        return (await browser.tabs.get(tabId)).url ?? null;
+      } catch {
+        return null;
+      }
+    }
+
+    browser.webRequest.onHeadersReceived.addListener(
+      (details) => {
+        if (details.tabId < 0) return;
+        const hint = classifyResponse(details);
+        if (!hint) return;
+        const extra = details as { initiator?: string; documentUrl?: string; originUrl?: string };
+        const from = [extra.initiator, extra.documentUrl, extra.originUrl];
+        if (!hintAllowed(hint.url, from, STORE_POLICY)) return;
+        void (async () => {
+          // Nothing is noticed on a page the policy excludes.
+          if (!mediaAllowed(await tabPage(details.tabId), STORE_POLICY)) return;
+          await tabMedia.add(details.tabId, hint);
+          log("media", details.tabId, hint.kind, hint.url);
+        })().catch((error: unknown) => log("media failed", error));
+      },
+      { urls: ["<all_urls>"], types: ["media", "xmlhttprequest", "other"] },
+      ["responseHeaders"],
+    );
+
+    // A tab that moves to another page starts again.
+    browser.webRequest.onBeforeRequest.addListener(
+      (details) => {
+        if (details.tabId >= 0) void tabMedia.navigated(details.tabId, details.url);
+      },
+      { urls: ["<all_urls>"], types: ["main_frame"] },
+    );
+    browser.tabs.onUpdated.addListener((tabId, change, tab) => {
+      if (change.url) void tabMedia.navigated(tabId, change.url);
+      if (tab.active && (change.url || change.status === "complete")) syncMenus(tab.url);
+    });
+    browser.tabs.onRemoved.addListener((tabId) => {
+      void tabMedia.forget(tabId);
+    });
+    browser.tabs.onActivated.addListener(({ tabId }) => {
+      browser.tabs.get(tabId).then(
+        (tab) => syncMenus(tab.url),
+        () => {},
+      );
+    });
+
+    // --- Messages: modifier keys from the content script, the popup --------
+
+    browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (sender.id !== browser.runtime.id) return;
+      // The extension's own pages (the popup, also when opened as a tab).
+      if (sender.url?.startsWith(browser.runtime.getURL("/"))) {
+        const request = readMediaRequest(message);
+        if (!request) return;
+        const answer =
+          request.type === "boltget:media-state"
+            ? mediaState(request.tabId)
+            : sendFromPopup(request.tabId, request.hint, request.sources);
+        answer.then(sendResponse, (error: unknown) => {
+          log("popup request failed", error);
+          sendResponse(null);
+        });
+        return true;
+      }
+      if (!sender.tab || !isLinkClick(message)) return;
       modifiers.record(message.href, modifiersOf(message.alt, message.shift), Date.now());
     });
+
+    /** What the popup shows for a tab. */
+    async function mediaState(tabId: number): Promise<MediaState> {
+      let url: string | undefined;
+      try {
+        url = (await browser.tabs.get(tabId)).url;
+      } catch {
+        return { allowed: false, hints: [] };
+      }
+      if (!mediaAllowed(url, STORE_POLICY)) return { allowed: false, hints: [] };
+      const { hints } = await tabMedia.get(tabId);
+      return { allowed: true, hints: hints.filter((h) => hintAllowed(h.url, [], STORE_POLICY)) };
+    }
+
+    async function sendFromPopup(
+      tabId: number,
+      hint: string | null,
+      sources: string[],
+    ): Promise<MediaSendResult> {
+      const tab = await browser.tabs.get(tabId);
+      return sendMediaPage(tab, tab.url ?? null, { hint, sources, mediaUrl: null });
+    }
 
     // --- Downloads ---------------------------------------------------------
 
@@ -191,6 +298,27 @@ export default defineBackground({
         contexts: ["page"],
         documentUrlPatterns: http,
       });
+      browser.contextMenus.create({
+        id: MENU.media,
+        title: t("menu.media"),
+        contexts: ["video", "audio"],
+        documentUrlPatterns: http,
+      });
+    }
+
+    /**
+     * The page and media items are hidden on the sites the store policy
+     * excludes, as far as the active tab's address is known (with site
+     * access, or once the popup was opened there); a click there still sends
+     * nothing.
+     */
+    function syncMenus(url: string | undefined) {
+      const visible = !(isFetchable(url) && !mediaAllowed(url, STORE_POLICY));
+      for (const id of [MENU.sendPage, MENU.media]) {
+        browser.contextMenus.update(id, { visible }).catch(() => {
+          // Not created yet: createMenus runs at start.
+        });
+      }
     }
 
     function requestHeaders(): [string, string][] {
@@ -275,28 +403,75 @@ export default defineBackground({
       if (result.type !== "accepted") await leaveNotice("notice.links_failed");
     }
 
-    async function sendPage(info: Browser.contextMenus.OnClickData, tab?: Browser.tabs.Tab) {
+    /**
+     * Sends a page to the app's media sheet (`media_page`): its cookies (and
+     * those of the sites its media come from), the browser's User-Agent, the
+     * page as Referer, and the hints: `hint` alone, or every one the tab saw
+     * with the page's own `sources`. Never for a page the policy excludes,
+     * and no hint from an excluded host.
+     */
+    async function sendMediaPage(
+      tab: Browser.tabs.Tab | undefined,
+      pageUrl: string | null,
+      choice: { hint: string | null; sources: string[]; mediaUrl: string | null },
+    ): Promise<MediaSendResult> {
+      if (!mediaAllowed(pageUrl, STORE_POLICY) || !pageUrl) return "excluded";
+      const seen = tab?.id !== undefined ? (await tabMedia.get(tab.id)).hints : [];
+      const allowed = (url: string) => hintAllowed(url, [], STORE_POLICY);
+      const hints = hintsToSend(seen, choice.sources.filter(allowed), choice.hint).filter((h) =>
+        allowed(h.url),
+      );
+      const mediaUrl = choice.mediaUrl && allowed(choice.mediaUrl) ? choice.mediaUrl : null;
+      // Cookies for the page and for each site its media come from.
+      const perSite = new Map<string, string>([[new URL(pageUrl).origin, pageUrl]]);
+      for (const url of [...hints.map((h) => h.url), mediaUrl]) {
+        if (!url || perSite.size >= 20) continue;
+        const origin = new URL(url).origin;
+        if (!perSite.has(origin)) perSite.set(origin, url);
+      }
+      const cookies = await collectCookies(getAllCookies, [...perSite.values()], {
+        storeId: tabStore(tab),
+        pageUrl,
+        firefox: FIREFOX,
+      });
+      const message = mediaPageMessage({
+        pageUrl,
+        title: tab?.title,
+        incognito: tab?.incognito ?? false,
+        cookies,
+        headers: [...requestHeaders(), ["referer", pageUrl]],
+        hints,
+        mediaUrl,
+      });
+      if (!message) return "failed";
+      const result = await client.request({ type: "media_page", ...message });
+      log("media page", pageUrl, result);
+      if (result.type === "accepted") return "sent";
+      // An app from before video (v0.4) refuses hints, or the page.
+      if (
+        (result.type === "error" && result.reason === "app_too_old") ||
+        (result.type === "rejected" && result.reason === "unsupported")
+      ) {
+        return "app_too_old";
+      }
+      return "failed";
+    }
+
+    async function sendPage(
+      info: Browser.contextMenus.OnClickData,
+      tab: Browser.tabs.Tab | undefined,
+      mediaUrl: string | null,
+    ) {
       const pageUrl = info.pageUrl ?? tab?.url ?? null;
-      if (onAnySite([pageUrl], MEDIA_EXCLUDED)) {
-        await leaveNotice("notice.media_excluded");
+      const result = await sendMediaPage(tab, pageUrl, { hint: null, sources: [], mediaUrl });
+      if (result === "sent") return;
+      if (result === "excluded") {
+        // Only worth a word on a page the menu could be on.
+        if (isFetchable(pageUrl)) await leaveNotice("notice.media_excluded");
         return;
       }
-      const cookies = pageUrl
-        ? await collectCookies(getAllCookies, [pageUrl], {
-            storeId: tabStore(tab),
-            pageUrl,
-            firefox: FIREFOX,
-          })
-        : [];
-      const message = mediaPageMessage(pageUrl, tab?.title, tab?.incognito ?? false, cookies);
-      if (!message) return;
-      const result = await client.request({ type: "media_page", ...message });
-      log("menu page", pageUrl, result);
-      if (result.type === "accepted") return;
       await leaveNotice(
-        result.type === "rejected" && result.reason === "unsupported"
-          ? "notice.media_unsupported"
-          : "notice.page_failed",
+        result === "app_too_old" ? "notice.media_unsupported" : "notice.page_failed",
       );
     }
 
@@ -310,7 +485,9 @@ export default defineBackground({
           case MENU.page:
             return downloadLinks(info, tab, false);
           case MENU.sendPage:
-            return sendPage(info, tab);
+            return sendPage(info, tab, null);
+          case MENU.media:
+            return sendPage(info, tab, isFetchable(info.srcUrl) ? info.srcUrl : null);
         }
       };
       run().catch((error: unknown) => log("menu failed", error));

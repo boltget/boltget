@@ -194,6 +194,8 @@ Request/response JSON with a `v` (protocol version) and `type`:
 Versioning: the protocol version is an integer. The app supports the current and previous version; the extension shows an "update Boltget" message if the app is older.
 
 > **Implemented (v0.3 step 1), version 1** ([BROWSER-INTEGRATION.md, Protocol](BROWSER-INTEGRATION.md#protocol) has the message shapes; the reference is `crates/ipc/src/browser.rs`, its TypeScript in `packages/native-messaging`). Changes against the table: the capture rules are the `rules` field of the `hello` reply rather than a `settings` message; `refresh_link` is not a message (the app matches a re-captured download instead); every message may carry an `id` the reply echoes. The browser's version is separate from the pipe's: the host relays each message as the pipe request `browser {v, message}` and the reply as `browser {reply}`, on a connection that said hello with `"role": "browser"` (pipe protocol 3), which may send nothing else.
+>
+> **Version 2 (v0.4 step 4)** adds `media_page`'s `hints`; the app serves versions 1 and 2, and the extension sends each message at the oldest version that carries it, so a 0.3 app still takes its downloads ([BROWSER-INTEGRATION.md, Protocol](BROWSER-INTEGRATION.md#protocol)). The pipe protocol stays 3: the browser message travels inside `browser {v, message}` with its own version, and the host and app come from the same release.
 
 ### 3. CLI to app (named pipe)
 

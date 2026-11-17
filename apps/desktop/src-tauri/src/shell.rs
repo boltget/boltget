@@ -31,6 +31,9 @@ pub(crate) enum ShellRequest {
     /// Offer to resume a download waiting for a new link with one the
     /// browser handed over (`resume_offers` lists the offers waiting).
     ResumeOffer { offer: ResumeOffer },
+    /// Open the media sheet for the pages the browser extension sent
+    /// (`take_media_pages` hands them over).
+    MediaPage,
 }
 
 /// The command line: links to add, and `--background` (start in the tray,

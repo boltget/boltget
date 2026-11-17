@@ -30,6 +30,8 @@
     onShellRequest,
     resumeOffers,
     takeLaunchLinks,
+    takeMediaPages,
+    type BrowserMediaPage,
     type ShellRequest,
   } from "./lib/native";
   import Palette from "./lib/palette/Palette.svelte";
@@ -48,6 +50,8 @@
   let count = $state(0);
   /** Links from outside (a launch, the tray) waiting for the engine. */
   let incoming = $state<string | null>(null);
+  /** A page the browser extension sent, waiting for the engine. */
+  let incomingMedia = $state.raw<BrowserMediaPage | null>(null);
   /** How long a copied-link offer stays. */
   const OFFER_MS = 12_000;
   let clipboardWanted = $state(false);
@@ -77,6 +81,8 @@
     void resumeOffers().then((offers) => {
       for (const offer of offers) app.offerResume(offer);
     });
+    // A page the extension sent before the page listened (it started the app).
+    takeMedia();
     return () => {
       stopErrors();
       stopEvents();
@@ -118,9 +124,26 @@
     );
   }
 
+  /**
+   * "Download video from this page" in the browser: the newest page the
+   * extension sent opens the media sheet (one at a time, as in the browser).
+   */
+  function takeMedia() {
+    void takeMediaPages().then((pages) => {
+      const newest = pages.at(-1);
+      if (newest) incomingMedia = newest;
+    });
+  }
+
   // The add sheet opens once the engine can probe.
   $effect(() => {
     if (status.state !== "ready") return;
+    if (incomingMedia !== null) {
+      app.closeSettings();
+      app.closeAdd();
+      app.openMedia(incomingMedia.url, incomingMedia);
+      incomingMedia = null;
+    }
     if (incoming !== null) {
       openAddFromText(incoming);
       incoming = null;
@@ -156,6 +179,9 @@
       }
       case "resumeOffer":
         app.offerResume(request.offer);
+        break;
+      case "mediaPage":
+        takeMedia();
         break;
     }
   }

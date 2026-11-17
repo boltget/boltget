@@ -91,6 +91,7 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
     setMediaChannel: vi.fn(() => ok(TOOLS)),
     setMediaToolPath: vi.fn(() => ok(TOOLS)),
     openMediaProject: vi.fn(() => ok(null)),
+    mediaHintLink: vi.fn(() => ok(null)),
     addDefaults: vi.fn(() => ok({ downloadsFolder: "Downloads", recentFolders: [] })),
     checkDestination: vi.fn((_dir, name) =>
       ok({ fileName: name, renamed: false, folderExists: true, freeBytes: null }),

@@ -39,6 +39,8 @@ pub(crate) fn builder() -> Builder<tauri::Wry> {
             media::set_media_channel,
             media::set_media_tool_path,
             media::open_media_project,
+            media::take_media_pages,
+            media::media_hint_link,
             engine::add_download,
             engine::add_defaults,
             engine::check_destination,

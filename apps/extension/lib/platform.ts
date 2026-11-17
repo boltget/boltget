@@ -5,6 +5,14 @@ import type { Browser as ProtocolBrowser } from "@boltget/native-messaging";
 import { browser } from "wxt/browser";
 import type { BrowserCookie, CookieQuery } from "./cookies";
 import type { DownloadControl, DownloadState } from "./handoff";
+import {
+  readScan,
+  scanPage,
+  type MediaSendResult,
+  type MediaState,
+  type PageScan,
+  type SessionArea,
+} from "./media";
 import { hostName, NativeClient, type Flavor } from "./native";
 import type { Store } from "./settings";
 
@@ -13,6 +21,33 @@ export const FLAVOR: Flavor = import.meta.env.MODE === "production" ? "release" 
 
 /** The Firefox build (event page, `browser.*` with Firefox's extras). */
 export const FIREFOX = import.meta.env.FIREFOX;
+
+/** Set by wxt.config.ts at build time. */
+declare const __BOLTGET_STORE_POLICY__: boolean;
+
+/**
+ * The store policy (lib/policy.ts): no media on YouTube's sites. On in every
+ * build unless built with BOLTGET_STORE_POLICY=off, for a browser no store
+ * sees (docs/BROWSER-INTEGRATION.md, "Store policy constraints").
+ */
+export const STORE_POLICY: boolean = __BOLTGET_STORE_POLICY__;
+
+/** `storage.session` for lib/media.ts's TabMediaStore. */
+export const sessionArea: SessionArea = {
+  get: (key) => browser.storage.session.get(key),
+  set: (items) => browser.storage.session.set(items),
+  remove: (key) => browser.storage.session.remove(key),
+};
+
+/** Shows a tab's media count on the toolbar button ("" hides it). */
+export async function setMediaBadge(tabId: number, text: string): Promise<void> {
+  try {
+    await browser.action.setBadgeText({ tabId, text });
+    if (text) await browser.action.setBadgeBackgroundColor({ tabId, color: "#0A0A0B" });
+  } catch {
+    // The tab closed meanwhile.
+  }
+}
 
 /** The browser, for `hello` (the Chrome build also runs in Edge and others). */
 export function detectBrowser(): ProtocolBrowser {
@@ -140,4 +175,61 @@ export async function reportColorScheme(dark: boolean): Promise<void> {
   if (toolbarDark === dark) return;
   await browser.storage.local.set({ toolbarDark: dark });
   await setToolbarIcon(dark);
+}
+
+/**
+ * The tab the popup is about: the active tab of its window. The end-to-end
+ * build also takes `?tab=<id>`, since a test opens the popup as a page of its
+ * own.
+ */
+export async function popupTab(): Promise<number | null> {
+  if (import.meta.env.MODE === "e2e") {
+    const id = Number(new URLSearchParams(location.search).get("tab") ?? "");
+    if (Number.isInteger(id) && id > 0) return id;
+  }
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  return tab?.id ?? null;
+}
+
+/** What tab `tabId` has seen of media, from the background (null when it cannot say). */
+export async function tabMediaState(tabId: number): Promise<MediaState | null> {
+  try {
+    return ((await browser.runtime.sendMessage({ type: "boltget:media-state", tabId })) ??
+      null) as MediaState | null;
+  } catch {
+    return null;
+  }
+}
+
+/** Asks the background to send tab `tabId`'s page to the app's media sheet. */
+export async function sendTabMedia(
+  tabId: number,
+  hint: string | null,
+  sources: string[],
+): Promise<MediaSendResult> {
+  try {
+    const result: unknown = await browser.runtime.sendMessage({
+      type: "boltget:media-send",
+      tabId,
+      hint,
+      sources,
+    });
+    return typeof result === "string" ? (result as MediaSendResult) : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+/**
+ * Looks at the page itself once (scanPage, injected through the popup's
+ * activeTab grant: no script stays in the page). Nothing when the browser
+ * does not allow it there.
+ */
+export async function scanTab(tabId: number): Promise<PageScan> {
+  try {
+    const [first] = await browser.scripting.executeScript({ target: { tabId }, func: scanPage });
+    return readScan(first?.result);
+  } catch {
+    return readScan(null);
+  }
 }

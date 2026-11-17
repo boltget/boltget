@@ -587,3 +587,94 @@ test("a private window with Forget private-window downloads on", async () => {
   );
   expect(readdirSync(browserFolder)).not.toContain("private.zip");
 });
+
+/** A short Creative Commons video on Wikimedia Commons (1.6 MB, 15 s). */
+const COMMONS_VIDEO = "https://commons.wikimedia.org/wiki/File:Urmia_lake_drought.webm";
+
+test("media: the popup sends a video page to the app's media sheet, which downloads it", async () => {
+  test.setTimeout(600_000);
+  // The video tools, installed into the run's data folder (yt-dlp's signed
+  // release and the pinned FFmpeg, from GitHub).
+  execFileSync(join(debug, "boltget.exe"), ["media", "install"], {
+    env: { ...process.env, BOLTGET_DATA_DIR: dataDir },
+    stdio: "ignore",
+    timeout: 300_000,
+  });
+  // The popup takes `?tab=` and site access only in the e2e flavor (same
+  // code); its host name points at the real host for this test, as for the
+  // cookie test.
+  const manifest = join(root, "e2e-host-media.json");
+  writeFileSync(
+    manifest,
+    JSON.stringify({
+      name: "app.boltget.native_host_e2e",
+      description: "Boltget real run",
+      path: join(debug, "boltget-native-host.exe"),
+      type: "stdio",
+      allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
+    }),
+  );
+  execFileSync("reg", ["add", E2E_HOST_KEY, "/ve", "/t", "REG_SZ", "/d", manifest, "/f"], {
+    stdio: "ignore",
+  });
+  const first = { context, page, worker };
+  try {
+    ({ context, page } = await launch(e2eBuild, "profile-media"));
+    worker = await extensionWorker();
+    await page.goto(COMMONS_VIDEO);
+    await expect(page.locator("video").first()).toBeAttached({ timeout: 30_000 });
+    const tabId = await eventually(
+      () =>
+        worker.evaluate(
+          async () =>
+            (await chrome.tabs.query({})).find((t) => t.url?.includes("commons.wikimedia"))?.id ??
+            null,
+        ),
+      15_000,
+      "the page's tab",
+    );
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${EXTENSION_ID}/popup.html?tab=${tabId}`);
+    await expect(popup.getByText("Video on this page")).toBeVisible();
+    await expect(
+      popup.getByText("Boltget can download the video or audio here.", { exact: false }),
+    ).toBeVisible();
+    await popup.getByRole("button", { name: "Download video from this page" }).click();
+    await expect(popup.getByText("Opened in Boltget. Choose the quality there.")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // The app opened its media sheet for the page; yt-dlp read it.
+    const appUi = await appWindow();
+    const sheet = appUi.getByRole("dialog", { name: "Download video or audio" });
+    await expect(sheet).toBeVisible({ timeout: 30_000 });
+    await expect(sheet.getByText("Best quality")).toBeVisible({ timeout: 180_000 });
+    // This page has only a VP8/Vorbis WebM, which cannot be remuxed into MP4
+    // (yt-dlp's "Conversion failed!" under Prefer MP4): keep the original.
+    const mp4 = sheet.getByRole("switch", { name: "Prefer MP4" });
+    if (await mp4.isChecked()) await mp4.click({ force: true });
+    await expect(mp4).not.toBeChecked();
+    await sheet.getByRole("button", { name: "Download", exact: true }).click();
+    const done = await eventually(
+      async () => {
+        const all = (await rows()) as (Row & { media: unknown })[];
+        const media = all.find((r) => r.media);
+        if (media?.state === "failed") throw new Error(`failed: ${JSON.stringify(media.error)}`);
+        return media?.state === "completed" ? media : null;
+      },
+      240_000,
+      "the video to download",
+    );
+    console.log(`media: ${done.path} (${done.total} bytes)`);
+    expect(done.path && existsSync(done.path)).toBe(true);
+    expect(readFileSync(done.path!).length).toBeGreaterThan(100_000);
+  } finally {
+    // Closing this second browser can hang; the run's folder goes anyway.
+    await Promise.race([
+      context.close().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 15_000)),
+    ]);
+    ({ context, page, worker } = first);
+    execFileSync("reg", ["delete", E2E_HOST_KEY, "/f"], { stdio: "ignore" });
+  }
+});

@@ -21,12 +21,19 @@
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use boltget_engine::{Cookie, HeaderValue, RequestContext};
+use boltget_engine::{Cookie, CookieJar, HeaderValue, RequestContext};
 use serde::{Deserialize, Serialize};
 
 /// The protocol version this build speaks. It changes when a message
-/// changes meaning or an extension message gains a field.
-pub const VERSION: u32 = 1;
+/// changes meaning or an extension message gains a field. Version 2 added
+/// [`MediaPage::hints`].
+pub const VERSION: u32 = 2;
+
+/// The version that added [`MediaPage::hints`]: a `media_page` of an older
+/// version carrying hints is refused. The extension sends every message at
+/// the oldest version that carries it, so an app of an older release still
+/// takes its downloads.
+pub const MEDIA_HINTS_VERSION: u32 = 2;
 
 /// The oldest extension version the host and app still serve.
 pub const OLDEST_VERSION: u32 = 1;
@@ -65,6 +72,9 @@ pub const MAX_LINKS: usize = 5000;
 pub const MAX_TEXT: usize = 1024;
 /// The longest short value: a MIME type, a cookie's domain, a version.
 pub const MAX_SHORT: usize = 255;
+/// The most media hints in [`MediaPage::hints`] (the extension keeps no more
+/// per tab).
+pub const MAX_HINTS: usize = 20;
 
 /// The request headers the extension may pass on, lowercase
 /// (docs/BROWSER-INTEGRATION.md, "Cookies, headers and referrer
@@ -97,9 +107,10 @@ pub enum Message {
     /// "Download all links" or a selection's links: the app shows them to
     /// pick from. Starts the app if needed.
     AddLinks(AddLinks),
-    /// "Send page to Boltget": the page for the app's media extraction
-    /// (v0.4; until then [`RejectReason::Unsupported`]). Starts the app if
-    /// needed.
+    /// "Download video from this page", or "Send page to Boltget": the page
+    /// for the app's media extraction, with what the extension saw on it
+    /// (protocol 2: [`MediaPage::hints`]). Answered [`Reply::Accepted`] with
+    /// `confirm` as the app's media sheet opens. Starts the app if needed.
     MediaPage(MediaPage),
     /// What the app is doing, for the popup: [`Reply::Status`]. Never
     /// starts the app.
@@ -139,6 +150,22 @@ impl Message {
             Self::MediaPage(m) => m.validate(),
             Self::Status(Status {}) => Ok(()),
         }
+    }
+
+    /// [`Message::validate`], and that the message is one protocol `v`
+    /// carries: a `media_page` with hints needs [`MEDIA_HINTS_VERSION`].
+    pub fn validate_at(&self, v: u32) -> Result<(), Invalid> {
+        self.validate()?;
+        if let Self::MediaPage(m) = self
+            && !m.hints.is_empty()
+            && v < MEDIA_HINTS_VERSION
+        {
+            return Err(Invalid::new(
+                "hints",
+                format!("needs protocol {MEDIA_HINTS_VERSION}"),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -404,8 +431,8 @@ impl fmt::Debug for Link {
 pub struct MediaPage {
     /// The page, which the app gives to its media extractor.
     pub page_url: String,
-    /// A media URL the extension saw on the page: used only when the
-    /// extractor knows nothing of the site.
+    /// A media URL the user pointed at (the video or audio element's menu):
+    /// used only when the extractor finds nothing on the page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_url: Option<String>,
     /// The page's title.
@@ -417,21 +444,79 @@ pub struct MediaPage {
     /// Cookies for the page's site.
     #[serde(default)]
     pub cookies: Vec<CookieRecord>,
-    /// Request headers, from [`ALLOWED_HEADERS`] only.
+    /// Request headers, from [`ALLOWED_HEADERS`] only (the browser's
+    /// `User-Agent`, and the page as `Referer`).
     #[serde(default)]
     pub headers: Vec<(String, String)>,
+    /// Media the extension saw the page load (protocol 2): manifests and
+    /// direct files, at most [`MAX_HINTS`], used only when the extractor
+    /// finds nothing on the page (docs/VIDEO.md, "Hints").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<MediaHint>,
 }
 
 impl MediaPage {
+    /// The page, with nothing else known.
+    pub fn new(page_url: impl Into<String>) -> Self {
+        Self {
+            page_url: page_url.into(),
+            media_url: None,
+            title: None,
+            incognito: false,
+            cookies: Vec::new(),
+            headers: Vec::new(),
+            hints: Vec::new(),
+        }
+    }
+
     fn validate(&self) -> Result<(), Invalid> {
         link("page_url", &self.page_url)?;
         optional_link("media_url", self.media_url.as_deref())?;
         if let Some(t) = &self.title {
             text_value("title", t)?;
         }
+        if self.hints.len() > MAX_HINTS {
+            return Err(Invalid::new("hints", format!("more than {MAX_HINTS}")));
+        }
+        for h in &self.hints {
+            link("hints.url", &h.url)?;
+            if let Some(mime) = &h.mime {
+                mime_type(mime)?;
+            }
+        }
         cookies(&self.cookies)?;
         headers(&self.headers)?;
         Ok(())
+    }
+
+    /// The request context for `url` (the page, or one of its hints): the
+    /// browser's headers, the page as referrer unless a `Referer` came
+    /// along, and the cookies.
+    pub fn context(&self, url: &str) -> Result<RequestContext, Invalid> {
+        context(url, &self.headers, Some(&self.page_url), &self.cookies)
+    }
+
+    /// The cookies that have not expired, as a jar (for yt-dlp's cookie
+    /// file).
+    pub fn cookie_jar(&self) -> CookieJar {
+        let now = SystemTime::now();
+        let mut jar = CookieJar::new();
+        for record in &self.cookies {
+            let cookie = record.to_cookie();
+            if !cookie.is_expired(now) {
+                jar.insert(cookie);
+            }
+        }
+        jar
+    }
+
+    /// The header `name` as the browser sent it (names compare without
+    /// case).
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -441,8 +526,67 @@ impl fmt::Debug for MediaPage {
             .field("page_url", &crate::proto::redact(&self.page_url))
             .field("incognito", &self.incognito)
             .field("cookies", &self.cookies.len())
+            .field("headers", &header_names(&self.headers))
+            .field("hints", &self.hints)
             .finish_non_exhaustive()
     }
+}
+
+/// Media the extension saw a page load: a stream's manifest or a direct
+/// file (docs/BROWSER-INTEGRATION.md, "Media detection panel").
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(Type))]
+#[serde(deny_unknown_fields)]
+#[non_exhaustive]
+pub struct MediaHint {
+    /// The response's URL.
+    pub url: String,
+    /// What it is.
+    pub kind: MediaKind,
+    /// The response's MIME type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    /// Its size, when the response said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", specta(type = Option<u32>))]
+    pub size: Option<u64>,
+}
+
+impl MediaHint {
+    /// A hint of `kind` at `url`, nothing else known.
+    pub fn new(url: impl Into<String>, kind: MediaKind) -> Self {
+        Self {
+            url: url.into(),
+            kind,
+            mime: None,
+            size: None,
+        }
+    }
+}
+
+/// Links may be signed: not in logs.
+impl fmt::Debug for MediaHint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MediaHint")
+            .field("url", &crate::proto::redact(&self.url))
+            .field("kind", &self.kind)
+            .field("size", &self.size)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What a [`MediaHint`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(Type))]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum MediaKind {
+    /// An HLS playlist (`.m3u8`).
+    Hls,
+    /// A DASH manifest (`.mpd`).
+    Dash,
+    /// A video or audio file.
+    File,
 }
 
 /// A cookie as `cookies.getAll` reports it. `same_site` means nothing to a
@@ -884,7 +1028,7 @@ pub enum RejectReason {
     /// link the browser already used, say): the browser's paused download
     /// still holds the original response.
     LinkRefused,
-    /// This app does not handle the message yet (media before v0.4).
+    /// This app does not handle the message (media before v0.4).
     Unsupported,
     /// The app could not add it (no download folder, say).
     Failed,
@@ -1144,7 +1288,7 @@ pub fn decode(bytes: &[u8]) -> Result<Envelope, Rejection> {
     let message: Message = serde_json::from_value(Value::Object(object))
         .map_err(|e| Rejection::new(v, id, ErrorReason::Invalid, e.to_string()))?;
     message
-        .validate()
+        .validate_at(v)
         .map_err(|e| Rejection::new(v, id, ErrorReason::Invalid, e.to_string()))?;
     Ok(Envelope { v, id, message })
 }
@@ -1344,7 +1488,7 @@ pub fn fuzz(data: &[u8]) {
         Ok(env) => {
             // What was accepted keeps every rule, says the same thing again,
             // and always becomes the engine's request.
-            assert!(env.message.validate().is_ok());
+            assert!(env.message.validate_at(env.v).is_ok());
             assert!((OLDEST_VERSION..=VERSION).contains(&env.v));
             let again = serde_json::to_vec(&env).expect("an envelope serializes");
             assert_eq!(decode(&again).as_ref(), Ok(&env), "round trip");
@@ -1355,6 +1499,12 @@ pub fn fuzz(data: &[u8]) {
                 Message::AddLinks(a) => {
                     for l in &a.links {
                         a.context(&l.url).expect("a valid link has a context");
+                    }
+                }
+                Message::MediaPage(m) => {
+                    m.context(&m.page_url).expect("a valid page has a context");
+                    for h in &m.hints {
+                        m.context(&h.url).expect("a valid hint has a context");
                     }
                 }
                 _ => {}

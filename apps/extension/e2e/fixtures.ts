@@ -18,6 +18,7 @@ const extensionPath = fileURLToPath(new URL("../.output/chrome-mv3-e2e", import.
 /** What the stub answers (see stub-host.mjs). */
 export interface StubMode {
   capture?: "accept" | "reject" | "unavailable" | "hang" | "exit" | "garbage";
+  media?: "accept" | "unsupported";
   app?: string | null;
   rules?: unknown;
 }

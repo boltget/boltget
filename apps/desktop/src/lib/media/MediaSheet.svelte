@@ -12,6 +12,12 @@
   the one line about rights, shows the install's progress, then looks at
   the page by itself.
 
+  A page the browser extension sent ("Download video from this page") comes
+  with its browser context, which the probe and the download use, and the
+  media the extension saw the page load: when yt-dlp finds nothing, the
+  sheet offers those (VIDEO.md, "Hints"): a stream's manifest goes to
+  yt-dlp, a direct file to the add sheet.
+
   A native modal <dialog>, like the add sheet: it traps focus and Esc
   closes it.
 -->
@@ -25,7 +31,9 @@
   import { untrack } from "svelte";
   import { app } from "../app.svelte";
   import type {
+    BrowserMediaPage,
     MediaContainer,
+    MediaHintInfo,
     MediaInstallEvent,
     MediaSummary,
     MediaTool,
@@ -42,10 +50,12 @@
     expressionIsAudio,
     expressionProblem,
     formatRows,
+    hintLine,
     initialPreset,
     installLines,
     installSummary,
     mediaLength,
+    offeredHints,
     pickerNotice,
     presetDetails,
     presetName,
@@ -63,6 +73,8 @@
   let lastKey = -1;
 
   let url = $state("");
+  /** The page as the browser extension sent it, if it did. */
+  let browserPage = $state.raw<BrowserMediaPage | null>(null);
   let phase = $state<Phase>("looking");
   let media = $state.raw<MediaSummary | null>(null);
   let failure = $state.raw<UiError | null>(null);
@@ -114,6 +126,12 @@
       ...(media.duration !== null ? [mediaLength(media.duration)] : []),
     ];
   });
+  const hints = $derived(
+    browserPage && (phase === "failed" || phase === "picker")
+      ? offeredHints(browserPage.hints, phase === "failed" ? "failed" : notice, url)
+      : [],
+  );
+  let hintBusy = $state(false);
   const canDownload = $derived(
     phase === "picker" && notice === null && (typed || chosen !== null) && !submitting,
   );
@@ -123,16 +141,19 @@
   $effect(() => {
     const request = app.media;
     untrack(() => {
-      if (request && (!open || request.key !== lastKey)) show(request.url, request.key);
-      else if (!request && open) hide();
+      if (request && (!open || request.key !== lastKey)) {
+        show(request.url, request.browser, request.key);
+      } else if (!request && open) hide();
     });
   });
 
-  function show(page: string, key: number) {
+  function show(page: string, browser: BrowserMediaPage | null, key: number) {
     lastKey = key;
     open = true;
     closing = false;
     url = page;
+    browserPage = browser;
+    hintBusy = false;
     media = null;
     failure = null;
     thumbnail = null;
@@ -189,7 +210,7 @@
     const page = url;
     phase = "looking";
     failure = null;
-    const result = await downloads.probeMedia(page);
+    const result = await downloads.probeMedia(page, browserPage?.page ?? null);
     if (page !== url || !open) return;
     if (result.status === "error") {
       failure = result.error;
@@ -246,6 +267,35 @@
     void look();
   }
 
+  // Hints ---------------------------------------------------------------------
+
+  /**
+   * A hint the page loaded: a stream's manifest is looked at by yt-dlp like
+   * a page (with the browser's context, the page as referrer); a direct
+   * file goes to the add sheet, its request waiting there.
+   */
+  async function useHint(hint: MediaHintInfo) {
+    if (!browserPage || hintBusy) return;
+    if (hint.kind !== "file") {
+      url = hint.url;
+      media = null;
+      thumbnail = null;
+      preset = null;
+      void look();
+      return;
+    }
+    hintBusy = true;
+    submitError = null;
+    const result = await downloads.mediaHintLink(browserPage.page, hint.url);
+    hintBusy = false;
+    if (result.status === "error") {
+      submitError = errorText(result.error);
+      return;
+    }
+    app.closeMedia();
+    app.openAdd(hint.url);
+  }
+
   function openProject(tool: MediaTool) {
     void downloads.openMediaProject(tool);
   }
@@ -291,6 +341,7 @@
       container,
       title: media.title,
       site: media.site,
+      page: browserPage?.page ?? null,
       subtitles: option
         ? {
             languages: [option.code],
@@ -310,6 +361,36 @@
     app.closeMedia();
   }
 </script>
+
+{#snippet hintList()}
+  {#if hints.length}
+    <section class="hints" aria-labelledby="media-hints">
+      <div class="option-text">
+        <span class="label" id="media-hints">{t("media.hints")}</span>
+        <span class="hint">{t("media.hints.description")}</span>
+      </div>
+      <ul class="hint-list">
+        {#each hints as h (h.url)}
+          {@const line = hintLine(h)}
+          <li>
+            <span class="hint-text">
+              <span class="hint-name">{line.name}</span>
+              <span class="hint-details">{@render dots(line.details)}</span>
+            </span>
+            <Button
+              disabled={hintBusy}
+              aria-label={t("media.hint.use_label", {
+                name: line.name.toLowerCase(),
+                host: line.host,
+              })}
+              onclick={() => void useHint(h)}>{t("media.hint.use")}</Button
+            >
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+{/snippet}
 
 {#snippet dots(parts: string[])}
   {#each parts as part, i (i)}{#if i}<span class="dot" aria-hidden="true">·</span>{/if}<span
@@ -368,6 +449,7 @@
               <code>{failure.message}</code>
             </details>
           {/if}
+          {@render hintList()}
         {:else if phase === "install" || phase === "installing"}
           <p class="text">{t("media.install.body")}</p>
           {#if phase === "install"}
@@ -460,6 +542,7 @@
             </p>
           {:else if notice === "none"}
             <p class="line info"><Icon name="info" size={14} /><span>{t("media.none")}</span></p>
+            {@render hintList()}
           {:else}
             <fieldset class="presets" disabled={typed}>
               <legend class="label">{t("media.presets")}</legend>
@@ -1004,6 +1087,50 @@
   }
   .muted {
     color: var(--color-text-subtle);
+  }
+
+  /* Hints: what the page loaded, when yt-dlp found nothing. */
+  .hints {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .hint-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-floating);
+    background: var(--color-content);
+    list-style: none;
+    overflow: hidden;
+  }
+  .hint-list li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+  .hint-list li + li {
+    border-top: 1px solid var(--color-hairline);
+  }
+  .hint-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .hint-name {
+    font-weight: var(--weight-medium);
+  }
+  .hint-details {
+    color: var(--color-text-subtle);
+    font-size: var(--text-12);
+    line-height: var(--leading-12);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* The install sheet. */

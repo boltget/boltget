@@ -3,9 +3,12 @@
 //! picker, the first-use install sheet and Settings, Video. Media downloads
 //! themselves run in the bridge (`bridge::media`), as rows of the list.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::VecDeque;
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use boltget_engine::{ContainerPreference, NewMediaJob, SubtitleChoice};
+use boltget_ipc::browser::{MediaKind, MediaPage};
 use boltget_media::{
     Channel as ToolChannel, Format, InstallEvent, MediaInfo, Program, ResolvedPreset, Tool,
     codec_label, presets,
@@ -16,9 +19,235 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 
 use crate::bridge::dto::DownloadRow;
+use crate::bridge::media::MediaAuth;
 use crate::bridge::{Bridge, media};
+use crate::browser::Captured;
 use crate::error::UiError;
 use crate::settings::{MediaContainer, SettingsPatch, VideoPatch};
+
+// Pages from the browser extension ---------------------------------------------
+
+/// How long a page the extension sent keeps its browser context (cookies,
+/// headers, hints) for the media sheet: its probe and its Download button.
+const PAGE_KEEP: Duration = Duration::from_secs(30 * 60);
+
+/// At most this many pages wait at once; the oldest goes first.
+const MAX_PAGES: usize = 16;
+
+/// Pages the extension sent (`media_page`, docs/VIDEO.md, "The extension's
+/// media panel: as built"), with their cookies and headers, for the media
+/// sheet. Held in memory only, never saved: cookies are secrets.
+#[derive(Debug, Default)]
+pub(crate) struct MediaPages(Mutex<Pages>);
+
+#[derive(Debug, Default)]
+struct Pages {
+    next: u32,
+    list: VecDeque<PageEntry>,
+}
+
+#[derive(Debug)]
+struct PageEntry {
+    id: u32,
+    page: MediaPage,
+    /// The window has opened the media sheet for it.
+    taken: bool,
+    at: Instant,
+}
+
+impl MediaPages {
+    /// Keeps a page the extension sent; returns its number.
+    pub(crate) fn add(&self, page: MediaPage) -> u32 {
+        let mut pages = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        pages.next = pages.next.wrapping_add(1).max(1);
+        let id = pages.next;
+        pages.list.retain(|p| p.at.elapsed() < PAGE_KEEP);
+        while pages.list.len() >= MAX_PAGES {
+            pages.list.pop_front();
+        }
+        pages.list.push_back(PageEntry {
+            id,
+            page,
+            taken: false,
+            at: Instant::now(),
+        });
+        id
+    }
+
+    /// The pages the window has not opened yet, oldest first, now marked
+    /// opened.
+    pub(crate) fn take_new(&self) -> Vec<BrowserMediaPage> {
+        let mut pages = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        pages
+            .list
+            .iter_mut()
+            .filter(|p| !p.taken && p.at.elapsed() < PAGE_KEEP)
+            .map(|p| {
+                p.taken = true;
+                BrowserMediaPage::new(p.id, &p.page)
+            })
+            .collect()
+    }
+
+    /// The page numbered `id`, while it is kept.
+    pub(crate) fn get(&self, id: u32) -> Option<MediaPage> {
+        let pages = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        pages
+            .list
+            .iter()
+            .find(|p| p.id == id && p.at.elapsed() < PAGE_KEEP)
+            .map(|p| p.page.clone())
+    }
+
+    /// What yt-dlp gets of page `id`'s browser context, if it is kept.
+    fn auth(&self, id: Option<u32>) -> Option<MediaAuth> {
+        self.get(id?).map(|p| auth_of(&p))
+    }
+}
+
+/// The browser's cookies, `User-Agent` and `Referer` (else the page) for
+/// yt-dlp.
+fn auth_of(page: &MediaPage) -> MediaAuth {
+    MediaAuth {
+        cookies: page.cookie_jar(),
+        user_agent: page.header("user-agent").map(str::to_owned),
+        referer: Some(page.header("referer").unwrap_or(&page.page_url).to_owned()),
+    }
+}
+
+/// A page the browser extension sent: "Download video from this page".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BrowserMediaPage {
+    /// Names the page's browser context (cookies, headers) in
+    /// `probe_media`, `add_media_download` and `media_hint_link`.
+    pub(crate) page: u32,
+    pub(crate) url: String,
+    pub(crate) title: Option<String>,
+    /// What the extension saw the page load, for when yt-dlp finds nothing:
+    /// the element the user pointed at first.
+    pub(crate) hints: Vec<MediaHintInfo>,
+}
+
+/// Media the extension saw a page load.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaHintInfo {
+    pub(crate) url: String,
+    pub(crate) kind: MediaHintKind,
+    pub(crate) mime: Option<String>,
+    /// Bytes, when the response said.
+    pub(crate) size: Option<u64>,
+}
+
+/// What a hint is: a stream yt-dlp reads from its manifest, or a file the
+/// engine downloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum MediaHintKind {
+    Hls,
+    Dash,
+    File,
+}
+
+/// A link's kind from its path: `.m3u8` is HLS, `.mpd` DASH, anything else
+/// a file.
+fn kind_of_link(url: &str) -> MediaHintKind {
+    let path = url::Url::parse(url)
+        .map(|u| u.path().to_owned())
+        .unwrap_or_default();
+    let ext = std::path::Path::new(&path)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("m3u8") => MediaHintKind::Hls,
+        Some("mpd") => MediaHintKind::Dash,
+        _ => MediaHintKind::File,
+    }
+}
+
+impl BrowserMediaPage {
+    fn new(id: u32, page: &MediaPage) -> Self {
+        let mut hints: Vec<MediaHintInfo> = Vec::new();
+        if let Some(url) = &page.media_url {
+            hints.push(MediaHintInfo {
+                url: url.clone(),
+                kind: kind_of_link(url),
+                mime: None,
+                size: None,
+            });
+        }
+        for h in &page.hints {
+            if hints.iter().any(|x| x.url == h.url) {
+                continue;
+            }
+            hints.push(MediaHintInfo {
+                url: h.url.clone(),
+                kind: match h.kind {
+                    MediaKind::Hls => MediaHintKind::Hls,
+                    MediaKind::Dash => MediaHintKind::Dash,
+                    _ => MediaHintKind::File,
+                },
+                mime: h.mime.clone(),
+                size: h.size,
+            });
+        }
+        Self {
+            page: id,
+            url: page.page_url.clone(),
+            title: page.title.clone(),
+            hints,
+        }
+    }
+}
+
+/// The pages the extension sent that the window has not opened yet,
+/// oldest first. The window asks when the extension's request arrives
+/// (`ShellRequest::MediaPage`) and when it starts, since the request may
+/// come before it listens (the extension started the app).
+#[tauri::command]
+#[specta::specta]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn take_media_pages(pages: State<'_, MediaPages>) -> Vec<BrowserMediaPage> {
+    pages.take_new()
+}
+
+/// A direct file the extension saw on page `page`: its request (the
+/// browser's cookies and headers, the page as referrer) waits for the add
+/// sheet, which the window opens with `url` next. Only the page's own
+/// hints.
+#[tauri::command]
+#[specta::specta]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri passes command arguments by value"
+)]
+pub(crate) fn media_hint_link(
+    pages: State<'_, MediaPages>,
+    captured: State<'_, Captured>,
+    page: u32,
+    url: String,
+) -> Result<(), UiError> {
+    hint_link(&pages, &captured, page, url.trim())
+}
+
+fn hint_link(pages: &MediaPages, captured: &Captured, id: u32, url: &str) -> Result<(), UiError> {
+    let page = pages
+        .get(id)
+        .ok_or_else(|| UiError::key("error.media.page_gone"))?;
+    let known = page.media_url.as_deref() == Some(url) || page.hints.iter().any(|h| h.url == url);
+    if !known {
+        return Err(UiError::key("error.media.page_gone"));
+    }
+    let ctx = page
+        .context(url)
+        .map_err(|e| UiError::with_message("error.invalid_url", e.to_string()))?;
+    captured.remember(url.to_owned(), ctx, page.incognito);
+    Ok(())
+}
 
 fn media_error(e: &boltget_media::Error) -> UiError {
     UiError::with_message(e.message_key(), e.to_string())
@@ -283,6 +512,11 @@ pub(crate) struct MediaRequest {
     /// The site, to remember the preset for.
     #[specta(optional)]
     pub(crate) site: Option<String>,
+    /// The page the browser extension sent ([`BrowserMediaPage::page`]):
+    /// yt-dlp gets the browser's cookies and headers for as long as the job
+    /// runs in this session (never saved).
+    #[specta(optional)]
+    pub(crate) page: Option<u32>,
 }
 
 impl From<&ResolvedPreset> for MediaPreset {
@@ -624,12 +858,16 @@ pub(crate) async fn set_media_tool_path(
 /// window offers the install sheet); otherwise installs due updates first
 /// (yt-dlp at most once a day; a failed check keeps the installed
 /// version), then probes through the app's proxy. yt-dlp's own failure is
-/// `error.media.extraction`, with its message.
+/// `error.media.extraction`, with its message. With `page`, a page the
+/// browser extension sent (or one of its hints), yt-dlp gets the browser's
+/// cookies, `User-Agent` and `Referer`.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn probe_media(
     bridge: State<'_, Bridge>,
+    pages: State<'_, MediaPages>,
     url: String,
+    page: Option<u32>,
 ) -> Result<MediaProbe, UiError> {
     let sidecars = bridge.media_sidecars()?;
     let settings = bridge.settings();
@@ -641,10 +879,15 @@ pub(crate) async fn probe_media(
     }
     let prober = media::prober(&sidecars, &settings.video)?;
     let url = url.trim();
-    let opts = boltget_media::ProbeOptions {
+    let mut opts = boltget_media::ProbeOptions {
         proxy: media::proxy_for(&settings, url),
         ..boltget_media::ProbeOptions::default()
     };
+    if let Some(auth) = pages.auth(page) {
+        opts.cookies = (!auth.cookies.is_empty()).then_some(auth.cookies);
+        opts.user_agent = auth.user_agent;
+        opts.referer = auth.referer;
+    }
     let info = prober
         .probe(url, &opts)
         .await
@@ -699,6 +942,7 @@ const MAX_EXPRESSION: usize = 512;
 pub(crate) async fn add_media_download(
     app: AppHandle,
     bridge: State<'_, Bridge>,
+    pages: State<'_, MediaPages>,
     request: MediaRequest,
 ) -> Result<DownloadRow, UiError> {
     let expression = request.expression.trim();
@@ -737,7 +981,7 @@ pub(crate) async fn add_media_download(
     job.container = request.container.into();
     job.subtitles = subtitles;
     job.size = request.size;
-    let row = bridge.add_media(job).await?;
+    let row = bridge.add_media(job, pages.auth(request.page)).await?;
     if let (Some(site), Some(preset)) = (request.site.as_deref(), preset.as_deref()) {
         remember_preset(&bridge, site, preset).await;
     }
@@ -790,6 +1034,72 @@ mod tests {
         assert_eq!(s.subtitles[0].code, "en");
         assert_eq!(s.remembered.as_deref(), Some("720p"));
         assert!(!s.drm && !s.is_playlist);
+    }
+
+    fn browser_page() -> MediaPage {
+        serde_json::from_value(serde_json::json!({
+            "page_url": "https://v.test/watch?v=1",
+            "cookies": [{"name": "sid", "value": "s3cret", "domain": "v.test"}],
+            "headers": [["User-Agent", "Browser UA"]],
+            "incognito": true,
+            "hints": [
+                {"url": "https://cdn.v.test/a.mp4", "kind": "file"},
+                {"url": "https://cdn.v.test/a.mpd", "kind": "dash"}
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn pages_from_the_browser_wait_with_their_context() {
+        let pages = MediaPages::default();
+        let id = pages.add(browser_page());
+        // yt-dlp gets the cookies, the browser's User-Agent, and the page as
+        // the Referer when the browser sent none.
+        let auth = pages.auth(Some(id)).expect("kept");
+        assert_eq!(auth.cookies.len(), 1);
+        assert_eq!(auth.user_agent.as_deref(), Some("Browser UA"));
+        assert_eq!(auth.referer.as_deref(), Some("https://v.test/watch?v=1"));
+        assert!(pages.auth(None).is_none());
+        assert!(pages.auth(Some(id + 1)).is_none());
+        let opened = pages.take_new();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].hints[1].kind, MediaHintKind::Dash);
+        assert_eq!(pages.take_new().len(), 0);
+        assert!(pages.get(id).is_some(), "still there for the download");
+        // Bounded: the oldest goes first.
+        for _ in 0..MAX_PAGES {
+            pages.add(browser_page());
+        }
+        assert!(pages.get(id).is_none());
+    }
+
+    #[test]
+    fn a_direct_hint_goes_to_the_add_sheet_with_the_browsers_request() {
+        let pages = MediaPages::default();
+        let captured = Captured::default();
+        let id = pages.add(browser_page());
+        hint_link(&pages, &captured, id, "https://cdn.v.test/a.mp4").unwrap();
+        let (ctx, private) = captured
+            .get_link("https://cdn.v.test/a.mp4")
+            .expect("waiting for the sheet");
+        assert!(private, "from a private window");
+        assert_eq!(ctx.headers()["user-agent"], "Browser UA");
+        assert_eq!(ctx.headers()["referer"], "https://v.test/watch?v=1");
+        // Only the page's own hints, and only while the page is kept.
+        assert!(hint_link(&pages, &captured, id, "https://evil.test/x.mp4").is_err());
+        assert!(hint_link(&pages, &captured, id + 1, "https://cdn.v.test/a.mp4").is_err());
+    }
+
+    #[test]
+    fn link_kinds() {
+        assert_eq!(
+            kind_of_link("https://x.test/a/B.M3U8?x=1"),
+            MediaHintKind::Hls
+        );
+        assert_eq!(kind_of_link("https://x.test/a.mpd"), MediaHintKind::Dash);
+        assert_eq!(kind_of_link("https://x.test/a.mp4"), MediaHintKind::File);
+        assert_eq!(kind_of_link("https://x.test/m3u8/a"), MediaHintKind::File);
     }
 
     #[test]

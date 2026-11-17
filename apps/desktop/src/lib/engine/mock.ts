@@ -833,6 +833,9 @@ export function mockEngineApi(search: string): EngineApi {
       async openMediaProject() {
         return ok(null);
       },
+      async mediaHintLink() {
+        return ok(null);
+      },
       async pauseDownload(id: DownloadId) {
         const sim = sims.get(id);
         if (!sim) return err("error.unknown_download");

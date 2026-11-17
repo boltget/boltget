@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { MediaFormat, MediaPreset, MediaSummary } from "../bindings";
+import type { MediaFormat, MediaHintInfo, MediaPreset, MediaSummary } from "../bindings";
 import { formatBytes } from "../format";
 import {
   expressionFor,
   expressionIsAudio,
   expressionProblem,
   formatRows,
+  hintLine,
   initialPreset,
   installLines,
   installSummary,
+  linkResolution,
   mediaLength,
+  offeredHints,
   pickerNotice,
   presetDetails,
   presetName,
@@ -259,5 +262,62 @@ describe("the install sheet", () => {
     expect(lines[1]?.text).toBe(`${formatBytes(43 * MIB)} of ${formatBytes(86 * MIB)}`);
     // Without a plan, both tools.
     expect(installLines([], []).map((l) => l.name)).toEqual(["yt-dlp", "FFmpeg"]);
+  });
+});
+
+describe("hints from the browser", () => {
+  const hls: MediaHintInfo = {
+    url: "https://cdn.example.com/v/720p/index.m3u8?token=x",
+    kind: "hls",
+    mime: "application/vnd.apple.mpegurl",
+    size: null,
+  };
+  const file: MediaHintInfo = {
+    url: "https://media.example.org/clip_1920x1080.mp4",
+    kind: "file",
+    mime: "video/mp4",
+    size: 48 * MIB,
+  };
+
+  it("are offered only when the page gave nothing to download", () => {
+    const page = "https://www.example.com/watch";
+    expect(offeredHints([hls, file], "failed", page)).toEqual([hls, file]);
+    expect(offeredHints([hls], "none", page)).toEqual([hls]);
+    expect(offeredHints([hls], null, page)).toEqual([]);
+    expect(offeredHints([hls], "drm", page)).toEqual([]);
+    expect(offeredHints([hls], "playlist", page)).toEqual([]);
+    expect(offeredHints([], "failed", page)).toEqual([]);
+    // A hint that failed leaves the others.
+    expect(offeredHints([hls, file], "failed", hls.url)).toEqual([file]);
+  });
+
+  it("name what they are, the resolution in the link, the host and the size", () => {
+    expect(hintLine(hls)).toEqual({
+      name: "HLS stream",
+      host: "cdn.example.com",
+      details: ["720p", "cdn.example.com"],
+    });
+    expect(hintLine(file)).toEqual({
+      name: "Video file",
+      host: "media.example.org",
+      details: ["1080p", "media.example.org", formatBytes(48 * MIB)],
+    });
+    expect(hintLine({ ...file, url: "https://a.test/s.m4a", mime: "audio/mp4" }).name).toBe(
+      "Audio file",
+    );
+    expect(hintLine({ ...hls, kind: "dash", url: "https://a.test/m.mpd" })).toEqual({
+      name: "DASH stream",
+      host: "a.test",
+      details: ["a.test"],
+    });
+  });
+
+  it("read a resolution from the link only where one is named", () => {
+    expect(linkResolution("https://a.test/hls/1080p60/x.m3u8")).toBe("1080p");
+    expect(linkResolution("https://a.test/v_1280x720.mp4")).toBe("720p");
+    expect(linkResolution("https://a.test/480p.mp4")).toBe("480p");
+    expect(linkResolution("https://a.test/v/12345678.mp4")).toBeNull();
+    expect(linkResolution("https://a.test/mp4p/a.mp4")).toBeNull();
+    expect(linkResolution("not a link")).toBeNull();
   });
 });

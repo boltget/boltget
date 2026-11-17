@@ -1,4 +1,11 @@
-import { DEV_HOST_NAME, HOST_NAME, VERSION, type Envelope } from "@boltget/native-messaging";
+import {
+  DEV_HOST_NAME,
+  HOST_NAME,
+  MEDIA_HINTS_VERSION,
+  OLDEST_VERSION,
+  VERSION,
+  type Envelope,
+} from "@boltget/native-messaging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   classifyError,
@@ -7,6 +14,7 @@ import {
   isReply,
   NATIVE_TIMEOUT_MS,
   NativeClient,
+  versionFor,
   type NativeResult,
 } from "./native";
 import { DEFAULT_RULES } from "./rules";
@@ -38,10 +46,26 @@ describe("NativeClient", () => {
     expect(sent).toHaveLength(1);
     const [host, envelope] = sent[0] ?? [];
     expect(host).toBe(DEV_HOST_NAME);
-    expect(envelope).toMatchObject({ v: VERSION, type: "capture", url: "https://e.com/a.zip" });
+    // At the oldest version that carries it, so an older app takes it too.
+    expect(envelope).toMatchObject({
+      v: OLDEST_VERSION,
+      type: "capture",
+      url: "https://e.com/a.zip",
+    });
     expect(Number.isInteger(envelope?.id)).toBe(true);
     expect(envelope?.id).toBeGreaterThanOrEqual(0);
     expect(envelope?.id).toBeLessThan(2 ** 32);
+  });
+
+  it("sends a media_page with hints at the version that added them", () => {
+    const page = { type: "media_page" as const, page_url: "https://e.com/v" };
+    expect(versionFor(page)).toBe(OLDEST_VERSION);
+    expect(versionFor({ ...page, hints: [] })).toBe(OLDEST_VERSION);
+    expect(versionFor({ ...page, hints: [{ url: "https://e.com/a.m3u8", kind: "hls" }] })).toBe(
+      MEDIA_HINTS_VERSION,
+    );
+    expect(MEDIA_HINTS_VERSION).toBeLessThanOrEqual(VERSION);
+    expect(versionFor({ type: "status" })).toBe(OLDEST_VERSION);
   });
 
   it("gives each message its own id", async () => {

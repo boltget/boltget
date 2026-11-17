@@ -2,7 +2,15 @@
 // host's limits (BROWSER-INTEGRATION.md, "Strict and bounded"): a value the
 // host would refuse is left out rather than sent, because one bad field
 // refuses the whole message and the download would stay in the browser.
-import type { AddLinks, Capture, CookieRecord, Link, MediaPage } from "@boltget/native-messaging";
+import type {
+  AddLinks,
+  Capture,
+  CookieRecord,
+  Link,
+  MediaHint,
+  MediaPage,
+} from "@boltget/native-messaging";
+import { MAX_HINTS } from "@boltget/native-messaging";
 import { baseName, isFetchable } from "./capture";
 
 /** The protocol's limits. */
@@ -132,17 +140,52 @@ export function addLinksMessage(
   return message;
 }
 
+/** Hints the host accepts: `http(s)` links, clean MIME types, whole sizes, at most MAX_HINTS. */
+export function cleanHints(hints: readonly MediaHint[]): MediaHint[] {
+  const out: MediaHint[] = [];
+  for (const h of hints) {
+    if (out.length >= MAX_HINTS) break;
+    if (!isFetchable(h.url) || out.some((x) => x.url === h.url)) continue;
+    if (h.kind !== "hls" && h.kind !== "dash" && h.kind !== "file") continue;
+    const hint: MediaHint = { url: h.url, kind: h.kind };
+    const mime = cleanMime(h.mime);
+    if (mime) hint.mime = mime;
+    if (typeof h.size === "number" && Number.isSafeInteger(h.size) && h.size >= 0) {
+      hint.size = h.size;
+    }
+    out.push(hint);
+  }
+  return out;
+}
+
+/** Everything that goes into a `media_page`. */
+export interface MediaPageInput {
+  pageUrl: string | null | undefined;
+  title?: string | null;
+  incognito: boolean;
+  cookies: CookieRecord[];
+  headers: [string, string][];
+  /** What the page loaded (lib/media.ts). */
+  hints?: readonly MediaHint[];
+  /** The video or audio element the user pointed at (its menu). */
+  mediaUrl?: string | null;
+}
+
 /** The `media_page` message's fields, or null for a page the app cannot fetch. */
-export function mediaPageMessage(
-  pageUrl: string | null | undefined,
-  title: string | null | undefined,
-  incognito: boolean,
-  cookies: CookieRecord[],
-): MediaPage | null {
-  const page = url(pageUrl);
+export function mediaPageMessage(input: MediaPageInput): MediaPage | null {
+  const page = url(input.pageUrl);
   if (!page) return null;
-  const message: MediaPage = { page_url: page, incognito, cookies, headers: [] };
-  const t = cleanText(title);
+  const message: MediaPage = {
+    page_url: page,
+    incognito: input.incognito,
+    cookies: input.cookies,
+    headers: input.headers,
+  };
+  const t = cleanText(input.title);
   if (t) message.title = t;
+  const media = url(input.mediaUrl);
+  if (media) message.media_url = media;
+  const hints = cleanHints(input.hints ?? []);
+  if (hints.length > 0) message.hints = hints;
   return message;
 }

@@ -11,6 +11,10 @@
 //   (e2e/): it talks to `app.boltget.native_host_e2e`, a stub the tests
 //   register, and holds site access from the start, because a test cannot
 //   answer the browser's permission prompt.
+//
+// Every build applies the store policy (no media on YouTube's sites,
+// lib/policy.ts), so the tests check what the stores get. BOLTGET_STORE_POLICY=off
+// at build time turns it off, for a build no store sees.
 import { defineConfig, type ConfigEnv } from "wxt";
 import extensions from "../../packages/native-messaging/extensions.json" with { type: "json" };
 
@@ -104,5 +108,8 @@ export default defineConfig({
   vite: () => ({
     // packages/ui's fonts live in brand/ at the repository root.
     server: { fs: { allow: ["../.."] } },
+    define: {
+      __BOLTGET_STORE_POLICY__: JSON.stringify(process.env.BOLTGET_STORE_POLICY !== "off"),
+    },
   }),
 });

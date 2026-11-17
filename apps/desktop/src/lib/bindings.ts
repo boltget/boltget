@@ -46,9 +46,11 @@ export const commands = {
 	 *  window offers the install sheet); otherwise installs due updates first
 	 *  (yt-dlp at most once a day; a failed check keeps the installed
 	 *  version), then probes through the app's proxy. yt-dlp's own failure is
-	 *  `error.media.extraction`, with its message.
+	 *  `error.media.extraction`, with its message. With `page`, a page the
+	 *  browser extension sent (or one of its hints), yt-dlp gets the browser's
+	 *  cookies, `User-Agent` and `Referer`.
 	 */
-	probeMedia: (url: string) => typedError<MediaProbe, UiError>(__TAURI_INVOKE("probe_media", { url })),
+	probeMedia: (url: string, page: number | null) => typedError<MediaProbe, UiError>(__TAURI_INVOKE("probe_media", { url, page })),
 	/**
 	 *  A page's thumbnail as a `data:` URL (JPEG, PNG or WebP, at most 2 MiB),
 	 *  fetched through the app's proxy.
@@ -92,6 +94,20 @@ export const commands = {
 	 *  links). Only these two addresses: the page never names one.
 	 */
 	openMediaProject: (tool: MediaTool) => typedError<null, UiError>(__TAURI_INVOKE("open_media_project", { tool })),
+	/**
+	 *  The pages the extension sent that the window has not opened yet,
+	 *  oldest first. The window asks when the extension's request arrives
+	 *  (`ShellRequest::MediaPage`) and when it starts, since the request may
+	 *  come before it listens (the extension started the app).
+	 */
+	takeMediaPages: () => __TAURI_INVOKE<BrowserMediaPage[]>("take_media_pages"),
+	/**
+	 *  A direct file the extension saw on page `page`: its request (the
+	 *  browser's cookies and headers, the page as referrer) waits for the add
+	 *  sheet, which the window opens with `url` next. Only the page's own
+	 *  hints.
+	 */
+	mediaHintLink: (page: number, url: string) => typedError<null, UiError>(__TAURI_INVOKE("media_hint_link", { page, url })),
 	/**
 	 *  Adds a download to its queue (the default queue unless the page names
 	 *  one): it starts when its turn comes, or at `startAt`, or stays paused
@@ -332,6 +348,22 @@ export type BrowserIntegration = {
 	supported: boolean,
 	/**  Every browser, Chrome, Edge, Firefox; empty when not supported. */
 	browsers: BrowserRegistration[],
+};
+
+/**  A page the browser extension sent: "Download video from this page". */
+export type BrowserMediaPage = {
+	/**
+	 *  Names the page's browser context (cookies, headers) in
+	 *  `probe_media`, `add_media_download` and `media_hint_link`.
+	 */
+	page: number,
+	url: string,
+	title: string | null,
+	/**
+	 *  What the extension saw the page load, for when yt-dlp finds nothing:
+	 *  the element the user pointed at first.
+	 */
+	hints: MediaHintInfo[],
 };
 
 /**  A browser in Settings. */
@@ -668,6 +700,21 @@ export type MediaFormat = {
 	note: string | null,
 };
 
+/**  Media the extension saw a page load. */
+export type MediaHintInfo = {
+	url: string,
+	kind: MediaHintKind,
+	mime: string | null,
+	/**  Bytes, when the response said. */
+	size: number | null,
+};
+
+/**
+ *  What a hint is: a stream yt-dlp reads from its manifest, or a file the
+ *  engine downloads.
+ */
+export type MediaHintKind = "hls" | "dash" | "file";
+
 /**  Progress of an install, streamed while `install_media_tools` runs. */
 export type MediaInstallEvent = {
 	tool: MediaTool,
@@ -729,6 +776,12 @@ export type MediaRequest = {
 	size?: number | null,
 	/**  The site, to remember the preset for. */
 	site?: string | null,
+	/**
+	 *  The page the browser extension sent ([`BrowserMediaPage::page`]):
+	 *  yt-dlp gets the browser's cookies and headers for as long as the job
+	 *  runs in this session (never saved).
+	 */
+	page?: number | null,
 };
 
 /**  What a media download's row shows beyond a download's. */
@@ -1029,7 +1082,12 @@ export type ShellRequest =
  *  Offer to resume a download waiting for a new link with one the
  *  browser handed over (`resume_offers` lists the offers waiting).
  */
-{ kind: "resumeOffer"; offer: ResumeOffer };
+{ kind: "resumeOffer"; offer: ResumeOffer } | 
+/**
+ *  Open the media sheet for the pages the browser extension sent
+ *  (`take_media_pages` hands them over).
+ */
+{ kind: "mediaPage" };
 
 /**  Where to move a download within its queue. */
 export type ShiftDirection = "up" | "down" | "top" | "bottom";

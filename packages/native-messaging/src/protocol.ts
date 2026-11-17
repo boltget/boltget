@@ -5,9 +5,13 @@
 
 
 /** The protocol version this release speaks. */
-export const VERSION = 1;
+export const VERSION = 2;
 /** The oldest version it still serves. */
 export const OLDEST_VERSION = 1;
+/** The version that added `media_page`'s hints. */
+export const MEDIA_HINTS_VERSION = 2;
+/** The most hints in one `media_page`. */
+export const MAX_HINTS = 20;
 /** The native messaging host's name in release builds. */
 export const HOST_NAME = "app.boltget.native_host";
 /** The host's name for development builds and the development extension. */
@@ -209,13 +213,37 @@ export type Link = {
 	text?: string | null,
 };
 
+/**
+ *  Media the extension saw a page load: a stream's manifest or a direct
+ *  file (docs/BROWSER-INTEGRATION.md, "Media detection panel").
+ */
+export type MediaHint = {
+	/**  The response's URL. */
+	url: string,
+	/**  What it is. */
+	kind: MediaKind,
+	/**  The response's MIME type. */
+	mime?: string | null,
+	/**  Its size, when the response said. */
+	size?: number | null,
+};
+
+/**  What a [`MediaHint`] is. */
+export type MediaKind = 
+/**  An HLS playlist (`.m3u8`). */
+"hls" | 
+/**  A DASH manifest (`.mpd`). */
+"dash" | 
+/**  A video or audio file. */
+"file";
+
 /**  [`Message::MediaPage`]. */
 export type MediaPage = {
 	/**  The page, which the app gives to its media extractor. */
 	page_url: string,
 	/**
-	 *  A media URL the extension saw on the page: used only when the
-	 *  extractor knows nothing of the site.
+	 *  A media URL the user pointed at (the video or audio element's menu):
+	 *  used only when the extractor finds nothing on the page.
 	 */
 	media_url?: string | null,
 	/**  The page's title. */
@@ -224,8 +252,17 @@ export type MediaPage = {
 	incognito?: boolean,
 	/**  Cookies for the page's site. */
 	cookies?: CookieRecord[],
-	/**  Request headers, from [`ALLOWED_HEADERS`] only. */
+	/**
+	 *  Request headers, from [`ALLOWED_HEADERS`] only (the browser's
+	 *  `User-Agent`, and the page as `Referer`).
+	 */
 	headers?: ([string, string])[],
+	/**
+	 *  Media the extension saw the page load (protocol 2): manifests and
+	 *  direct files, at most [`MAX_HINTS`], used only when the extractor
+	 *  finds nothing on the page (docs/VIDEO.md, "Hints").
+	 */
+	hints?: MediaHint[],
 };
 
 /**  A message from the extension, after its envelope. */
@@ -249,9 +286,10 @@ export type Message =
 	type: "add_links",
 } & AddLinks | 
 /**
- *  "Send page to Boltget": the page for the app's media extraction
- *  (v0.4; until then [`RejectReason::Unsupported`]). Starts the app if
- *  needed.
+ *  "Download video from this page", or "Send page to Boltget": the page
+ *  for the app's media extraction, with what the extension saw on it
+ *  (protocol 2: [`MediaPage::hints`]). Answered [`Reply::Accepted`] with
+ *  `confirm` as the app's media sheet opens. Starts the app if needed.
  */
 {
 	type: "media_page",
@@ -270,7 +308,7 @@ export type RejectReason =
  *  still holds the original response.
  */
 "link_refused" | 
-/**  This app does not handle the message yet (media before v0.4). */
+/**  This app does not handle the message (media before v0.4). */
 "unsupported" | 
 /**  The app could not add it (no download folder, say). */
 "failed";

@@ -6,6 +6,8 @@ import { t, type PlainMessageKey } from "@boltget/ui/messages";
 import type {
   MediaContainer,
   MediaFormat,
+  MediaHintInfo,
+  MediaHintKind,
   MediaInstallEvent,
   MediaInstallStep,
   MediaPreset,
@@ -95,6 +97,61 @@ export function pickerNotice(media: MediaSummary): PickerNotice {
   if (media.drm) return "drm";
   if (media.presets.length === 0 && media.originalPresets.length === 0) return "none";
   return null;
+}
+
+/**
+ * The page's hints the sheet offers (docs/VIDEO.md, "Hints"): for a page the
+ * browser sent with some, when yt-dlp could not read `current` or found
+ * nothing to download there (not for a playlist or DRM); every hint but
+ * `current` itself, so a hint that failed leaves the others.
+ */
+export function offeredHints(
+  hints: readonly MediaHintInfo[],
+  outcome: "failed" | PickerNotice,
+  current: string,
+): MediaHintInfo[] {
+  if (outcome !== "failed" && outcome !== "none") return [];
+  return hints.filter((h) => h.url !== current);
+}
+
+const HINT_KINDS: Record<MediaHintKind, PlainMessageKey> = {
+  hls: "media.hint.hls",
+  dash: "media.hint.dash",
+  file: "media.hint.file",
+};
+
+/** A resolution named in a link (`…/720p/…`, `…_1920x1080.m3u8`), if any. */
+export function linkResolution(url: string): string | null {
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    return null;
+  }
+  const p = /(?:^|[^0-9a-z])(\d{3,4})p(?:\d{2})?(?![0-9a-z])/i.exec(path);
+  if (p?.[1]) return `${p[1]}p`;
+  const wh = /(?:^|[^0-9])\d{3,4}x(\d{3,4})(?![0-9])/i.exec(path);
+  return wh?.[1] ? `${wh[1]}p` : null;
+}
+
+/** One hint as the sheet lists it: what it is, then where and how big. */
+export function hintLine(hint: MediaHintInfo): { name: string; host: string; details: string[] } {
+  let name = t(HINT_KINDS[hint.kind]);
+  if (hint.kind === "file" && hint.mime?.toLowerCase().startsWith("audio/")) {
+    name = t("media.hint.audio");
+  }
+  const details: string[] = [];
+  const res = linkResolution(hint.url);
+  if (res) details.push(res);
+  let host = "";
+  try {
+    host = new URL(hint.url).hostname;
+  } catch {
+    // Validated by the backend; nothing to show.
+  }
+  if (host) details.push(host);
+  if (hint.size !== null) details.push(formatBytes(hint.size));
+  return { name, host, details };
 }
 
 /** One subtitle choice of the dropdown. */

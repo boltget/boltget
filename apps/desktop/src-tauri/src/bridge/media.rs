@@ -19,6 +19,10 @@
 //!   again with the same arguments and it continues from its `.part` files.
 //! - **On start**, jobs that were running or waiting run again; quitting
 //!   leaves them as they were, so they continue on the next start.
+//! - **The browser's cookies and headers** (a page the extension sent) stay
+//!   with the job in memory while the app runs ([`MediaAuth`]), for every
+//!   run of it; they are never saved, so a job continued after a restart
+//!   runs without them.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -26,8 +30,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use boltget_engine::{
-    Engine, EngineConfig, MediaJob, MediaJobError, MediaJobId, MediaJobState, MediaJobUpdate,
-    NewMediaJob,
+    CookieJar, Engine, EngineConfig, MediaJob, MediaJobError, MediaJobId, MediaJobState,
+    MediaJobUpdate, NewMediaJob,
 };
 use boltget_media::{
     DownloadOptions, DownloadOutcome, Downloader, MediaProgress, Phase, Prober, Program, Sidecars,
@@ -202,6 +206,27 @@ fn redacted_page(url: &str) -> String {
     url::Url::parse(url).map_or_else(|_| String::new(), |u| boltget_engine::redact_url(&u))
 }
 
+/// What yt-dlp gets of the browser for a page the extension sent: its
+/// cookies (through a temporary file), `User-Agent` and `Referer`. Kept in
+/// memory only.
+#[derive(Clone, Default)]
+pub(crate) struct MediaAuth {
+    pub(crate) cookies: CookieJar,
+    pub(crate) user_agent: Option<String>,
+    pub(crate) referer: Option<String>,
+}
+
+/// Cookies are secrets: only how many.
+impl std::fmt::Debug for MediaAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MediaAuth")
+            .field("cookies", &self.cookies.len())
+            .field("user_agent", &self.user_agent.is_some())
+            .field("referer", &self.referer.is_some())
+            .finish()
+    }
+}
+
 /// What a stopped run does next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Then {
@@ -223,6 +248,9 @@ struct Runs {
     waiting: VecDeque<MediaJobId>,
     /// Files each job wrote in this session, for removing with its file.
     files: HashMap<MediaJobId, Vec<PathBuf>>,
+    /// The browser's cookies and headers of jobs from the extension, until
+    /// they complete or are removed.
+    auth: HashMap<MediaJobId, MediaAuth>,
     /// The app is quitting: runs end without changing their jobs.
     closing: bool,
 }
@@ -284,10 +312,18 @@ impl Bridge {
     }
 
     /// Records a media job, shows its row and starts it (or lets it wait
-    /// for a free slot).
-    pub(crate) async fn add_media(&self, job: NewMediaJob) -> Result<DownloadRow, UiError> {
+    /// for a free slot); with `auth`, every run of it in this session gets
+    /// the browser's cookies and headers.
+    pub(crate) async fn add_media(
+        &self,
+        job: NewMediaJob,
+        auth: Option<MediaAuth>,
+    ) -> Result<DownloadRow, UiError> {
         let ctx = self.media_ctx()?;
         let job = ctx.engine.add_media_job(job).await?;
+        if let Some(auth) = auth {
+            lock(&ctx.runs).auth.insert(job.id, auth);
+        }
         let row = row(&job);
         self.upsert(row.clone());
         launch(&ctx, job.id);
@@ -365,7 +401,11 @@ impl Bridge {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }
-        let files = lock(&ctx.runs).files.remove(&id).unwrap_or_default();
+        let files = {
+            let mut runs = lock(&ctx.runs);
+            runs.auth.remove(&id);
+            runs.files.remove(&id).unwrap_or_default()
+        };
         if let Some(job) = &job {
             if delete_file {
                 delete_files(job, &files);
@@ -542,7 +582,11 @@ async fn run(ctx: Ctx, id: MediaJobId, stop: watch::Receiver<bool>) {
                 if let Err(e) = ctx.engine.update_media_job(id, change).await {
                     tracing::warn!(job = id.0, error = %e, "could not record a finished media job");
                 }
-                lock(&ctx.runs).files.remove(&id);
+                {
+                    let mut runs = lock(&ctx.runs);
+                    runs.files.remove(&id);
+                    runs.auth.remove(&id);
+                }
                 ctx.hub
                     .send(Request::MediaCompleted(row_id(id), path, size));
             }
@@ -595,6 +639,12 @@ async fn download(
     opts.output_template.clone_from(&job.output_template);
     opts.expected_size = job.size;
     opts.proxy = proxy_for(&settings, &job.page_url);
+    let auth = lock(&ctx.runs).auth.get(&id).cloned();
+    if let Some(auth) = auth {
+        opts.cookies = (!auth.cookies.is_empty()).then_some(auth.cookies);
+        opts.user_agent = auth.user_agent;
+        opts.referer = auth.referer;
+    }
     let row = row_id(id);
     let phase = Mutex::new(Phase::Downloading);
     let on_progress = |p: &MediaProgress| {
@@ -641,6 +691,20 @@ async fn download(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_context_stays_out_of_logs() {
+        let mut cookies = CookieJar::new();
+        cookies.insert(boltget_engine::Cookie::for_host("v.test", "sid", "s3cret"));
+        let auth = MediaAuth {
+            cookies,
+            user_agent: Some("UA".into()),
+            referer: Some("https://v.test/w?token=s3cret".into()),
+        };
+        let text = format!("{auth:?}");
+        assert!(!text.contains("s3cret"), "{text}");
+        assert!(text.contains("cookies: 1"), "{text}");
+    }
 
     #[test]
     fn row_ids_and_job_ids() {

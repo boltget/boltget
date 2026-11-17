@@ -87,6 +87,7 @@ fn main() {
         .manage(bridge)
         .manage(clipboard::Monitor::default())
         .manage(browser::Captured::default())
+        .manage(media::MediaPages::default())
         .invoke_handler(ipc.invoke_handler())
         .setup(move |app| {
             ipc.mount_events(app);

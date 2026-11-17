@@ -1,0 +1,1 @@
+{"v":2,"id":5,"type":"media_page","page_url":"https://v.test/watch?v=1","title":"Clip","headers":[["user-agent","Mozilla/5.0"],["referer","https://v.test/watch?v=1"]],"hints":[{"url":"https://cdn.v.test/master.m3u8","kind":"hls","mime":"application/vnd.apple.mpegurl"},{"url":"https://cdn.v.test/a.mp4","kind":"file","size":7340032}]}

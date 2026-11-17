@@ -74,6 +74,7 @@ export interface EngineApi {
     | "setMediaChannel"
     | "setMediaToolPath"
     | "openMediaProject"
+    | "mediaHintLink"
     | "pauseDownload"
     | "resumeDownload"
     | "requeueDownload"
@@ -292,9 +293,21 @@ export class DownloadStore {
     return this.#api.commands.probeUrl(url);
   }
 
-  /** Video or audio on a web page (yt-dlp), for the add sheet. */
-  probeMedia(url: string): Promise<Result<MediaProbe>> {
-    return this.#api.commands.probeMedia(url);
+  /**
+   * Video or audio on a web page (yt-dlp), for the media sheet; `page`, a
+   * page the browser extension sent, gives yt-dlp the browser's cookies and
+   * headers.
+   */
+  probeMedia(url: string, page: number | null = null): Promise<Result<MediaProbe>> {
+    return this.#api.commands.probeMedia(url, page);
+  }
+
+  /**
+   * A direct file the extension saw on page `page`: its request (the
+   * browser's cookies and headers) waits for the add sheet.
+   */
+  mediaHintLink(page: number, url: string): Promise<Result<null>> {
+    return this.#api.commands.mediaHintLink(page, url);
   }
 
   /** A page's thumbnail as a `data:` URL, for the picker. */

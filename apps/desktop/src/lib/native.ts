@@ -9,6 +9,7 @@ import {
   commands,
   events,
   type AppInfo,
+  type BrowserMediaPage,
   type CaptionMaximize,
   type OfferAnswer,
   type ResumeOffer,
@@ -19,7 +20,7 @@ import type { CaptionRect } from "./caption";
 
 export const inTauri = isTauri();
 
-export type { AppInfo, OfferAnswer, ResumeOffer, ShellRequest };
+export type { AppInfo, BrowserMediaPage, OfferAnswer, ResumeOffer, ShellRequest };
 
 export async function appInfo(): Promise<AppInfo> {
   if (!inTauri) {
@@ -101,6 +102,14 @@ export async function answerResumeOffer(
 ): Promise<{ status: "ok"; data: OfferAnswer } | { status: "error"; error: UiError }> {
   if (!inTauri) return { status: "ok", data: { outcome: "added", refused: null } };
   return commands.answerResumeOffer(offer, resume);
+}
+
+/**
+ * Pages the browser extension sent ("Download video from this page") that
+ * the window has not opened yet, oldest first; each is handed over once.
+ */
+export async function takeMediaPages(): Promise<BrowserMediaPage[]> {
+  return inTauri ? commands.takeMediaPages() : [];
 }
 
 /** The links Boltget was started with (`Boltget.exe <url>`), once. */

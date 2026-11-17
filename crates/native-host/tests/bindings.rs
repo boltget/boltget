@@ -19,6 +19,10 @@ fn render() -> String {
          export const VERSION = {};\n\
          /** The oldest version it still serves. */\n\
          export const OLDEST_VERSION = {};\n\
+         /** The version that added `media_page`'s hints. */\n\
+         export const MEDIA_HINTS_VERSION = {};\n\
+         /** The most hints in one `media_page`. */\n\
+         export const MAX_HINTS = {};\n\
          /** The native messaging host's name in release builds. */\n\
          export const HOST_NAME = \"{}\";\n\
          /** The host's name for development builds and the development extension. */\n\
@@ -29,6 +33,8 @@ fn render() -> String {
          export const ALLOWED_HEADERS = {:?} as const;\n",
         browser::VERSION,
         browser::OLDEST_VERSION,
+        browser::MEDIA_HINTS_VERSION,
+        browser::MAX_HINTS,
         browser::HOST_NAME,
         browser::DEV_HOST_NAME,
         browser::MAX_MESSAGE,

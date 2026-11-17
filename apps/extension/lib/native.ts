@@ -6,6 +6,7 @@
 import {
   DEV_HOST_NAME,
   HOST_NAME,
+  MEDIA_HINTS_VERSION,
   OLDEST_VERSION,
   VERSION,
   type CaptureRules,
@@ -74,6 +75,16 @@ export function isReply(value: unknown): value is ReplyEnvelope {
   return typeof r.v === "number" && typeof r.type === "string" && REPLY_TYPES.has(r.type);
 }
 
+/**
+ * The protocol version a message goes at: the oldest that carries it, so an
+ * app of an older release still takes every download (a `media_page` with
+ * hints needs MEDIA_HINTS_VERSION; such an app answers it `app_too_old`).
+ */
+export function versionFor(message: Message): number {
+  const hints = message.type === "media_page" && (message.hints?.length ?? 0) > 0;
+  return hints ? Math.max(MEDIA_HINTS_VERSION, OLDEST_VERSION) : OLDEST_VERSION;
+}
+
 let nextId = Math.floor(Math.random() * 0x7fff_ffff);
 
 /** A fresh message id (an integer below 2^32). */
@@ -97,7 +108,7 @@ export class NativeClient {
   /** Sends one message and waits for its reply, or for why there is none. */
   async request(message: Message): Promise<NativeResult> {
     const id = messageId();
-    const envelope = { v: VERSION, id, ...message } as Envelope;
+    const envelope = { v: versionFor(message), id, ...message } as Envelope;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<NativeResult>((resolve) => {
       timer = setTimeout(

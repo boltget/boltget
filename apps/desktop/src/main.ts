@@ -1,6 +1,7 @@
 import "@boltget/ui/styles.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
+import { app } from "./lib/app.svelte";
 import { commands } from "./lib/bindings";
 import { downloads } from "./lib/engine";
 import { markWindowShown } from "./lib/lifecycle";
@@ -43,8 +44,9 @@ async function boot(): Promise<void> {
   if (info.debug) {
     enableThemeToggle();
     // Debug builds: the store and the generated commands, for the devtools
-    // console (`__boltget.commands.addDownload({ url })`).
-    Object.assign(window, { __boltget: { downloads, commands } });
+    // console (`__boltget.commands.addDownload({ url })`, and the window's
+    // state: `__boltget.app.openMedia(url, page)`).
+    Object.assign(window, { __boltget: { downloads, commands, app } });
   }
 }
 

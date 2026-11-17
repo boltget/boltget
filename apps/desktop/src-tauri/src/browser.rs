@@ -23,6 +23,11 @@
 //! "Forget private-window downloads" on, the list forgets it once it
 //! completes (docs/BROWSER-INTEGRATION.md, "What is never captured").
 //!
+//! A page the extension sends for its media (`media_page`) opens the media
+//! sheet with it; its cookies, headers and hints wait in memory
+//! ([`crate::media::MediaPages`]) for the sheet's probe and download. The
+//! reply is "accepted" with `confirm` at once: the user picks in the app.
+//!
 //! Before it answers, the app makes its own first request for the link
 //! (with the browser's cookies and headers). If the server refuses it (a
 //! one-time link the browser has used) or does not answer within
@@ -40,8 +45,8 @@ use boltget_engine::{
 };
 use boltget_ipc::BrowserReply;
 use boltget_ipc::browser::{
-    Accepted, AddLinks, Capture, ErrorReason, HelloReply, MAX_LINKS, Message, RejectReason, Reply,
-    StatusReply,
+    Accepted, AddLinks, Capture, ErrorReason, HelloReply, MAX_LINKS, MediaPage, Message,
+    RejectReason, Reply, StatusReply,
 };
 use boltget_native_host::registration::{self, Flavor, Registration, State as RegState};
 use serde::Serialize;
@@ -51,6 +56,7 @@ use tauri::{AppHandle, Manager};
 use crate::bridge::Bridge;
 use crate::bridge::dto::{DownloadId, DownloadRow, DownloadState};
 use crate::error::UiError;
+use crate::media::MediaPages;
 use crate::settings::{self, AppSettings};
 use crate::shell::{self, ShellRequest};
 
@@ -120,7 +126,9 @@ pub(crate) struct ResumeOffer {
 }
 
 impl Captured {
-    fn remember(&self, url: String, ctx: RequestContext, private: bool) {
+    /// Keeps the request context of a link the browser handed over for the
+    /// add sheet; `private` when it came from a private window.
+    pub(crate) fn remember(&self, url: String, ctx: RequestContext, private: bool) {
         let mut list = self.links.lock().unwrap_or_else(PoisonError::into_inner);
         list.retain(|l| l.url != url && l.at.elapsed() < KEEP);
         while list.len() >= MAX_LINKS {
@@ -292,13 +300,21 @@ pub(crate) struct Host<'a> {
     pub(crate) open_sheet: &'a (dyn Fn(String) + Sync),
     /// Shows the page an offer to resume a download with a captured link.
     pub(crate) offer: &'a (dyn Fn(&ResumeOffer) + Sync),
+    /// Pages the extension sent for their media, waiting for the media
+    /// sheet.
+    pub(crate) media_pages: &'a MediaPages,
+    /// Brings the window forward and has it open the media sheet for the
+    /// pages waiting.
+    pub(crate) open_media: &'a (dyn Fn() + Sync),
 }
 
 /// Builds the [`Host`] for `app` and runs `f` with it.
 async fn with_host<T>(app: &AppHandle, f: impl AsyncFnOnce(&Host<'_>) -> T) -> T {
     let bridge = app.state::<Bridge>();
     let captured = app.state::<Captured>();
+    let media_pages = app.state::<MediaPages>();
     let open_sheet = |links: String| shell::request(app, &ShellRequest::Add { links });
+    let open_media = || shell::request(app, &ShellRequest::MediaPage);
     let offer = |offer: &ResumeOffer| {
         shell::request(
             app,
@@ -314,6 +330,8 @@ async fn with_host<T>(app: &AppHandle, f: impl AsyncFnOnce(&Host<'_>) -> T) -> T
         downloads: app.path().download_dir().ok(),
         open_sheet: &open_sheet,
         offer: &offer,
+        media_pages: &media_pages,
+        open_media: &open_media,
     };
     f(&host).await
 }
@@ -336,11 +354,7 @@ pub(crate) async fn handle(host: &Host<'_>, engine: &Engine, message: Message) -
         Message::Capture(c) => capture(host, engine, &c).await,
         Message::AddLinks(a) => add_links(host, &a),
         Message::Status(_) => status(host.bridge).await,
-        // Media arrives with v0.4 (docs/VIDEO.md).
-        Message::MediaPage(_) => Reply::rejected(
-            RejectReason::Unsupported,
-            "this Boltget does not download media from pages yet",
-        ),
+        Message::MediaPage(m) => media_page(host, m),
         other => Reply::rejected(
             RejectReason::Unsupported,
             format!("{} is not handled", other.kind()),
@@ -567,6 +581,16 @@ fn add_links(host: &Host<'_>, a: &AddLinks) -> Reply {
     Reply::Accepted(Accepted::confirming())
 }
 
+/// "Download video from this page": the media sheet opens with the page, its
+/// cookies, headers and hints waiting for it (docs/VIDEO.md, "The
+/// extension's media panel: as built"). The user decides in the app, so the
+/// answer is at once.
+fn media_page(host: &Host<'_>, page: MediaPage) -> Reply {
+    host.media_pages.add(page);
+    (host.open_media)();
+    Reply::Accepted(Accepted::confirming())
+}
+
 async fn status(bridge: &Bridge) -> Reply {
     let (running, bps) = {
         let a = bridge.activity();
@@ -706,6 +730,8 @@ mod tests {
         downloads: tempfile::TempDir,
         sheet: StdMutex<Vec<String>>,
         offers: StdMutex<Vec<ResumeOffer>>,
+        media_pages: MediaPages,
+        media_opened: StdMutex<u32>,
     }
 
     impl Fixture {
@@ -721,6 +747,8 @@ mod tests {
                 downloads: tempfile::tempdir().unwrap(),
                 sheet: StdMutex::new(Vec::new()),
                 offers: StdMutex::new(Vec::new()),
+                media_pages: MediaPages::default(),
+                media_opened: StdMutex::new(0),
             }
         }
 
@@ -735,6 +763,7 @@ mod tests {
         async fn send_with(&self, settings: AppSettings, message: Message) -> Reply {
             let open_sheet = |links: String| self.sheet.lock().unwrap().push(links);
             let offer = |o: &ResumeOffer| self.offers.lock().unwrap().push(o.clone());
+            let open_media = || *self.media_opened.lock().unwrap() += 1;
             let host = Host {
                 bridge: &self.bridge,
                 captured: &self.captured,
@@ -742,6 +771,8 @@ mod tests {
                 downloads: Some(self.downloads.path().to_path_buf()),
                 open_sheet: &open_sheet,
                 offer: &offer,
+                media_pages: &self.media_pages,
+                open_media: &open_media,
             };
             handle(&host, &self.engine, message).await
         }
@@ -754,6 +785,7 @@ mod tests {
         ) -> Result<OfferAnswer, UiError> {
             let open_sheet = |links: String| self.sheet.lock().unwrap().push(links);
             let offer_fn = |o: &ResumeOffer| self.offers.lock().unwrap().push(o.clone());
+            let open_media = || *self.media_opened.lock().unwrap() += 1;
             let host = Host {
                 bridge: &self.bridge,
                 captured: &self.captured,
@@ -764,6 +796,8 @@ mod tests {
                 downloads: Some(self.downloads.path().to_path_buf()),
                 open_sheet: &open_sheet,
                 offer: &offer_fn,
+                media_pages: &self.media_pages,
+                open_media: &open_media,
             };
             answer(&host, &self.engine, offer, resume).await
         }
@@ -960,6 +994,53 @@ https://x.test/b.zip"
         f.engine.shutdown().await;
     }
 
+    /// A page from the extension opens the media sheet, its cookies,
+    /// headers and hints waiting in memory for the sheet, once.
+    #[tokio::test]
+    async fn a_media_page_opens_the_media_sheet() {
+        let f = Fixture::new();
+        let page: MediaPage = serde_json::from_value(serde_json::json!({
+            "page_url": "https://v.test/watch?v=1",
+            "title": "A clip",
+            "media_url": "https://cdn.v.test/el.m3u8",
+            "cookies": [{"name": "sid", "value": "s3cret", "domain": "v.test"}],
+            "headers": [["User-Agent", "Browser UA"], ["Referer", "https://v.test/watch?v=1"]],
+            "hints": [
+                {"url": "https://cdn.v.test/el.m3u8", "kind": "hls"},
+                {"url": "https://cdn.v.test/a.mp4", "kind": "file", "mime": "video/mp4", "size": 7}
+            ]
+        }))
+        .unwrap();
+        let reply = f.send(false, Message::MediaPage(page)).await;
+        assert!(
+            matches!(&reply, Reply::Accepted(a) if a.confirm && a.download.is_none()),
+            "{reply:?}"
+        );
+        assert_eq!(*f.media_opened.lock().unwrap(), 1);
+        assert!(
+            f.engine.list().await.unwrap().is_empty(),
+            "the user decides"
+        );
+        let pages = f.media_pages.take_new();
+        assert_eq!(pages.len(), 1);
+        let p = &pages[0];
+        assert_eq!(p.url, "https://v.test/watch?v=1");
+        assert_eq!(p.title.as_deref(), Some("A clip"));
+        // The element's source first, then the other hints, once each.
+        let urls: Vec<&str> = p.hints.iter().map(|h| h.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            ["https://cdn.v.test/el.m3u8", "https://cdn.v.test/a.mp4"]
+        );
+        assert_eq!(p.hints[1].size, Some(7));
+        assert_eq!(f.media_pages.take_new().len(), 0, "opened once");
+        // The browser context stays for the probe and the download.
+        let kept = f.media_pages.get(p.page).expect("kept");
+        assert_eq!(kept.cookie_jar().len(), 1);
+        assert_eq!(kept.header("user-agent"), Some("Browser UA"));
+        f.engine.shutdown().await;
+    }
+
     #[tokio::test]
     async fn hello_status_and_what_is_not_handled_yet() {
         let f = Fixture::new();
@@ -993,13 +1074,6 @@ https://x.test/b.zip"
         assert!(matches!(
             f.send(false, Message::Status(boltget_ipc::browser::Status {})).await,
             Reply::Status(s) if s.active == 0
-        ));
-        let page: boltget_ipc::browser::MediaPage =
-            serde_json::from_value(serde_json::json!({"page_url": "https://v.test/watch"}))
-                .unwrap();
-        assert!(matches!(
-            f.send(false, Message::MediaPage(page)).await,
-            Reply::Rejected(r) if r.reason == RejectReason::Unsupported
         ));
         f.engine.shutdown().await;
     }

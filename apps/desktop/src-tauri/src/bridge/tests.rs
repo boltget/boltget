@@ -935,7 +935,7 @@ async fn media_jobs_run_as_rows_pause_continue_and_go() {
     let mut job = boltget_engine::NewMediaJob::new("https://v.test/watch?v=v1", "b", &videos);
     job.title = Some("fake video".into());
     job.preset = Some("best".into());
-    let row = bridge.add_media(job).await.unwrap();
+    let row = bridge.add_media(job, None).await.unwrap();
     assert!(row.media.is_some());
     assert_eq!(row.file_name.as_deref(), Some("fake video.mp4"));
     let id = row.id;
@@ -957,13 +957,31 @@ async fn media_jobs_run_as_rows_pause_continue_and_go() {
     assert_eq!(done.state, DownloadState::Completed);
     assert_eq!(done.total, Some(10));
 
-    // Another one is paused while it runs, keeps its partial file, and
-    // continues when resumed.
+    let args = std::fs::read_to_string(tools.path().join("fake-args.txt")).unwrap();
+    assert!(
+        !args.contains("--cookies") && !args.contains("--referer"),
+        "{args}"
+    );
+
+    // Another one, from the browser extension with its cookies and headers,
+    // is paused while it runs, keeps its partial file, and continues when
+    // resumed, with the browser's cookies and headers on both runs.
     std::fs::remove_file(videos.join("fake video [v1].mp4")).unwrap();
     std::fs::write(tools.path().join("fake-hang-download"), "").unwrap();
     let mut job = boltget_engine::NewMediaJob::new("https://v.test/watch?v=v1", "b", &videos);
     job.title = Some("second".into());
-    let second = bridge.add_media(job).await.unwrap().id;
+    let mut cookies = boltget_engine::CookieJar::new();
+    cookies.insert(boltget_engine::Cookie::for_host(
+        "v.test",
+        "sid",
+        "browser-cookie",
+    ));
+    let auth = super::media::MediaAuth {
+        cookies,
+        user_agent: Some("Browser UA".into()),
+        referer: Some("https://v.test/watch?v=v1".into()),
+    };
+    let second = bridge.add_media(job, Some(auth)).await.unwrap().id;
     let job2 = super::media::job_id(second).unwrap();
     until(&mut rx, |m| {
         state_of(m, second) == Some(DownloadState::Processing)
@@ -981,12 +999,24 @@ async fn media_jobs_run_as_rows_pause_continue_and_go() {
     .await;
     assert!(videos.join("fake video [v1].mp4.part").exists());
     std::fs::remove_file(tools.path().join("fake-hang-download")).unwrap();
+    std::fs::remove_file(tools.path().join("fake-cookies.txt")).unwrap();
     bridge.resume_media(job2).await.unwrap();
     until(&mut rx, |m| media_completed(m, second).is_some()).await;
     assert_eq!(
         std::fs::read_to_string(tools.path().join("fake-resumed.txt")).unwrap(),
         "yes"
     );
+    let cookies = std::fs::read_to_string(tools.path().join("fake-cookies.txt")).unwrap();
+    assert!(cookies.contains("browser-cookie"), "{cookies}");
+    let args = std::fs::read_to_string(tools.path().join("fake-args.txt")).unwrap();
+    assert!(
+        args.contains(
+            "--referer
+https://v.test/watch?v=v1"
+        ),
+        "{args}"
+    );
+    assert!(args.contains("User-Agent:Browser UA"), "{args}");
 
     // Removing it with its file deletes the file and the row.
     bridge.remove_media(job2, true).await.unwrap();
@@ -1005,11 +1035,10 @@ async fn media_jobs_run_as_rows_pause_continue_and_go() {
     )
     .unwrap();
     let third = bridge
-        .add_media(boltget_engine::NewMediaJob::new(
-            "https://v.test/x",
-            "b",
-            &videos,
-        ))
+        .add_media(
+            boltget_engine::NewMediaJob::new("https://v.test/x", "b", &videos),
+            None,
+        )
         .await
         .unwrap()
         .id;

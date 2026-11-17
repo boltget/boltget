@@ -611,6 +611,7 @@ export interface MessageParams {
   "error.media.in_use": never;
   "error.media.expression": never;
   "error.media.subtitles": never;
+  "error.media.page_gone": never;
   "media.title": never;
   "media.close": never;
   "media.looking": never;
@@ -660,6 +661,14 @@ export interface MessageParams {
   "media.failed": never;
   "media.details": never;
   "media.retry": never;
+  "media.hints": never;
+  "media.hints.description": never;
+  "media.hint.hls": never;
+  "media.hint.dash": never;
+  "media.hint.file": never;
+  "media.hint.audio": never;
+  "media.hint.use": never;
+  "media.hint.use_label": { host: string | number; name: string | number };
   "media.install.title": never;
   "media.install.body": never;
   "media.install.sizes": never;

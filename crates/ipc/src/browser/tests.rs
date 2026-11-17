@@ -125,7 +125,7 @@ fn the_envelope() {
 
 #[test]
 fn versions() {
-    let newer = refused(&json!({"v": 2, "id": 1, "type": "status", "new_field": true}));
+    let newer = refused(&json!({"v": VERSION + 1, "id": 1, "type": "status", "new_field": true}));
     assert_eq!(
         reason(&newer),
         ErrorReason::AppTooOld,
@@ -137,6 +137,102 @@ fn versions() {
     assert_eq!(reason(&huge), ErrorReason::AppTooOld);
     let older = refused(&json!({"v": 0, "type": "status"}));
     assert_eq!(reason(&older), ErrorReason::ExtensionTooOld);
+    // Every version from the oldest to this one is served.
+    for v in OLDEST_VERSION..=VERSION {
+        ok(&json!({"v": v, "type": "status"}));
+    }
+}
+
+fn media(extra: &Value) -> Value {
+    let mut base = json!({"v": 2, "type": "media_page", "page_url": "https://v.test/watch?v=1"});
+    for (k, v) in extra.as_object().unwrap() {
+        base[k] = v.clone();
+    }
+    base
+}
+
+#[test]
+fn a_media_page_with_hints() {
+    let env = ok(&media(&json!({
+        "title": "A clip",
+        "cookies": [{"name": "sid", "value": "s", "domain": ".v.test"}],
+        "headers": [["User-Agent", "Mozilla/5.0"], ["Referer", "https://v.test/watch?v=1"]],
+        "hints": [
+            {"url": "https://cdn.v.test/master.m3u8", "kind": "hls",
+             "mime": "application/vnd.apple.mpegurl"},
+            {"url": "https://cdn.v.test/a.mpd", "kind": "dash"},
+            {"url": "https://cdn.v.test/a.mp4", "kind": "file", "mime": "video/mp4",
+             "size": 5_000_000_000_u64}
+        ]
+    })));
+    let Message::MediaPage(m) = env.message else {
+        panic!("a media page")
+    };
+    assert_eq!(m.hints.len(), 3);
+    assert_eq!(m.hints[0].kind, MediaKind::Hls);
+    assert_eq!(m.hints[2].size, Some(5_000_000_000));
+    assert_eq!(m.header("user-agent"), Some("Mozilla/5.0"));
+    assert_eq!(m.header("cookie"), None);
+    // A hint is fetched as the page's own request: the browser's headers,
+    // the page as referrer and the cookies.
+    let ctx = m.context(&m.hints[0].url).unwrap();
+    assert_eq!(ctx.url().host_str(), Some("cdn.v.test"));
+    assert_eq!(ctx.headers()["referer"], "https://v.test/watch?v=1");
+    // Without a Referer header the page is the referrer.
+    let mut bare = MediaPage::new("https://v.test/p");
+    bare.cookies.push(CookieRecord::new("sid", "s", "v.test"));
+    let ctx = bare.context("https://cdn.v.test/a.m3u8").unwrap();
+    assert_eq!(ctx.headers()["referer"], "https://v.test/p");
+}
+
+#[test]
+fn media_hints_are_checked() {
+    let hint = |url: &str| json!({"url": url, "kind": "file"});
+    for bad in [
+        json!({"hints": [hint("blob:https://v.test/0f")]}),
+        json!({"hints": [hint("file:///C:/a.mp4")]}),
+        json!({"hints": [{"url": "https://v.test/a", "kind": "rtmp"}]}),
+        json!({"hints": [{"url": "https://v.test/a"}]}),
+        json!({"hints": [{"url": "https://v.test/a", "kind": "hls", "fps": 30}]}),
+        json!({"hints": [{"url": "https://v.test/a", "kind": "hls", "mime": "vidéo/mp4"}]}),
+        json!({"hints": [{"url": "https://v.test/a", "kind": "hls", "size": -1}]}),
+        json!({"hints": {"url": "https://v.test/a", "kind": "hls"}}),
+    ] {
+        assert_eq!(
+            reason(&refused(&media(&bad))),
+            ErrorReason::Invalid,
+            "{bad}"
+        );
+    }
+    let most: Vec<Value> = (0..MAX_HINTS)
+        .map(|i| hint(&format!("https://v.test/{i}.mp4")))
+        .collect();
+    ok(&media(&json!({ "hints": most })));
+    let too_many: Vec<Value> = (0..=MAX_HINTS)
+        .map(|i| hint(&format!("https://v.test/{i}.mp4")))
+        .collect();
+    refused(&media(&json!({ "hints": too_many })));
+}
+
+#[test]
+fn hints_need_protocol_two() {
+    let hints = json!({"hints": [{"url": "https://v.test/a.m3u8", "kind": "hls"}]});
+    let mut old = media(&hints);
+    old["v"] = json!(1);
+    let r = refused(&old);
+    assert_eq!(reason(&r), ErrorReason::Invalid);
+    assert!(r.error.message.contains("hints"), "{}", r.error.message);
+    // A version 1 media page without hints is still served, as are version
+    // 1 captures (the extension sends those at version 1).
+    let mut plain = media(&json!({}));
+    plain["v"] = json!(1);
+    ok(&plain);
+    ok(&media(&hints));
+    let Message::MediaPage(m) = ok(&media(&hints)).message else {
+        panic!()
+    };
+    assert!(Message::MediaPage(m.clone()).validate_at(2).is_ok());
+    assert!(Message::MediaPage(m).validate_at(1).is_err());
 }
 
 #[test]
@@ -324,7 +420,7 @@ fn replies_as_the_extension_reads_them() {
     let json: Value = serde_json::from_slice(&hello.to_json()).unwrap();
     assert_eq!(
         json,
-        json!({"v": 1, "type": "hello", "app": null, "host": "", "oldest": 1, "current": 1, "rules": null})
+        json!({"v": 1, "type": "hello", "app": null, "host": "", "oldest": 1, "current": 2, "rules": null})
     );
 }
 
@@ -347,8 +443,16 @@ fn envelopes_round_trip_through_decode() {
     let mut c = Capture::new("https://x.test/a.zip");
     c.cookies.push(CookieRecord::new("sid", "1", "x.test"));
     c.headers.push(("Referer".into(), "https://x.test/".into()));
+    let mut page = MediaPage::new("https://v.test/watch");
+    let mut hint = MediaHint::new("https://cdn.v.test/a.mp4", MediaKind::File);
+    hint.size = Some(1 << 40);
+    hint.mime = Some("video/mp4".into());
+    page.hints.push(hint);
+    page.headers.push(("User-Agent".into(), "UA".into()));
     for message in [
         Message::Capture(c),
+        Message::MediaPage(page),
+        Message::MediaPage(MediaPage::new("https://v.test/plain")),
         Message::Status(Status {}),
         Message::Hello(Hello {
             extension: "0.3.0".into(),
@@ -370,7 +474,14 @@ fn debug_output_hides_secrets() {
     c.cookies.push(CookieRecord::new("sid", "secret", "x.test"));
     c.headers
         .push(("Authorization".into(), "Bearer secret".into()));
-    let text = format!("{c:?} {:?}", c.cookies[0]);
+    let mut page = MediaPage::new("https://u:pw@v.test/w?token=secret");
+    page.cookies
+        .push(CookieRecord::new("sid", "secret", "v.test"));
+    page.hints.push(MediaHint::new(
+        "https://cdn.v.test/a.m3u8?sig=secret",
+        MediaKind::Hls,
+    ));
+    let text = format!("{c:?} {:?} {page:?}", c.cookies[0]);
     assert!(!text.contains("secret") && !text.contains("pw"), "{text}");
     assert!(text.contains("Authorization"), "{text}");
 }

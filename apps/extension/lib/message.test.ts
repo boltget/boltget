@@ -1,3 +1,4 @@
+import { MAX_HINTS } from "@boltget/native-messaging";
 import { describe, expect, it } from "vitest";
 import {
   addLinksMessage,
@@ -6,6 +7,7 @@ import {
   cleanLinks,
   cleanMime,
   cleanText,
+  cleanHints,
   clip,
   MAX_LINKS,
   MAX_TEXT,
@@ -133,13 +135,52 @@ describe("links", () => {
   });
 
   it("media_page needs a page the app can fetch", () => {
-    expect(mediaPageMessage("chrome://newtab", "x", false, [])).toBeNull();
-    expect(mediaPageMessage("https://e.com/v", " Video ", false, [])).toEqual({
+    const base = { incognito: false, cookies: [], headers: [] };
+    expect(mediaPageMessage({ ...base, pageUrl: "chrome://newtab", title: "x" })).toBeNull();
+    expect(mediaPageMessage({ ...base, pageUrl: "https://e.com/v", title: " Video " })).toEqual({
       page_url: "https://e.com/v",
       title: "Video",
       incognito: false,
       cookies: [],
       headers: [],
     });
+  });
+
+  it("media_page carries the hints the host accepts, and the element's source", () => {
+    const base = () => ({ incognito: false, cookies: [], headers: [] as [string, string][] });
+    const message = mediaPageMessage({
+      pageUrl: "https://e.com/v",
+      incognito: true,
+      cookies: [],
+      headers: [["user-agent", "UA"]],
+      mediaUrl: "blob:https://e.com/0f",
+      hints: [
+        { url: "https://cdn.e.com/a.m3u8", kind: "hls", mime: "application/x-mpegURL" },
+        { url: "https://cdn.e.com/a.m3u8", kind: "hls" },
+        { url: "blob:https://e.com/1", kind: "file" },
+        { url: "https://cdn.e.com/a.mp4", kind: "file", mime: "vidéo/mp4", size: 2 ** 40 },
+        { url: "https://cdn.e.com/b.mp4", kind: "file", size: -1 },
+      ],
+    });
+    expect(message).toEqual({
+      page_url: "https://e.com/v",
+      incognito: true,
+      cookies: [],
+      headers: [["user-agent", "UA"]],
+      hints: [
+        { url: "https://cdn.e.com/a.m3u8", kind: "hls", mime: "application/x-mpegURL" },
+        { url: "https://cdn.e.com/a.mp4", kind: "file", size: 2 ** 40 },
+        { url: "https://cdn.e.com/b.mp4", kind: "file" },
+      ],
+    });
+    const many = Array.from({ length: MAX_HINTS + 5 }, (_, i) => ({
+      url: `https://cdn.e.com/${i}.mp4`,
+      kind: "file" as const,
+    }));
+    expect(cleanHints(many)).toHaveLength(MAX_HINTS);
+    expect(
+      mediaPageMessage({ ...base(), pageUrl: "https://e.com/v", mediaUrl: "https://e.com/x.mp4" })
+        ?.media_url,
+    ).toBe("https://e.com/x.mp4");
   });
 });

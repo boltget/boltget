@@ -5,7 +5,7 @@
 // actions every surface shares (row buttons, the context
 // menu, shortcuts, the palette and the details pane).
 import { t } from "@boltget/ui/messages";
-import type { DownloadId, QueueId, QueueInfo, ResumeOffer } from "./bindings";
+import type { BrowserMediaPage, DownloadId, QueueId, QueueInfo, ResumeOffer } from "./bindings";
 import { downloads, errorText } from "./engine";
 import { canPause, canRestart, canResume, toggleIntent, type ActionId } from "./list/actions";
 import { queueView, type Sort, type View } from "./list/model";
@@ -95,10 +95,11 @@ class AppState {
   adding = $state<{ text: string; key: number } | null>(null);
   /**
    * The media sheet (docs/VIDEO.md: the tools' install, then the picker)
-   * while it is open: the page it looks at, and a number that changes when
-   * another page is asked for.
+   * while it is open: the page it looks at, the page as the browser
+   * extension sent it (its context and hints) if it came from there, and a
+   * number that changes when another page is asked for.
    */
-  media = $state<{ url: string; key: number } | null>(null);
+  media = $state<{ url: string; browser: BrowserMediaPage | null; key: number } | null>(null);
   /** The queue settings while open: a queue's id, or `null` for a new one. */
   queueEditing = $state<{ id: QueueId | null } | null>(null);
   /** The downloads "Start later" is choosing a time for. */
@@ -138,9 +139,9 @@ class AppState {
     this.adding = null;
   }
 
-  /** Opens the media sheet for a web page. */
-  openMedia(url: string): void {
-    this.media = { url, key: ++this.#addKey };
+  /** Opens the media sheet for a web page; `browser` when the extension sent it. */
+  openMedia(url: string, browser: BrowserMediaPage | null = null): void {
+    this.media = { url, browser, key: ++this.#addKey };
   }
 
   closeMedia(): void {

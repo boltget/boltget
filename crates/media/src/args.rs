@@ -333,6 +333,10 @@ const AUDIO_FORMATS: &[&str] = &[
     "best", "aac", "alac", "flac", "m4a", "mp3", "opus", "vorbis", "wav",
 ];
 
+/// The headers `--add-headers` may set: what the browser extension hands
+/// over (docs/VIDEO.md, "The extension's media panel: as built").
+const HEADERS: &[&str] = &["User-Agent", "Referer"];
+
 /// Formats for `--convert-subs` and `--sub-format` alternatives.
 const SUBTITLE_FORMATS: &[&str] = &["srt", "vtt", "ass", "lrc", "none", "best"];
 
@@ -349,6 +353,9 @@ const SUBTITLE_FORMATS: &[&str] = &["srt", "vtt", "ass", "lrc", "none", "best"];
 ///   `-` and `_` (no regular expressions, no `all`).
 /// - `--merge-output-format`, `--audio-format`, `--convert-subs`: known
 ///   formats only.
+/// - `--add-headers`: `User-Agent:` or `Referer:` with a value, nothing else
+///   (the browser's two; no cookies or credentials this way).
+/// - `--referer`: an `http` or `https` URL.
 fn yt_dlp_value(option: &str, value: &str) -> Result<()> {
     let program = Program::YtDlp.name();
     let bad = |what: &str| Err(refused(program, format!("{option} {value:?}: {what}")));
@@ -389,6 +396,22 @@ fn yt_dlp_value(option: &str, value: &str) -> Result<()> {
                 });
             if !ok || value.eq_ignore_ascii_case("all") {
                 return bad("language codes separated by commas");
+            }
+        }
+        "--add-headers" => {
+            // `Name:value`; only the two headers the browser hands over.
+            let ok = value.split_once(':').is_some_and(|(name, v)| {
+                HEADERS.iter().any(|h| h.eq_ignore_ascii_case(name.trim())) && !v.trim().is_empty()
+            });
+            if !ok || value.chars().any(char::is_control) {
+                return bad("only User-Agent and Referer headers");
+            }
+        }
+        "--referer" => {
+            let ok = url::Url::parse(value)
+                .is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.has_host());
+            if !ok || value.chars().any(char::is_control) {
+                return bad("not an http(s) URL");
             }
         }
         "--merge-output-format" if !MERGE_FORMATS.contains(&value) => {
@@ -603,6 +626,12 @@ mod tests {
             ("--merge-output-format", "mp4"),
             ("--audio-format", "m4a"),
             ("--convert-subs", "srt"),
+            (
+                "--add-headers",
+                "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            ),
+            ("--add-headers", "referer: https://v.test/watch"),
+            ("--referer", "https://v.test/watch?v=1"),
         ] {
             check_yt_dlp(&v(&[opt, good])).unwrap_or_else(|e| panic!("{opt} {good}: {e}"));
         }
@@ -628,6 +657,15 @@ mod tests {
             ("--merge-output-format", "exe"),
             ("--audio-format", "bat"),
             ("--convert-subs", "html"),
+            ("--add-headers", "Cookie:sid=1"),
+            ("--add-headers", "Authorization:Bearer x"),
+            ("--add-headers", "User-Agent"),
+            ("--add-headers", "User-Agent:"),
+            ("--add-headers", "User-Agent:a\r\nCookie:b"),
+            ("--add-headers", "X-User-Agent:a"),
+            ("--referer", "file:///C:/a"),
+            ("--referer", "v.test/watch"),
+            ("--referer", "https://v.test/\nX"),
         ] {
             assert!(
                 check_yt_dlp(&v(&[opt, bad])).is_err(),

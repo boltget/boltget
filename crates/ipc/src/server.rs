@@ -307,7 +307,7 @@ impl Ctx {
             };
             return Reply::error(reason, format!("extension protocol {v} is not served"));
         }
-        if let Err(e) = message.validate() {
+        if let Err(e) = message.validate_at(v) {
             return Reply::error(ErrorReason::Invalid, e.to_string());
         }
         tracing::debug!(kind = message.kind(), "browser message");
