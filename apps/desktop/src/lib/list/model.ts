@@ -49,6 +49,7 @@ const RUNNING: ReadonlySet<DownloadState> = new Set([
   "downloading",
   "retrying",
   "verifying",
+  "processing",
 ]);
 
 /** A task works on it: it has live progress. */

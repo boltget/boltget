@@ -89,6 +89,17 @@ async fn installs_a_verified_yt_dlp_and_smoke_tests_it() {
     let again = m.install(Tool::YtDlp, &quiet).await.unwrap();
     assert!(matches!(again, Outcome::UpToDate { .. }));
     assert_eq!(server.hits().len(), before);
+
+    // Removing it deletes every version; the next use installs it again.
+    m.remove(Tool::YtDlp).unwrap();
+    assert_eq!(m.status().unwrap().tools[0].active, None);
+    assert_eq!(version_dirs(tmp.path(), "yt-dlp"), Vec::<String>::new());
+    assert!(matches!(
+        m.program(Program::YtDlp),
+        Err(Error::NotInstalled(Tool::YtDlp))
+    ));
+    let back = m.install(Tool::YtDlp, &quiet).await.unwrap();
+    assert!(matches!(back, Outcome::Installed { .. }));
 }
 
 #[tokio::test]

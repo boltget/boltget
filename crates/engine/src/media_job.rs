@@ -58,8 +58,8 @@ impl ContainerPreference {
     }
 }
 
-/// Where a media job is. Steps 3 and 6 of v0.4 move jobs through these; the
-/// table only records them.
+/// Where a media job is. The app moves jobs through these (v0.4 step 3);
+/// the engine only records them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -154,6 +154,8 @@ pub struct NewMediaJob {
     pub dest_dir: PathBuf,
     /// The download row it shows as, if it has one.
     pub download: Option<DownloadId>,
+    /// The expected size in bytes (the picker's estimate), if known.
+    pub size: Option<u64>,
 }
 
 impl NewMediaJob {
@@ -174,6 +176,7 @@ impl NewMediaJob {
             output_template: DEFAULT_OUTPUT_TEMPLATE.into(),
             dest_dir: dest_dir.into(),
             download: None,
+            size: None,
         }
     }
 }
@@ -206,6 +209,10 @@ pub struct MediaJob {
     pub dest_dir: PathBuf,
     /// Why it failed, if it did.
     pub error: Option<MediaJobError>,
+    /// The finished file, once completed (yt-dlp names it).
+    pub file_path: Option<PathBuf>,
+    /// Bytes: the expected size until it completes, then the file's size.
+    pub size: Option<u64>,
     /// Creation time, Unix milliseconds.
     pub created_at: u64,
     /// Last change, Unix milliseconds.
@@ -237,6 +244,10 @@ pub struct MediaJobUpdate {
     pub download: Option<Option<DownloadId>>,
     /// A new error.
     pub error: Option<Option<MediaJobError>>,
+    /// The finished file.
+    pub file_path: Option<Option<PathBuf>>,
+    /// A new size.
+    pub size: Option<Option<u64>>,
 }
 
 /// Checks what a job must have: an http(s) page URL, a format expression and

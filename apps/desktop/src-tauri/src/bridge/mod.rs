@@ -8,6 +8,7 @@ pub(crate) mod activity;
 pub(crate) mod commands;
 pub(crate) mod dto;
 mod hub;
+pub(crate) mod media;
 mod model;
 mod speed;
 
@@ -70,6 +71,10 @@ pub(crate) struct Bridge {
     countdown_len: Duration,
     /// Cancels the countdown running now, if any.
     countdown: Mutex<Option<Arc<Notify>>>,
+    /// Where the video tools live (`media.rs`).
+    tools_dir: OnceLock<PathBuf>,
+    /// The media jobs that run now.
+    media: media::MediaRuns,
 }
 
 impl Bridge {
@@ -96,6 +101,8 @@ impl Bridge {
             power,
             countdown_len,
             countdown: Mutex::new(None),
+            tools_dir: OnceLock::new(),
+            media: media::MediaRuns::default(),
         };
         (bridge, task)
     }
@@ -356,7 +363,11 @@ impl Bridge {
                 return;
             }
         };
-        let rows: Vec<DownloadRow> = list.iter().map(DownloadRow::from).collect();
+        let mut rows: Vec<DownloadRow> = list.iter().map(DownloadRow::from).collect();
+        // Media downloads (yt-dlp's) are rows too; those that were running
+        // or waiting run again once everything is ready.
+        let (media_rows, media_rerun) = Self::media_rows(&engine).await;
+        rows.extend(media_rows);
         let queues: Vec<QueueInfo> = match engine.queues().await {
             Ok(q) => q.iter().map(QueueInfo::from).collect(),
             Err(e) => {
@@ -405,6 +416,7 @@ impl Bridge {
         // the queues start what waits (docs/ENGINE.md, "Queues").
         resume_all(&engine, &resume).await;
         engine.start_queues(Arc::new(SystemClock));
+        self.rerun_media(&media_rerun);
     }
 
     /// The OS reports no home directory, so there is nowhere to keep the
@@ -426,6 +438,8 @@ impl Bridge {
         if self.shut.swap(true, Ordering::AcqRel) {
             return;
         }
+        // yt-dlp stops at once; its jobs continue on the next start.
+        self.stop_media_for_exit();
         self.ownership.send_replace(Ownership::NotOwner);
         if let Some(engine) = self.engine.get()
             && tokio::time::timeout(timeout, engine.shutdown())
@@ -477,6 +491,7 @@ impl Bridge {
 
     /// Pauses every running download (the tray's "Pause all").
     pub(crate) async fn pause_all(&self) {
+        self.pause_all_media().await;
         let Ok(engine) = self.engine() else { return };
         let Ok(list) = engine.list().await else {
             return;
@@ -496,6 +511,7 @@ impl Bridge {
     /// "Resume all"): its queue starts it when its turn comes, so the
     /// queues' limits hold. Failed ones wait for the user, as in the window.
     pub(crate) async fn resume_all(&self) {
+        self.resume_all_media().await;
         let Ok(engine) = self.engine() else { return };
         let Ok(list) = engine.list().await else {
             return;

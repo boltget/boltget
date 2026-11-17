@@ -160,7 +160,7 @@ impl Prober {
 
 /// A header (or proxy) value for the command line: no control characters,
 /// which could otherwise smuggle a second header in.
-fn header_value(v: &str) -> Result<String> {
+pub(crate) fn header_value(v: &str) -> Result<String> {
     if v.chars().any(char::is_control) {
         return Err(Error::Argument {
             program: Program::YtDlp.name(),
@@ -172,7 +172,7 @@ fn header_value(v: &str) -> Result<String> {
 
 /// The message of a failed yt-dlp: its last `ERROR:` line without the
 /// prefix, else its last line of output, else the exit status.
-fn error_message(stderr: &str, status: std::process::ExitStatus) -> String {
+pub(crate) fn error_message(stderr: &str, status: std::process::ExitStatus) -> String {
     const MAX: usize = 2000;
     let lines: Vec<&str> = stderr
         .lines()

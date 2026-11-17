@@ -50,6 +50,9 @@ pub(crate) enum DownloadState {
     Cancelled,
     NeedsNewLink,
     Corrupt,
+    /// A media download's merging or converting (FFmpeg, run by yt-dlp):
+    /// the app's own state, the engine has none like it.
+    Processing,
 }
 
 impl DownloadState {
@@ -57,7 +60,7 @@ impl DownloadState {
     pub(crate) fn is_active(self) -> bool {
         matches!(
             self,
-            Self::Probing | Self::Downloading | Self::Retrying | Self::Verifying
+            Self::Probing | Self::Downloading | Self::Retrying | Self::Verifying | Self::Processing
         )
     }
 }
@@ -196,6 +199,20 @@ pub(crate) struct DownloadRow {
     /// From a private browser window: with "Forget private-window
     /// downloads" on, it leaves the list once it completes.
     pub(crate) private: bool,
+    /// Video or audio from a web page, which yt-dlp downloads (a media
+    /// job, docs/VIDEO.md); `null` for the engine's downloads.
+    pub(crate) media: Option<MediaRowInfo>,
+}
+
+/// What a media download's row shows beyond a download's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaRowInfo {
+    /// The title the probe found.
+    pub(crate) title: Option<String>,
+    /// `best`, `1080p`, `720p`, `small` or `audio`; `null` for a format the
+    /// user chose in the advanced table.
+    pub(crate) preset: Option<String>,
 }
 
 pub(crate) fn path_string(p: &Path) -> String {
@@ -223,6 +240,7 @@ impl From<&engine::DownloadSummary> for DownloadRow {
             queue_position: s.queue_position,
             start_at: s.start_at,
             private: s.private,
+            media: None,
         }
     }
 }

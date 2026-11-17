@@ -15,21 +15,27 @@ export function rowMenu(ids: readonly DownloadId[]): MenuEntry[] {
   const items = ids.flatMap((id) => downloads.get(id) ?? []);
   const states = items.map((d) => d.state);
   const one = items.length === 1 ? items[0] : undefined;
+  // Media downloads (yt-dlp's) have no queue of the engine's, no link to
+  // refresh, and continue rather than start over.
+  const media = items.some((d) => d.media !== null);
   const entries: MenuEntry[] = [];
   const add = (key: PlainMessageKey, run: () => void, accelerator?: string, enabled = true) =>
     entries.push({ text: t(key), run, accelerator, enabled });
 
   if (one?.state === "completed") add("action.open", () => app.run("open", ids), "Enter");
-  if (states.some((s) => s === "queued")) add("action.start_now", () => app.startNow(ids));
+  if (!media && states.some((s) => s === "queued")) {
+    add("action.start_now", () => app.startNow(ids));
+  }
   if (states.some(canPause)) add("action.pause", () => app.run("pause", ids), "Space");
   if (states.some(canResume)) {
     const failed = states.every((s) => s === "failed" || s === "cancelled");
     add(failed ? "action.retry" : "action.resume", () => app.run("resume", ids), "Space");
-    add("action.requeue", () => app.requeue(ids));
+    if (!media) add("action.requeue", () => app.requeue(ids));
   }
   if (one?.state === "needs_new_link") add("action.refresh", () => app.run("refresh", ids));
-  if (states.some(canRestart)) add("action.restart", () => app.run("restart", ids));
+  if (!media && states.some(canRestart)) add("action.restart", () => app.run("restart", ids));
   if (entries.length) entries.push("separator");
+  if (media) return [...entries, ...tail(ids, one !== undefined)];
 
   // Queues.
   const waiting = items.filter(
@@ -54,11 +60,18 @@ export function rowMenu(ids: readonly DownloadId[]): MenuEntry[] {
     add("action.move_bottom", () => app.shift(ids, "bottom", active), "Alt+End");
   }
   entries.push("separator");
+  return [...entries, ...tail(ids, one !== undefined)];
+}
 
-  if (one) add("action.show", () => app.run("show", ids), "Ctrl+Enter");
-  add("action.copy", () => app.run("copy", ids), "Ctrl+C");
+/** Show, copy, remove and delete: what every download offers. */
+function tail(ids: readonly DownloadId[], one: boolean): MenuEntry[] {
+  const entries: MenuEntry[] = [];
+  const push = (key: PlainMessageKey, run: () => void, accelerator?: string) =>
+    entries.push({ text: t(key), run, accelerator, enabled: true });
+  if (one) push("action.show", () => app.run("show", ids), "Ctrl+Enter");
+  push("action.copy", () => app.run("copy", ids), "Ctrl+C");
   entries.push("separator");
-  add("action.remove", () => app.run("remove", ids), "Delete");
-  add("action.delete_menu", () => app.run("delete", ids), "Shift+Delete");
+  push("action.remove", () => app.run("remove", ids), "Delete");
+  push("action.delete_menu", () => app.run("delete", ids), "Shift+Delete");
   return entries;
 }

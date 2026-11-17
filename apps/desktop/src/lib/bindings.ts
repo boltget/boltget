@@ -42,12 +42,56 @@ export const commands = {
 	probeUrl: (url: string) => typedError<ProbePreview, UiError>(__TAURI_INVOKE("probe_url", { url })),
 	/**
 	 *  Looks for video or audio on a web page with yt-dlp. Answers
-	 *  `notInstalled` without running anything while the tools are missing;
-	 *  otherwise installs due updates first (yt-dlp at most once a day; a failed
-	 *  check keeps the installed version), then probes. yt-dlp's own failure is
+	 *  `notInstalled` without running anything while a tool is missing (the
+	 *  window offers the install sheet); otherwise installs due updates first
+	 *  (yt-dlp at most once a day; a failed check keeps the installed
+	 *  version), then probes through the app's proxy. yt-dlp's own failure is
 	 *  `error.media.extraction`, with its message.
 	 */
 	probeMedia: (url: string) => typedError<MediaProbe, UiError>(__TAURI_INVOKE("probe_media", { url })),
+	/**
+	 *  A page's thumbnail as a `data:` URL (JPEG, PNG or WebP, at most 2 MiB),
+	 *  fetched through the app's proxy.
+	 */
+	mediaThumbnail: (url: string) => typedError<string, UiError>(__TAURI_INVOKE("media_thumbnail", { url })),
+	/**
+	 *  Starts downloading a page's media into the Video category's folder, as
+	 *  a row of the list. Returns the row.
+	 */
+	addMediaDownload: (request: MediaRequest) => typedError<DownloadRow, UiError>(__TAURI_INVOKE("add_media_download", { request })),
+	/**  The video tools: what is installed, what the user chose, the channel. */
+	mediaTools: () => typedError<MediaToolsInfo, UiError>(__TAURI_INVOKE("media_tools")),
+	/**
+	 *  What installing the missing tools downloads: each tool's version and
+	 *  size, read from its release metadata now (yt-dlp: GitHub's release
+	 *  API; FFmpeg: the build Boltget pins).
+	 */
+	mediaInstallPlan: () => typedError<MediaToolSize[], UiError>(__TAURI_INVOKE("media_install_plan")),
+	/**
+	 *  Installs the missing tools (downloaded with the engine, verified,
+	 *  smoke-tested), streaming progress to `on_event`.
+	 */
+	installMediaTools: (onEvent: Channel<MediaInstallEvent>) => typedError<MediaToolsInfo, UiError>(__TAURI_INVOKE("install_media_tools", { onEvent })),
+	/**  Checks both installed tools for a newer release now, and installs it. */
+	updateMediaTools: () => typedError<MediaToolsInfo, UiError>(__TAURI_INVOKE("update_media_tools")),
+	/**
+	 *  Removes both installed tools (not the user's own programs). Refused
+	 *  while media downloads run.
+	 */
+	removeMediaTools: () => typedError<MediaToolsInfo, UiError>(__TAURI_INVOKE("remove_media_tools")),
+	/**  Chooses yt-dlp's release channel; the next update check follows it. */
+	setMediaChannel: (channel: MediaChannel) => typedError<MediaToolsInfo, UiError>(__TAURI_INVOKE("set_media_channel", { channel })),
+	/**
+	 *  Uses a program the user chose instead of the installed tool (`null`:
+	 *  back to the installed one). The program must start and report its
+	 *  version first; it is not verified or updated by Boltget.
+	 */
+	setMediaToolPath: (tool: MediaTool, path: string | null) => typedError<MediaToolsInfo, UiError>(__TAURI_INVOKE("set_media_tool_path", { tool, path })),
+	/**
+	 *  Opens a video tool's project page in the browser (the install sheet's
+	 *  links). Only these two addresses: the page never names one.
+	 */
+	openMediaProject: (tool: MediaTool) => typedError<null, UiError>(__TAURI_INVOKE("open_media_project", { tool })),
 	/**
 	 *  Adds a download to its queue (the default queue unless the page names
 	 *  one): it starts when its turn comes, or at `startAt`, or stays paused
@@ -278,6 +322,8 @@ export type AppSettings = {
 	 *  docs/BROWSER-INTEGRATION.md, "What is never captured").
 	 */
 	forgetPrivate: boolean,
+	/**  Video and audio from web pages. */
+	video: VideoSettings,
 };
 
 /**  What Settings shows about the browsers. */
@@ -500,13 +546,23 @@ export type DownloadRow = {
 	 *  downloads" on, it leaves the list once it completes.
 	 */
 	private: boolean,
+	/**
+	 *  Video or audio from a web page, which yt-dlp downloads (a media
+	 *  job, docs/VIDEO.md); `null` for the engine's downloads.
+	 */
+	media: MediaRowInfo | null,
 };
 
 /**
  *  Where a download is in its life (docs/ARCHITECTURE.md, "Download state
  *  machine").
  */
-export type DownloadState = "queued" | "probing" | "downloading" | "retrying" | "verifying" | "paused" | "completed" | "failed" | "cancelled" | "needs_new_link" | "corrupt";
+export type DownloadState = "queued" | "probing" | "downloading" | "retrying" | "verifying" | "paused" | "completed" | "failed" | "cancelled" | "needs_new_link" | "corrupt" | 
+/**
+ *  A media download's merging or converting (FFmpeg, run by yt-dlp):
+ *  the app's own state, the engine has none like it.
+ */
+"processing";
 
 /**
  *  Everything the backend streams to a subscribed page, in order. The first
@@ -583,6 +639,47 @@ export type LinkSource = {
 	role: string,
 };
 
+/**  yt-dlp's release channel. */
+export type MediaChannel = "stable" | "nightly";
+
+/**
+ *  The picker's container toggle (docs/VIDEO.md): "Prefer MP4" (the
+ *  default, for compatibility) or "Prefer original".
+ */
+export type MediaContainer = "mp4" | "original";
+
+/**  One format of the page, for the advanced table. */
+export type MediaFormat = {
+	/**  yt-dlp's format id. */
+	id: string,
+	ext: string | null,
+	width: number | null,
+	height: number | null,
+	fps: number | null,
+	/**  Everyday names; `null` when the format has no such stream. */
+	videoCodec: string | null,
+	audioCodec: string | null,
+	/**  Kilobits per second. */
+	bitrate: number | null,
+	size: number | null,
+	sizeApproximate: boolean,
+	/**  `https`, `m3u8_native`, `http_dash_segments`, ... */
+	protocol: string | null,
+	note: string | null,
+};
+
+/**  Progress of an install, streamed while `install_media_tools` runs. */
+export type MediaInstallEvent = {
+	tool: MediaTool,
+	step: MediaInstallStep,
+	/**  Bytes downloaded, while downloading. */
+	done: number,
+	total: number | null,
+};
+
+/**  A step of an install. */
+export type MediaInstallStep = "checking" | "downloading" | "verifying" | "unpacking" | "testing" | "done";
+
 /**  One preset with what it resolves to. */
 export type MediaPreset = {
 	/**  `best`, `1080p`, `720p`, `small` or `audio`. */
@@ -607,14 +704,43 @@ export type MediaPreset = {
 /**  What "Look for media on this page" found. */
 export type MediaProbe = 
 /**
- *  yt-dlp and FFmpeg are not installed yet (the install sheet is v0.4
- *  step 3); nothing was run.
+ *  yt-dlp or FFmpeg is missing: the install sheet comes first. Nothing
+ *  was run.
  */
 { kind: "notInstalled" } | 
 /**  yt-dlp described the page. */
 { kind: "found"; 
 /**  What it found. */
 media: MediaSummary };
+
+/**  A media download to start. */
+export type MediaRequest = {
+	/**  The page. */
+	url: string,
+	/**  The yt-dlp format expression. */
+	expression: string,
+	/**  The preset it came from; absent for the advanced table's choice. */
+	preset?: string | null,
+	container: MediaContainer,
+	subtitles?: MediaSubtitlesChoice | null,
+	/**  The title the probe found. */
+	title?: string | null,
+	/**  The expected size in bytes. */
+	size?: number | null,
+	/**  The site, to remember the preset for. */
+	site?: string | null,
+};
+
+/**  What a media download's row shows beyond a download's. */
+export type MediaRowInfo = {
+	/**  The title the probe found. */
+	title: string | null,
+	/**
+	 *  `best`, `1080p`, `720p`, `small` or `audio`; `null` for a format the
+	 *  user chose in the advanced table.
+	 */
+	preset: string | null,
+};
 
 /**  A subtitle language. */
 export type MediaSubtitle = {
@@ -624,23 +750,80 @@ export type MediaSubtitle = {
 	automatic: boolean,
 };
 
-/**  A page's media, as the add sheet shows it. */
+/**  Subtitles to download with a video. */
+export type MediaSubtitlesChoice = {
+	/**  Language codes as the page names them. */
+	languages: string[],
+	/**  Automatic captions count for languages without subtitles. */
+	automatic: boolean,
+	/**  In the video rather than next to it. */
+	embed: boolean,
+};
+
+/**  A page's media, as the picker shows it. */
 export type MediaSummary = {
+	/**  The page, as yt-dlp names it (else as given). */
+	url: string,
+	/**  The site, for remembering the last preset (`youtube.com`). */
+	site: string,
 	title: string | null,
 	uploader: string | null,
 	/**  Seconds. */
 	duration: number | null,
+	/**  The thumbnail's address; `media_thumbnail` fetches it. */
 	thumbnail: string | null,
 	/**
 	 *  The presets for "Prefer MP4", best first; empty when there is
 	 *  nothing to download (no media, DRM, or a playlist).
 	 */
 	presets: MediaPreset[],
+	/**  The same for "Prefer original". */
+	originalPresets: MediaPreset[],
+	/**  Every format, for the advanced table, best last as yt-dlp lists them. */
+	formats: MediaFormat[],
 	subtitles: MediaSubtitle[],
 	isPlaylist: boolean,
 	entryCount: number,
 	/**  Everything on the page is DRM-protected. */
 	drm: boolean,
+	/**  The preset last used on this site, if any. */
+	remembered: string | null,
+};
+
+/**  A video tool. */
+export type MediaTool = "ytDlp" | "ffmpeg";
+
+/**  One tool, for Settings, Video. */
+export type MediaToolInfo = {
+	tool: MediaTool,
+	/**  The installed version in use. */
+	version: string | null,
+	/**  The version kept for rollback. */
+	previous: string | null,
+	/**  When updates were last checked (Unix milliseconds). */
+	lastCheck: number | null,
+	/**  The program the user chose instead, if any. */
+	customPath: string | null,
+	/**  What that program reports as its version (`null`: it did not start). */
+	customVersion: string | null,
+	/**  Whether Boltget has a build of it for this system. */
+	supported: boolean,
+};
+
+/**  What installing a missing tool downloads, from its release metadata. */
+export type MediaToolSize = {
+	tool: MediaTool,
+	version: string,
+	/**  Bytes. */
+	size: number,
+};
+
+/**  The video tools, for the install sheet and Settings, Video. */
+export type MediaToolsInfo = {
+	/**  Both tools are there (installed or chosen): video downloads work. */
+	ready: boolean,
+	channel: MediaChannel,
+	tools: MediaToolInfo[],
 };
 
 /**  The answer to [`answer_resume_offer`]. */
@@ -822,6 +1005,7 @@ export type SettingsPatch = {
 	/**  Some of the capture rules. */
 	capture?: CapturePatch | null,
 	forgetPrivate?: boolean | null,
+	video?: VideoPatch | null,
 };
 
 /**  What the page is asked to do from outside it. */
@@ -879,6 +1063,32 @@ export type UiError = {
 	 *  a UI string.
 	 */
 	message: string | null,
+};
+
+/**
+ *  A change to Settings, Video; absent fields stay, an empty path goes back
+ *  to the installed tool.
+ */
+export type VideoPatch = {
+	container?: MediaContainer | null,
+	ytDlpPath?: string | null,
+	ffmpegPath?: string | null,
+};
+
+/**  Settings, Video (docs/APP-DESIGN.md, "Video as built"). */
+export type VideoSettings = {
+	/**  What the picker prefers until the user flips the toggle. */
+	container: MediaContainer,
+	/**
+	 *  A yt-dlp the user chose instead of the one Boltget installs: used as
+	 *  it is, neither verified nor updated by Boltget.
+	 */
+	ytDlpPath: string | null,
+	/**
+	 *  An `ffmpeg` the user chose (its folder must also hold `ffprobe`),
+	 *  likewise unverified.
+	 */
+	ffmpegPath: string | null,
 };
 
 /* Tauri Specta runtime */

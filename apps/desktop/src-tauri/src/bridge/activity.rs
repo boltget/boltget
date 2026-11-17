@@ -258,6 +258,7 @@ mod tests {
             queue_position: 0,
             start_at: None,
             private: false,
+            media: None,
         }
     }
 

@@ -6,7 +6,7 @@
 //! subscriber's first message is a snapshot taken here, so nothing that
 //! happens between the snapshot and the first batch can be lost.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::future::pending;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -70,6 +70,13 @@ pub(crate) enum Request {
     Acknowledge,
     /// The current rows, for `list_downloads`.
     List(oneshot::Sender<Vec<DownloadRow>>),
+    /// A media download's latest progress (`bridge::media`), sampled at the
+    /// next tick like the engine's.
+    MediaSample(Sample),
+    /// A media download changed state; announced like the engine's.
+    MediaState(DownloadId, DownloadState, Option<DownloadError>),
+    /// A media download completed with this file and size.
+    MediaCompleted(DownloadId, PathBuf, Option<u64>),
 }
 
 /// How many forgotten private downloads keep their path for their
@@ -183,6 +190,7 @@ pub(crate) fn new_row(id: DownloadId, url: String) -> DownloadRow {
         queue_position: i64::MAX,
         start_at: None,
         private: false,
+        media: None,
     }
 }
 
@@ -211,6 +219,8 @@ struct Hub {
     visible: bool,
     tracker: Tracker,
     outputs: Outputs,
+    /// The latest progress of running media downloads.
+    media_samples: HashMap<DownloadId, Sample>,
 }
 
 async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration, outputs: Outputs) {
@@ -226,6 +236,7 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Request>, tick: Duration, outputs: 
         visible: true,
         tracker: Tracker::default(),
         outputs,
+        media_samples: HashMap::new(),
     };
     let mut events: Option<broadcast::Receiver<EngineEvent>> = None;
     let mut ticker = tokio::time::interval(tick);
@@ -353,6 +364,32 @@ impl Hub {
             }
             Request::List(reply) => {
                 let _ = reply.send(self.model.snapshot());
+            }
+            Request::MediaSample(sample) => {
+                if self
+                    .model
+                    .row(sample.id)
+                    .is_some_and(|r| r.state.is_active())
+                {
+                    self.media_samples.insert(sample.id, sample);
+                }
+            }
+            Request::MediaState(id, state, error) => {
+                let previous = self.model.row(id).map(|r| r.state);
+                if !state.is_active() {
+                    self.media_samples.remove(&id);
+                }
+                self.model.state_changed(id, state, error);
+                self.track(id, previous);
+            }
+            Request::MediaCompleted(id, path, size) => {
+                self.media_samples.remove(&id);
+                let previous = self.model.row(id).map(|r| r.state);
+                if let Some(size) = size {
+                    self.model.resumed(id, size, Some(size));
+                }
+                self.model.completed(id, path_string(&path), now_ms());
+                self.track(id, previous);
             }
         }
     }
@@ -510,7 +547,15 @@ impl Hub {
         let Some(engine) = &self.engine else { return };
         match engine.list().await {
             Ok(list) => {
-                self.model.load(list.iter().map(DownloadRow::from));
+                // Media downloads are not the engine's: they stay as they are.
+                let media: Vec<DownloadRow> = self
+                    .model
+                    .snapshot()
+                    .into_iter()
+                    .filter(|r| r.media.is_some())
+                    .collect();
+                self.model
+                    .load(list.iter().map(DownloadRow::from).chain(media));
                 self.broadcast_snapshot();
             }
             Err(e) => tracing::warn!(error = %e, "could not read the download list"),
@@ -518,12 +563,15 @@ impl Hub {
     }
 
     fn tick(&mut self) {
+        let active = self.model.active_ids();
+        self.media_samples.retain(|id, _| active.contains(id));
+        let media: Vec<Sample> = self.media_samples.values().cloned().collect();
         let samples = match &self.engine {
             Some(engine) => {
-                let ids: Vec<_> = self
-                    .model
-                    .active_ids()
-                    .into_iter()
+                let ids: Vec<_> = active
+                    .iter()
+                    .filter(|id| super::media::job_id(**id).is_none())
+                    .copied()
                     .map(Into::into)
                     .collect();
                 engine
@@ -540,6 +588,7 @@ impl Hub {
             }
             None => Vec::new(),
         };
+        let samples: Vec<Sample> = samples.into_iter().chain(media).collect();
         // The model is kept current while hidden, so speeds stay right; the
         // batch is dropped and a snapshot follows when the window shows.
         if let Some(batch) = self.model.tick(samples, Instant::now())

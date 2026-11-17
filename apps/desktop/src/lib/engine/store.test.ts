@@ -32,6 +32,7 @@ function row(id: number, extra: Partial<DownloadRow> = {}): DownloadRow {
     queuePosition: id,
     startAt: null,
     private: false,
+    media: null,
     ...extra,
   };
 }
@@ -59,6 +60,8 @@ const ok = <T>(data: T): Promise<Result<T>> => Promise.resolve({ status: "ok", d
 const fail = (key: string): Promise<Result<never>> =>
   Promise.resolve({ status: "error", error: { key, message: null } });
 
+const TOOLS = { ready: true, channel: "stable" as const, tools: [] };
+
 /** A fake backend: the test sends messages through `emit`. */
 function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
   let emit: (message: EngineMessage) => void = () => {};
@@ -77,6 +80,17 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
       }),
     ),
     probeMedia: vi.fn(() => ok({ kind: "notInstalled" as const })),
+    mediaThumbnail: vi.fn(() => ok("data:image/png;base64,")),
+    addMediaDownload: vi.fn((req) =>
+      ok(row(2 ** 50 + 1, { url: req.url, media: { title: req.title ?? null, preset: null } })),
+    ),
+    mediaTools: vi.fn(() => ok(TOOLS)),
+    mediaInstallPlan: vi.fn(() => ok([])),
+    updateMediaTools: vi.fn(() => ok(TOOLS)),
+    removeMediaTools: vi.fn(() => ok(TOOLS)),
+    setMediaChannel: vi.fn(() => ok(TOOLS)),
+    setMediaToolPath: vi.fn(() => ok(TOOLS)),
+    openMediaProject: vi.fn(() => ok(null)),
     addDefaults: vi.fn(() => ok({ downloadsFolder: "Downloads", recentFolders: [] })),
     checkDestination: vi.fn((_dir, name) =>
       ok({ fileName: name, renamed: false, folderExists: true, freeBytes: null }),
@@ -116,6 +130,7 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
     subscribe: vi.fn(async (onMessage) => {
       emit = onMessage;
     }),
+    installMedia: vi.fn(() => ok(TOOLS)),
     commands,
   };
   return { api, commands, emit: (m: EngineMessage) => emit(m) };
@@ -429,5 +444,32 @@ describe("settings", () => {
     expect(refused.status).toBe("error");
     expect(store.settings.maxConnections).toBe(8);
     expect(store.lastError).toBeNull();
+  });
+});
+
+describe("media downloads", () => {
+  it("shows a media download's row at once, with its media info", async () => {
+    const { store, commands } = await connected();
+    const result = await store.addMedia({
+      url: "https://v.test/watch?v=1",
+      expression: "bv*+ba/b",
+      preset: "best",
+      container: "mp4",
+      title: "A Video",
+    });
+    expect(result.status).toBe("ok");
+    expect(commands.addMediaDownload).toHaveBeenCalledOnce();
+    const row = store.get(2 ** 50 + 1);
+    expect(row?.media).toEqual({ title: "A Video", preset: null });
+    expect(store.ids).toContain(2 ** 50 + 1);
+  });
+
+  it("a processing media download takes progress like a running one", async () => {
+    const id = 2 ** 50 + 2;
+    const { store, emit } = await connected({}, [
+      row(id, { state: "processing", media: { title: "x", preset: "best" } }),
+    ]);
+    emit(batch({ progress: [progress(id, 600, { connections: 0 })] }));
+    expect(store.get(id)?.downloaded).toBe(600);
   });
 });

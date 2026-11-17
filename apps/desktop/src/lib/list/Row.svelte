@@ -87,7 +87,11 @@
   const action = $derived(primaryAction(d.state));
   const pct = $derived(percent(d.downloaded, d.total));
   const fraction = $derived(
-    d.state === "completed" ? 1 : d.total ? Math.min(1, d.downloaded / d.total) : 0,
+    d.state === "completed" || d.state === "processing"
+      ? 1
+      : d.total
+        ? Math.min(1, d.downloaded / d.total)
+        : 0,
   );
 
   // Digits sampled on the shared 2 Hz beat.
@@ -121,7 +125,10 @@
         return join(formatProgress(d.downloaded, d.total), t("state.retrying"));
       case "verifying":
         return join(d.total ? formatBytes(d.total) : "", t("state.verifying"));
+      case "processing":
+        return join(d.total ? formatBytes(d.total) : "", t("row.processing"));
       case "queued":
+        if (d.media) return join(t("row.media_waiting"), hostOf(d.url));
         return d.startAt !== null
           ? join(t("row.starts", { time: formatUpcoming(d.startAt, clock.now) }), hostOf(d.url))
           : join(t("row.waiting_in", { queue: app.queueName(d.queue) }), hostOf(d.url));

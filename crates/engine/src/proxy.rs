@@ -437,6 +437,19 @@ impl ProxyRules {
         self.http.is_none() && self.https.is_none()
     }
 
+    /// The proxy a request to `url` uses, if any (`None`: direct, or not an
+    /// `http(s)` URL). For handing the same choice to another program, such
+    /// as yt-dlp's `--proxy`.
+    pub fn for_url(&self, url: &str) -> Option<&Proxy> {
+        let u = Url::parse(url).ok()?;
+        let https = match u.scheme() {
+            "https" => true,
+            "http" => false,
+            _ => return None,
+        };
+        self.for_target(https, u.host_str()?)
+    }
+
     /// The proxy for a request to `https`/`host`, if any.
     pub(crate) fn for_target(&self, https: bool, host: &str) -> Option<&Proxy> {
         let p = if https { &self.https } else { &self.http };
@@ -631,6 +644,18 @@ pub(crate) async fn socks5_connect<S: AsyncRead + AsyncWrite + Unpin>(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn the_proxy_for_a_url() {
+        let rules = ProxyRules::from_windows("http=h:1;https=s:2", "*.corp.test");
+        let host = |u: &str| rules.for_url(u).map(Proxy::without_credentials);
+        assert_eq!(host("http://v.test/a").as_deref(), Some("http://h:1"));
+        assert_eq!(host("https://v.test/a").as_deref(), Some("http://s:2"));
+        assert_eq!(host("https://x.corp.test/a"), None);
+        assert_eq!(host("ftp://v.test/a"), None);
+        assert_eq!(host("not a url"), None);
+        assert_eq!(ProxyRules::direct().for_url("https://v.test/"), None);
+    }
 
     #[test]
     fn proxy_urls() {

@@ -14,6 +14,9 @@ describe("settings search", () => {
     expect(ids("history")).toEqual(["forget_private"]);
     expect(ids("never sites")).toEqual(["capture_sites"]);
     expect(ids("threshold")).toEqual(["capture_size"]);
+    expect(ids("yt-dlp nightly")).toEqual(["video_channel"]);
+    expect(ids("ffmpeg")).toEqual(["video_tools", "video_paths"]);
+    expect(ids("webm")).toEqual(["video_container"]);
     // Every word must match.
     expect(ids("proxy socks")).toEqual(["proxy"]);
     expect(ids("proxy zebra")).toEqual([]);

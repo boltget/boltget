@@ -48,7 +48,6 @@
     readLinks,
     type AddProblem,
   } from "./links";
-  import { mediaView, type MediaState } from "./media";
   import { ProbeQueue, problemOf, type ProbeEntry } from "./probe";
 
   /** A probe shows its skeleton only when it takes longer than this. */
@@ -97,8 +96,6 @@
   let submitting = $state(false);
   let dest = $state<DestinationCheck | null>(null);
   let skeleton = $state(false);
-  /** "Look for media on this page", for the link it was asked for. */
-  let media = $state<(MediaState & { url: string }) | null>(null);
 
   const reduced =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -215,9 +212,6 @@
     },
   );
 
-  /** The look for media of the link shown, as the sheet shows it. */
-  const mediaShown = $derived(media && media.url === single ? mediaView(media) : null);
-
   const queueOptions = $derived(
     downloads.queues.map((q) => ({ value: String(q.id), label: app.queueName(q) })),
   );
@@ -269,7 +263,6 @@
     submitError = null;
     dest = null;
     folder = null;
-    media = null;
     queue = new ProbeQueue({
       probe: (url) => downloads.probe(url),
       onChange: () => (version += 1),
@@ -495,22 +488,19 @@
     return e?.status === "ready" ? e.preview.fileName : displayName(null, url);
   }
 
-  /** Asks yt-dlp what the page offers (docs/VIDEO.md). */
-  async function lookForMedia() {
+  /**
+   * "Look for media on this page": the media sheet takes over with the link
+   * (its picker, or the tools' install first; docs/VIDEO.md).
+   */
+  function lookForMedia() {
     const url = single;
     if (!url) return;
-    media = { url, status: "looking" };
-    const result = await downloads.probeMedia(url);
-    // The sheet may have closed or moved on to another link meanwhile.
-    if (media?.url !== url) return;
-    media =
-      result.status === "ok"
-        ? { url, status: "done", result: result.data }
-        : { url, status: "failed", error: result.error };
+    app.closeAdd();
+    app.openMedia(url);
   }
 
   function noticeAction() {
-    if (notice?.action === "media") void lookForMedia();
+    if (notice?.action === "media") lookForMedia();
     else showExisting();
   }
 
@@ -641,24 +631,6 @@
           </div>
           {#if problems.name}
             <p class="line error">{t(problems.name)}</p>
-          {:else if mediaShown?.kind === "looking"}
-            <p class="line muted"><span class="probing">{t("add.media.looking")}</span></p>
-          {:else if mediaShown?.kind === "message"}
-            <p class="line {mediaShown.tone}">
-              <Icon name={mediaShown.tone === "warning" ? "alert" : "link"} size={14} />
-              <span>{mediaShown.text}</span>
-            </p>
-          {:else if mediaShown?.kind === "media"}
-            <div class="media">
-              <p class="media-title" title={mediaShown.title}>{mediaShown.title}</p>
-              {#if mediaShown.meta.length}
-                <p class="meta">{@render meta(mediaShown.meta)}</p>
-              {/if}
-              {#if mediaShown.best.length}
-                <p class="meta">{@render meta(mediaShown.best)}</p>
-              {/if}
-              <p class="line muted">{t("add.media.soon")}</p>
-            </div>
           {:else if notice}
             <p class="line {notice.tone}">
               <Icon name={notice.tone === "warning" ? "alert" : "link"} size={14} />
@@ -1088,27 +1060,6 @@
   }
   .indent {
     padding-left: 72px;
-  }
-  /* What "Look for media on this page" found: compact, under the card. */
-  .media {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-floating);
-  }
-  .media-title {
-    margin: 0;
-    font-size: var(--text-13);
-    line-height: var(--leading-13);
-    font-weight: var(--weight-medium);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .media .line {
-    margin-top: var(--space-1);
   }
   .inline {
     flex: none;

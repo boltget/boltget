@@ -6,7 +6,7 @@ import { t, type PlainMessageKey } from "@boltget/ui/messages";
 import type { IconName } from "../Icon.svelte";
 
 export type SectionId =
-  "general" | "downloads" | "connections" | "network" | "browser" | "shortcuts" | "about";
+  "general" | "downloads" | "connections" | "network" | "browser" | "video" | "shortcuts" | "about";
 
 export interface Section {
   id: SectionId;
@@ -20,6 +20,7 @@ export const SECTIONS: readonly Section[] = [
   { id: "connections", label: "settings.section.connections", icon: "active" },
   { id: "network", label: "settings.section.network", icon: "globe" },
   { id: "browser", label: "settings.section.browser", icon: "link" },
+  { id: "video", label: "settings.section.video", icon: "video" },
   { id: "shortcuts", label: "settings.section.shortcuts", icon: "keyboard" },
   { id: "about", label: "settings.section.about", icon: "info" },
 ];
@@ -44,6 +45,10 @@ export type RowId =
   | "capture_defaults"
   | "browser_ask"
   | "browser_integration"
+  | "video_tools"
+  | "video_channel"
+  | "video_container"
+  | "video_paths"
   | "shortcuts"
   | "about";
 
@@ -188,6 +193,34 @@ export const ROWS: readonly Row[] = [
     label: "settings.browser_integration",
     description: "settings.browser_integration.description",
     keywords: "keywords.browser_integration",
+  },
+  {
+    id: "video_tools",
+    section: "video",
+    label: "settings.video.tools",
+    description: "settings.video.tools.description",
+    keywords: "keywords.video_tools",
+  },
+  {
+    id: "video_channel",
+    section: "video",
+    label: "settings.video.channel",
+    description: "settings.video.channel.description",
+    keywords: "keywords.video_channel",
+  },
+  {
+    id: "video_container",
+    section: "video",
+    label: "settings.video.container",
+    description: "settings.video.container.description",
+    keywords: "keywords.video_container",
+  },
+  {
+    id: "video_paths",
+    section: "video",
+    label: "settings.video.paths",
+    description: "settings.video.paths.description",
+    keywords: "keywords.video_paths",
   },
   {
     id: "shortcuts",

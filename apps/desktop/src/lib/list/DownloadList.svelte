@@ -470,7 +470,7 @@
           {@const d = downloads.get(entry.id)}
           {#if d}
             <Row
-              draggable
+              draggable={!d.media}
               dragged={dragging?.has(d.id) ?? false}
               download={d}
               selected={app.selection.ids.has(d.id)}

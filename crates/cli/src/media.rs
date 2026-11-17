@@ -8,9 +8,9 @@ use std::time::{Duration, SystemTime};
 
 use boltget_engine::{CookieJar, EngineConfig, ProxyRules};
 use boltget_media::{
-    Channel, ContainerPreference, Error, InstallEvent, MediaInfo, Outcome, PlaylistMode, Preset,
-    ProbeOptions, ResolvedPreset, Sidecars, Sources, Status, Tool, ToolStatus, codec_label,
-    presets,
+    Channel, ContainerPreference, DownloadOptions, DownloadOutcome, Error, InstallEvent, MediaInfo,
+    MediaProgress, Outcome, Phase, PlaylistMode, Preset, ProbeOptions, ResolvedPreset, Sidecars,
+    Sources, Status, SubtitleChoice, Tool, ToolStatus, codec_label, presets,
 };
 use clap::{Args, Subcommand, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -37,8 +37,23 @@ Exit codes:
   8    the tool is not installed, or there is no earlier version to go back to
   9    a signature or checksum did not verify: nothing was installed
 
-`probe` also exits with 4 when yt-dlp cannot read the page (its message is
-printed), and 8 when yt-dlp is not installed.";
+`probe` and `get` also exit with 4 when yt-dlp cannot read the page or the
+download fails (its message is printed), and 8 when the tools are not
+installed; `get` exits with 130 when stopped with Ctrl-C.";
+
+const GET_HELP: &str = "\
+Downloads a page's video or audio with yt-dlp into the folder given with -o
+(the current folder by default), named \"<title> [<id>].<ext>\". The page is
+probed first, as `probe` does, to resolve the preset (Best quality by
+default, preferring MP4 unless --original is given); --format passes a yt-dlp
+format expression instead. Progress is shown on stderr; the finished file's
+path is printed on stdout and marked as downloaded from the internet, like
+Boltget's other downloads. A proxy comes from the environment (HTTPS_PROXY,
+ALL_PROXY, NO_PROXY), as for `boltget get`.
+
+Ctrl-C stops the download and keeps yt-dlp's partial files: running the same
+command again continues it. The tools are not installed by this command:
+install them first with `boltget media install`.";
 
 const PROBE_HELP: &str = "\
 Asks yt-dlp what the page offers, without downloading anything: the title,
@@ -112,6 +127,62 @@ pub(crate) enum MediaAction {
     /// Show what video or audio a web page offers, with the picker's presets.
     #[command(after_long_help = PROBE_HELP)]
     Probe(ProbeArgs),
+    /// Download a web page's video or audio.
+    #[command(after_long_help = GET_HELP)]
+    Get(GetArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct GetArgs {
+    /// The web page.
+    url: String,
+    /// The preset to download.
+    #[arg(long, value_enum, default_value_t = PresetArg::Best, conflicts_with = "format")]
+    preset: PresetArg,
+    /// A yt-dlp format expression instead of a preset (e.g. "137+140").
+    #[arg(long, value_name = "EXPR")]
+    format: Option<String>,
+    /// Prefer the site's original formats over MP4.
+    #[arg(long)]
+    original: bool,
+    /// Subtitle languages to download, separated by commas (e.g. en,de).
+    #[arg(long, value_name = "LANGS")]
+    subs: Option<String>,
+    /// Use automatic captions for languages without subtitles.
+    #[arg(long, requires = "subs")]
+    auto_subs: bool,
+    /// Embed the subtitles in the video instead of saving them as files.
+    #[arg(long, requires = "subs")]
+    embed_subs: bool,
+    /// The folder to save into (default: the current folder).
+    #[arg(short = 'o', long = "output-dir", value_name = "DIR")]
+    output_dir: Option<PathBuf>,
+    /// A Netscape cookies.txt file for the site.
+    #[arg(long, value_name = "FILE")]
+    cookies: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum PresetArg {
+    Best,
+    #[value(name = "1080p")]
+    P1080,
+    #[value(name = "720p")]
+    P720,
+    Small,
+    Audio,
+}
+
+impl PresetArg {
+    fn preset(self) -> Preset {
+        match self {
+            PresetArg::Best => Preset::Best,
+            PresetArg::P1080 => Preset::P1080,
+            PresetArg::P720 => Preset::P720,
+            PresetArg::Small => Preset::Small,
+            PresetArg::Audio => Preset::Audio,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -175,7 +246,10 @@ fn exit_code(e: &Error) -> u8 {
     match e {
         Error::Download(e) => crate::exit_code_for(e),
         Error::Signature { .. } | Error::Checksum { .. } => 9,
-        Error::Release { .. } | Error::Unsupported(_) | Error::Extraction { .. } => 4,
+        Error::Release { .. }
+        | Error::Unsupported(_)
+        | Error::Extraction { .. }
+        | Error::Failed { .. } => 4,
         Error::NotInstalled(_) | Error::NoPrevious(_) => 8,
         Error::Busy(_) => 7,
         Error::Argument { .. } => 2,
@@ -205,6 +279,7 @@ pub(crate) async fn run(args: MediaArgs, state: Option<&Path>) -> u8 {
     let on_event = |e: InstallEvent| shown.event(e);
     let result = match args.action {
         MediaAction::Probe(probe_args) => return probe(&sidecars, &shown, probe_args).await,
+        MediaAction::Get(get_args) => return get(&sidecars, &shown, get_args).await,
         MediaAction::Status { json } => status(&sidecars, json),
         MediaAction::Install { tool } => {
             each(&tool.tools(), async |t| {
@@ -413,6 +488,7 @@ async fn probe_page(
     };
     let opts = ProbeOptions {
         cookies,
+        proxy: boltget_media::proxy_for(&ProxyRules::from_env(), args.url.trim()),
         playlist: if args.playlist {
             PlaylistMode::Entries
         } else {
@@ -427,6 +503,153 @@ async fn probe_page(
     };
     let info = prober.probe(args.url.trim(), &opts).await?;
     Ok((info, container))
+}
+
+/// `boltget media get`: due updates, a probe to resolve the preset, then
+/// yt-dlp downloads with a progress bar until done or Ctrl-C.
+async fn get(sidecars: &Sidecars, shown: &Shown, args: GetArgs) -> u8 {
+    let on_event = |e: InstallEvent| shown.event(e);
+    if let Err(e) = sidecars.update_if_due(SystemTime::now(), &on_event).await {
+        eprintln!("boltget: the update check failed: {e}");
+    }
+    shown.finish();
+    match download(sidecars, &args).await {
+        Ok(Some(path)) => {
+            println!("{}", path.display());
+            0
+        }
+        Ok(None) => {
+            eprintln!("boltget: stopped; run the same command again to continue");
+            130
+        }
+        Err(e) => {
+            eprintln!("boltget: {e}");
+            if matches!(e, Error::NotInstalled(_)) {
+                eprintln!("hint: install the video tools with `boltget media install`");
+            }
+            exit_code(&e)
+        }
+    }
+}
+
+/// The format expression, whether it is audio only, and the expected size,
+/// for `get`'s preset (or `--format`).
+fn resolve(
+    info: &MediaInfo,
+    args: &GetArgs,
+    container: ContainerPreference,
+) -> boltget_media::Result<(String, bool, Option<u64>)> {
+    let refuse = |message: &str| Error::Failed {
+        message: message.to_owned(),
+    };
+    if info.is_playlist() {
+        return Err(refuse(
+            "this page is a playlist; playlists come in a later version (try the address of one video)",
+        ));
+    }
+    if info.drm_only() {
+        return Err(refuse("DRM-protected: Boltget cannot download this"));
+    }
+    if let Some(expr) = &args.format {
+        return Ok((expr.trim().to_owned(), false, None));
+    }
+    let wanted = args.preset.preset();
+    let list = presets(info, container);
+    // A preset collapsed into another resolves to the same file.
+    let chosen = list
+        .iter()
+        .find(|r| r.preset == wanted)
+        .or_else(|| list.iter().find(|r| r.audio_only == wanted.audio_only()))
+        .ok_or_else(|| refuse("no video or audio for this preset on this page"))?;
+    eprintln!("{}", preset_line(chosen).trim());
+    Ok((
+        chosen.expression.clone(),
+        chosen.audio_only,
+        chosen.size.map(|s| s.bytes),
+    ))
+}
+
+/// Probes, resolves, downloads. `None`: stopped with Ctrl-C.
+async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<Option<PathBuf>> {
+    let downloader = sidecars.downloader()?;
+    let cookies = match &args.cookies {
+        Some(path) => Some(CookieJar::load(path)?),
+        None => None,
+    };
+    let container = if args.original {
+        ContainerPreference::Original
+    } else {
+        ContainerPreference::Mp4
+    };
+    let url = args.url.trim();
+    let proxy = boltget_media::proxy_for(&ProxyRules::from_env(), url);
+    let info = sidecars
+        .prober()?
+        .probe(
+            url,
+            &ProbeOptions {
+                cookies: cookies.clone(),
+                proxy: proxy.clone(),
+                ..ProbeOptions::default()
+            },
+        )
+        .await?;
+    let (format, audio_only, expected) = resolve(&info, args, container)?;
+    let dest = match &args.output_dir {
+        Some(d) => d.clone(),
+        None => PathBuf::from("."),
+    };
+    let dest = std::path::absolute(&dest).map_err(|e| Error::Io {
+        context: format!("resolving {}", dest.display()),
+        source: e,
+    })?;
+    let mut opts = DownloadOptions::new(format, dest);
+    opts.container = container;
+    opts.audio_only = audio_only;
+    opts.expected_size = expected;
+    opts.cookies = cookies;
+    opts.proxy = proxy;
+    opts.subtitles = args.subs.as_ref().map(|langs| SubtitleChoice {
+        languages: langs
+            .split(',')
+            .map(|l| l.trim().to_owned())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        automatic: args.auto_subs,
+        embed: args.embed_subs,
+    });
+    if let Some(title) = &info.title {
+        eprintln!("{title}");
+    }
+    let bar = ProgressBar::new(expected.unwrap_or(0));
+    bar.set_style(
+        ProgressStyle::with_template("  {msg} [{bar:30}] {bytes}/{total_bytes} {bytes_per_sec}")
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .progress_chars("=> "),
+    );
+    bar.set_message("downloading");
+    let on_progress = |p: &MediaProgress| {
+        if let Some(total) = p.total {
+            bar.set_length(total);
+        }
+        bar.set_position(p.downloaded);
+        if p.phase == Phase::Processing {
+            bar.set_message("processing");
+        }
+    };
+    let (stop, stop_rx) = tokio::sync::watch::channel(false);
+    let ctrl_c = tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            stop.send_replace(true);
+        }
+    });
+    let outcome = downloader.run(url, &opts, &on_progress, stop_rx).await;
+    ctrl_c.abort();
+    bar.finish_and_clear();
+    Ok(match outcome? {
+        DownloadOutcome::Completed { path, .. } => Some(path),
+        DownloadOutcome::Stopped => None,
+    })
 }
 
 fn preset_name(p: Preset) -> &'static str {

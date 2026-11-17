@@ -861,3 +861,174 @@ async fn on_start_completed_private_downloads_go_and_unfinished_ones_wait() {
     assert!(engine.list().await.unwrap().is_empty());
     bridge.shutdown().await;
 }
+
+/// The media crate's fake yt-dlp and FFmpeg (`boltget-fake-sidecar`), when
+/// the workspace's tests built it next to this test binary.
+fn fake_sidecar() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.parent()?;
+    let name = if cfg!(windows) {
+        "boltget-fake-sidecar.exe"
+    } else {
+        "boltget-fake-sidecar"
+    };
+    Some(dir.join(name)).filter(|p| p.is_file())
+}
+
+fn media_completed(msg: &EngineMessage, id: DownloadId) -> Option<String> {
+    match msg {
+        EngineMessage::Batch { events, .. } => events.iter().find_map(|e| match e {
+            DownloadEvent::Completed { id: c, path } if *c == id => Some(path.clone()),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn state_of(msg: &EngineMessage, id: DownloadId) -> Option<DownloadState> {
+    match msg {
+        EngineMessage::Batch { rows, .. } => rows.iter().find(|r| r.id == id).map(|r| r.state),
+        _ => None,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn media_jobs_run_as_rows_pause_continue_and_go() {
+    let Some(fake) = fake_sidecar() else {
+        eprintln!("skipped: boltget-fake-sidecar is not built (cargo test --workspace builds it)");
+        return;
+    };
+    let state = tempfile::tempdir().unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let videos = state.path().join("Videos");
+    let ext = if cfg!(windows) { ".exe" } else { "" };
+    let yt_dlp = tools.path().join(format!("yt-dlp{ext}"));
+    let ffmpeg = tools.path().join(format!("ffmpeg{ext}"));
+    std::fs::copy(&fake, &yt_dlp).unwrap();
+    std::fs::copy(&fake, &ffmpeg).unwrap();
+    std::fs::write(
+        tools.path().join("fake-progress.txt"),
+        "[boltget] download {\"status\": \"downloading\", \"downloaded_bytes\": 50, \"total_bytes\": 100, \"filename\": \"f.mp4\", \"speed\": 10}\n\
+         [boltget] postprocess {\"status\": \"started\", \"postprocessor\": \"Merger\"}\n",
+    )
+    .unwrap();
+    std::fs::write(tools.path().join("fake-slow"), "").unwrap();
+
+    let bridge = bridge();
+    bridge.set_tools_dir(state.path().join("tools"));
+    bridge
+        .open(state.path().into(), cfg(), Duration::from_millis(50))
+        .await;
+    let patch = crate::settings::SettingsPatch {
+        video: Some(crate::settings::VideoPatch {
+            yt_dlp_path: Some(yt_dlp.to_string_lossy().into_owned()),
+            ffmpeg_path: Some(ffmpeg.to_string_lossy().into_owned()),
+            ..crate::settings::VideoPatch::default()
+        }),
+        ..crate::settings::SettingsPatch::default()
+    };
+    bridge.update_settings(&patch).await.unwrap();
+    let mut rx = subscribe(&bridge);
+    let _snapshot = next(&mut rx).await;
+
+    // A job runs, is processed and completes as a row of the list.
+    let mut job = boltget_engine::NewMediaJob::new("https://v.test/watch?v=v1", "b", &videos);
+    job.title = Some("fake video".into());
+    job.preset = Some("best".into());
+    let row = bridge.add_media(job).await.unwrap();
+    assert!(row.media.is_some());
+    assert_eq!(row.file_name.as_deref(), Some("fake video.mp4"));
+    let id = row.id;
+    assert!(super::media::job_id(id).is_some());
+    let seen = until(&mut rx, |m| media_completed(m, id).is_some()).await;
+    assert!(
+        seen.iter()
+            .any(|m| state_of(m, id) == Some(DownloadState::Processing)),
+        "never processing"
+    );
+    let path = seen.iter().find_map(|m| media_completed(m, id)).unwrap();
+    assert!(path.ends_with("fake video [v1].mp4"), "{path}");
+    let done = bridge
+        .list()
+        .await
+        .into_iter()
+        .find(|r| r.id == id)
+        .unwrap();
+    assert_eq!(done.state, DownloadState::Completed);
+    assert_eq!(done.total, Some(10));
+
+    // Another one is paused while it runs, keeps its partial file, and
+    // continues when resumed.
+    std::fs::remove_file(videos.join("fake video [v1].mp4")).unwrap();
+    std::fs::write(tools.path().join("fake-hang-download"), "").unwrap();
+    let mut job = boltget_engine::NewMediaJob::new("https://v.test/watch?v=v1", "b", &videos);
+    job.title = Some("second".into());
+    let second = bridge.add_media(job).await.unwrap().id;
+    let job2 = super::media::job_id(second).unwrap();
+    until(&mut rx, |m| {
+        state_of(m, second) == Some(DownloadState::Processing)
+    })
+    .await;
+    // The fake writes its partial file after its last progress line.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        bridge.pause_media(job2).await.unwrap(),
+        DownloadState::Paused
+    );
+    until(&mut rx, |m| {
+        state_of(m, second) == Some(DownloadState::Paused)
+    })
+    .await;
+    assert!(videos.join("fake video [v1].mp4.part").exists());
+    std::fs::remove_file(tools.path().join("fake-hang-download")).unwrap();
+    bridge.resume_media(job2).await.unwrap();
+    until(&mut rx, |m| media_completed(m, second).is_some()).await;
+    assert_eq!(
+        std::fs::read_to_string(tools.path().join("fake-resumed.txt")).unwrap(),
+        "yes"
+    );
+
+    // Removing it with its file deletes the file and the row.
+    bridge.remove_media(job2, true).await.unwrap();
+    assert!(!videos.join("fake video [v1].mp4").exists());
+    until(
+        &mut rx,
+        |m| matches!(m, EngineMessage::Batch { removed, .. } if removed.contains(&second)),
+    )
+    .await;
+    assert!(bridge.engine().unwrap().media_job(job2).await.is_err());
+
+    // A job whose yt-dlp fails shows yt-dlp's message.
+    std::fs::write(
+        tools.path().join("fake-download-error.txt"),
+        "ERROR: [generic] Unsupported URL: https://v.test/x\n",
+    )
+    .unwrap();
+    let third = bridge
+        .add_media(boltget_engine::NewMediaJob::new(
+            "https://v.test/x",
+            "b",
+            &videos,
+        ))
+        .await
+        .unwrap()
+        .id;
+    until(&mut rx, |m| {
+        state_of(m, third) == Some(DownloadState::Failed)
+    })
+    .await;
+    let failed = bridge
+        .list()
+        .await
+        .into_iter()
+        .find(|r| r.id == third)
+        .unwrap();
+    let error = failed.error.unwrap();
+    assert_eq!(error.key, "error.media.failed");
+    assert!(
+        error.message.contains("Unsupported URL"),
+        "{}",
+        error.message
+    );
+    bridge.shutdown().await;
+}

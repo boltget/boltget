@@ -315,8 +315,92 @@ pub fn check_yt_dlp(args: &[String]) -> Result<()> {
             &mut it,
             YT_DLP_FLAGS,
             YT_DLP_VALUED,
-            |_, _| Ok(()),
+            yt_dlp_value,
         )?;
+    }
+    Ok(())
+}
+
+/// Proxy schemes yt-dlp may be given (`socks5h` resolves names at the
+/// proxy, as Boltget's own SOCKS5 does).
+const PROXY_SCHEMES: &[&str] = &["http", "https", "socks5", "socks5h"];
+
+/// Containers for `--merge-output-format`.
+const MERGE_FORMATS: &[&str] = &["mp4", "mkv", "webm", "mov", "flv", "avi"];
+
+/// Formats for `--audio-format`.
+const AUDIO_FORMATS: &[&str] = &[
+    "best", "aac", "alac", "flac", "m4a", "mp3", "opus", "vorbis", "wav",
+];
+
+/// Formats for `--convert-subs` and `--sub-format` alternatives.
+const SUBTITLE_FORMATS: &[&str] = &["srt", "vtt", "ass", "lrc", "none", "best"];
+
+/// The values of yt-dlp options that name places, proxies or languages are
+/// checked further (docs/VIDEO.md, "Picker and media downloads: as built"):
+///
+/// - `--proxy`: `http`, `https`, `socks5` or `socks5h` with a host, or empty
+///   (direct).
+/// - `-o`/`--output`: a file name template only: no path separators, no
+///   `..`, no drive or `TYPES:` prefix (`:`), not absolute. The folder comes
+///   from `-P`.
+/// - `-P`/`--paths`: one absolute folder, without a `TYPES:` prefix.
+/// - `--sub-langs`: language codes separated by commas: letters, digits,
+///   `-` and `_` (no regular expressions, no `all`).
+/// - `--merge-output-format`, `--audio-format`, `--convert-subs`: known
+///   formats only.
+fn yt_dlp_value(option: &str, value: &str) -> Result<()> {
+    let program = Program::YtDlp.name();
+    let bad = |what: &str| Err(refused(program, format!("{option} {value:?}: {what}")));
+    match option {
+        "--proxy" => {
+            if value.is_empty() {
+                return Ok(());
+            }
+            let ok = url::Url::parse(value).is_ok_and(|u| {
+                PROXY_SCHEMES.contains(&u.scheme()) && u.host_str().is_some_and(|h| !h.is_empty())
+            });
+            if !ok || value.chars().any(char::is_control) {
+                return bad("not an http, https or socks5 proxy URL");
+            }
+        }
+        "-o" | "--output" => {
+            let plain = !value.contains(['/', '\\', ':']) && !value.contains("..");
+            if value.trim().is_empty() || !plain || value.chars().any(char::is_control) {
+                return bad("an output template is a file name, without folders");
+            }
+        }
+        "-P" | "--paths" => {
+            let path = std::path::Path::new(value);
+            let prefixed = value
+                .split_once(':')
+                .is_some_and(|(head, _)| head.len() > 1);
+            if !path.is_absolute() || prefixed || value.chars().any(char::is_control) {
+                return bad("the folder must be an absolute path");
+            }
+        }
+        "--sub-langs" => {
+            let ok = !value.is_empty()
+                && value.split(',').all(|l| {
+                    !l.is_empty()
+                        && l.len() <= 32
+                        && l.chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+                });
+            if !ok || value.eq_ignore_ascii_case("all") {
+                return bad("language codes separated by commas");
+            }
+        }
+        "--merge-output-format" if !MERGE_FORMATS.contains(&value) => {
+            return bad("not a known container");
+        }
+        "--audio-format" if !AUDIO_FORMATS.contains(&value) => {
+            return bad("not a known audio format");
+        }
+        "--convert-subs" if !SUBTITLE_FORMATS.contains(&value) => {
+            return bad("not a known subtitle format");
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -498,6 +582,61 @@ mod tests {
             v(&["-o", "a\0b"]),
         ] {
             assert!(check_yt_dlp(&args).is_err(), "{args:?} passed");
+        }
+    }
+
+    #[test]
+    fn values_that_name_places_proxies_and_languages_are_checked() {
+        let folder = if cfg!(windows) {
+            r"C:\Users\you\Videos"
+        } else {
+            "/home/you/Videos"
+        };
+        for (opt, good) in [
+            ("--proxy", "http://proxy.test:3128"),
+            ("--proxy", "socks5h://127.0.0.1:1080"),
+            ("--proxy", ""),
+            ("-o", "%(title)s [%(id)s].%(ext)s"),
+            ("--output", "%(title).80s.%(ext)s"),
+            ("-P", folder),
+            ("--sub-langs", "en,pt-BR,zh_Hans"),
+            ("--merge-output-format", "mp4"),
+            ("--audio-format", "m4a"),
+            ("--convert-subs", "srt"),
+        ] {
+            check_yt_dlp(&v(&[opt, good])).unwrap_or_else(|e| panic!("{opt} {good}: {e}"));
+        }
+        for (opt, bad) in [
+            ("--proxy", "file:///etc/passwd"),
+            ("--proxy", "ftp://proxy.test"),
+            ("--proxy", "proxy.test:3128"),
+            ("--proxy", "http://proxy.test\r\nX: y"),
+            ("-o", "../%(title)s.%(ext)s"),
+            ("-o", "sub/%(title)s.%(ext)s"),
+            ("-o", r"C:\x\%(title)s.%(ext)s"),
+            ("-o", r"sub\%(title)s.%(ext)s"),
+            ("-o", "subtitle:%(title)s.%(ext)s"),
+            ("-o", "a..b"),
+            ("-o", " "),
+            ("-P", r"relative\dir"),
+            ("-P", r"temp:C:\x"),
+            ("--paths", "home:/tmp"),
+            ("--sub-langs", "all"),
+            ("--sub-langs", "en.*"),
+            ("--sub-langs", "en,,de"),
+            ("--sub-langs", ""),
+            ("--merge-output-format", "exe"),
+            ("--audio-format", "bat"),
+            ("--convert-subs", "html"),
+        ] {
+            assert!(
+                check_yt_dlp(&v(&[opt, bad])).is_err(),
+                "{opt} {bad:?} passed"
+            );
+            assert!(
+                check_yt_dlp(&v(&[&format!("{opt}={bad}")])).is_err() || !opt.starts_with("--"),
+                "{opt}={bad:?} passed"
+            );
         }
     }
 

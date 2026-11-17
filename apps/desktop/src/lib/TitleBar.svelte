@@ -29,7 +29,7 @@
   // Ctrl+F and "/" focus search (DESIGN-PRINCIPLES #6): the downloads', or
   // in Settings the settings'. Ctrl+K is the command palette (App.svelte).
   function onkeydown(event: KeyboardEvent) {
-    if (app.adding || app.palette) return;
+    if (app.adding || app.media || app.palette) return;
     const plain = !event.shiftKey && !event.altKey;
     const typing = (event.target as HTMLElement | null)?.closest("input, textarea, select");
     if (

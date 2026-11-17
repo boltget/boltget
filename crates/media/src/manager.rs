@@ -203,6 +203,11 @@ impl Sidecars {
         &self.dir
     }
 
+    /// The engine settings downloads start from (proxy, certificates).
+    pub fn engine_config(&self) -> &EngineConfig {
+        &self.engine
+    }
+
     /// What is installed. Reads only the manifest.
     pub fn status(&self) -> Result<Status> {
         let m = Manifest::load(&self.dir)?;
@@ -785,6 +790,79 @@ impl Sidecars {
         }
         removed.sort();
         Ok(removed)
+    }
+
+    /// Removes `tool`: every installed version and its manifest entry (the
+    /// channel is kept). A version still in use (a running sidecar on
+    /// Windows) is deleted by the next prune. The next use installs it
+    /// again, on demand.
+    pub fn remove(&self, tool: Tool) -> Result<()> {
+        if !self.dir.exists() {
+            return Ok(());
+        }
+        let _lock = manifest::lock(&self.dir)?;
+        let mut m = Manifest::load(&self.dir)?;
+        let st = m.tool_mut(tool);
+        st.active = None;
+        st.previous = None;
+        st.last_check = None;
+        st.last_failure_check = None;
+        st.rejected.clear();
+        m.save(&self.dir)?;
+        let _ = self.prune_locked(tool);
+        Ok(())
+    }
+
+    /// Checks a program the user points Boltget at instead of an installed
+    /// tool (Settings, Video, custom paths): it must be an absolute path to
+    /// an executable (`.exe` on Windows) that starts with the program's
+    /// version option and prints a version. Returns the first line it
+    /// printed (yt-dlp: the version; FFmpeg: `ffmpeg version ...`). Nothing
+    /// else is verified: such programs are the user's choice, and are
+    /// neither signature-checked nor updated by Boltget.
+    pub async fn check_custom(&self, program: Program, path: &Path) -> Result<String> {
+        let custom = |detail: String| Error::CustomProgram {
+            program: program.name(),
+            path: path.to_path_buf(),
+            detail,
+        };
+        if !path.is_file() {
+            return Err(custom("there is no such file".into()));
+        }
+        let inv = match program {
+            Program::YtDlp => Invocation::yt_dlp(path, None, &["--version".to_owned()]),
+            _ => Invocation::ffmpeg(program, path, &["-version".to_owned()]),
+        }
+        .map_err(|e| custom(e.to_string()))?
+        .timeout(self.smoke_timeout)
+        .max_output(64 * 1024);
+        let out = inv.run().await.map_err(|e| custom(e.to_string()))?;
+        if !out.status.success() {
+            return Err(custom(format!("it exited with {}", out.status)));
+        }
+        let text = out.stdout_text();
+        let first = text
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("")
+            .to_owned();
+        let ok = match program {
+            Program::YtDlp => {
+                !first.is_empty()
+                    && first.len() <= 64
+                    && first
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+            }
+            _ => first.starts_with(&format!("{} version ", program.name())),
+        };
+        if !ok {
+            return Err(custom(format!(
+                "it printed {first:?} instead of its version"
+            )));
+        }
+        Ok(first)
     }
 
     /// Updates installed tools whose check is due at `now`: yt-dlp once a day

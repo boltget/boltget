@@ -23,7 +23,14 @@ import type {
   EngineStatus,
   FinishCountdown,
   LimitScope,
+  MediaChannel,
+  MediaInstallEvent,
   MediaProbe,
+  MediaRequest,
+  MediaRowInfo,
+  MediaTool,
+  MediaToolSize,
+  MediaToolsInfo,
   ProbePreview,
   ProgressItem,
   QueueId,
@@ -48,6 +55,8 @@ export type Result<T> = { status: "ok"; data: T } | { status: "error"; error: Ui
 export interface EngineApi {
   /** Starts the stream; `onMessage` first receives a snapshot. */
   subscribe(onMessage: (message: EngineMessage) => void): Promise<void>;
+  /** Installs the missing video tools, reporting progress to `onEvent`. */
+  installMedia(onEvent: (event: MediaInstallEvent) => void): Promise<Result<MediaToolsInfo>>;
   commands: Pick<
     typeof commands,
     | "addDownload"
@@ -56,6 +65,15 @@ export interface EngineApi {
     | "chooseFolder"
     | "probeUrl"
     | "probeMedia"
+    | "mediaThumbnail"
+    | "addMediaDownload"
+    | "mediaTools"
+    | "mediaInstallPlan"
+    | "updateMediaTools"
+    | "removeMediaTools"
+    | "setMediaChannel"
+    | "setMediaToolPath"
+    | "openMediaProject"
     | "pauseDownload"
     | "resumeDownload"
     | "requeueDownload"
@@ -107,6 +125,8 @@ export class Download {
   startAt = $state<number | null>(null);
   /** The file map, while this download is focused and running. */
   segments = $state.raw<SegmentSpan[] | null>(null);
+  /** Video or audio from a web page (yt-dlp's), or `null`. */
+  media = $state.raw<MediaRowInfo | null>(null);
 
   constructor(row: DownloadRow) {
     this.id = row.id;
@@ -131,6 +151,7 @@ export class Download {
     this.queue = row.queue;
     this.queuePosition = row.queuePosition;
     this.startAt = row.startAt;
+    this.media = row.media;
   }
 
   progress(item: ProgressItem): void {
@@ -274,6 +295,58 @@ export class DownloadStore {
   /** Video or audio on a web page (yt-dlp), for the add sheet. */
   probeMedia(url: string): Promise<Result<MediaProbe>> {
     return this.#api.commands.probeMedia(url);
+  }
+
+  /** A page's thumbnail as a `data:` URL, for the picker. */
+  mediaThumbnail(url: string): Promise<Result<string>> {
+    return this.#api.commands.mediaThumbnail(url);
+  }
+
+  /** Starts a media download; its row appears at once. */
+  async addMedia(request: MediaRequest): Promise<Result<DownloadRow>> {
+    const result = await this.#api.commands.addMediaDownload(request);
+    if (!this.#failed(result) && this.#upsert(result.data)) this.#syncIds();
+    return result;
+  }
+
+  /** The video tools, for the install sheet and Settings. */
+  mediaTools(): Promise<Result<MediaToolsInfo>> {
+    return this.#api.commands.mediaTools();
+  }
+
+  /** What installing the missing tools downloads (versions and sizes). */
+  mediaInstallPlan(): Promise<Result<MediaToolSize[]>> {
+    return this.#api.commands.mediaInstallPlan();
+  }
+
+  /** Installs the missing tools, reporting progress. */
+  installMedia(onEvent: (event: MediaInstallEvent) => void): Promise<Result<MediaToolsInfo>> {
+    return this.#api.installMedia(onEvent);
+  }
+
+  /** Checks the installed tools for updates now. */
+  updateMediaTools(): Promise<Result<MediaToolsInfo>> {
+    return this.#api.commands.updateMediaTools();
+  }
+
+  /** Removes the installed tools. */
+  removeMediaTools(): Promise<Result<MediaToolsInfo>> {
+    return this.#api.commands.removeMediaTools();
+  }
+
+  /** yt-dlp's release channel. */
+  setMediaChannel(channel: MediaChannel): Promise<Result<MediaToolsInfo>> {
+    return this.#api.commands.setMediaChannel(channel);
+  }
+
+  /** A program of the user's instead of an installed tool (`null`: none). */
+  setMediaToolPath(tool: MediaTool, path: string | null): Promise<Result<MediaToolsInfo>> {
+    return this.#api.commands.setMediaToolPath(tool, path);
+  }
+
+  /** A video tool's project page, in the browser. */
+  openMediaProject(tool: MediaTool): Promise<Result<null>> {
+    return this.#api.commands.openMediaProject(tool);
   }
 
   /** The Downloads folder and the recent folders, for the add sheet. */

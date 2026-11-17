@@ -125,6 +125,31 @@ pub enum Error {
         message: String,
     },
 
+    /// A media download failed: yt-dlp exited with an error, or did not say
+    /// what it wrote. `message` is yt-dlp's last `ERROR:` line (without the
+    /// prefix); step 6 of v0.4 sorts these into the user-facing categories.
+    #[error("the media download failed: {message}")]
+    Failed {
+        /// yt-dlp's message.
+        message: String,
+    },
+
+    /// A program the user chose (Settings, Video, custom paths) did not
+    /// start or did not report a version.
+    #[error("{program} at {} cannot be used: {detail}", path.display())]
+    CustomProgram {
+        /// The program.
+        program: &'static str,
+        /// Where the user pointed.
+        path: PathBuf,
+        /// What went wrong.
+        detail: String,
+    },
+
+    /// A thumbnail could not be fetched or is not an image Boltget shows.
+    #[error("the thumbnail cannot be shown: {0}")]
+    Thumbnail(String),
+
     /// yt-dlp's description of the page could not be used (not JSON, or too
     /// large).
     #[error("yt-dlp's description of the page cannot be read: {detail}")]
@@ -174,6 +199,9 @@ impl Error {
             Error::Timeout { .. } => "error.media.timeout",
             Error::Extraction { .. } => "error.media.extraction",
             Error::InfoJson { .. } => "error.media.info_json",
+            Error::Failed { .. } => "error.media.failed",
+            Error::CustomProgram { .. } => "error.media.custom_program",
+            Error::Thumbnail(_) => "error.media.thumbnail",
             Error::Io { .. } | Error::Manifest { .. } => "error.media.disk",
         }
     }

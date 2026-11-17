@@ -4,7 +4,7 @@
 // in the "starting" state.
 import { Channel, isTauri } from "@tauri-apps/api/core";
 import { isPlainMessageKey, t } from "@boltget/ui";
-import { commands, type EngineMessage, type UiError } from "../bindings";
+import { commands, type EngineMessage, type MediaInstallEvent, type UiError } from "../bindings";
 import { DownloadStore, type EngineApi } from "./store.svelte";
 
 export { Download, DownloadStore, type EngineApi, type Result } from "./store.svelte";
@@ -15,6 +15,11 @@ export const tauriEngineApi: EngineApi = {
     const channel = new Channel<EngineMessage>();
     channel.onmessage = onMessage;
     await commands.subscribeEngine(channel);
+  },
+  async installMedia(onEvent) {
+    const channel = new Channel<MediaInstallEvent>();
+    channel.onmessage = onEvent;
+    return commands.installMediaTools(channel);
   },
   commands,
 };

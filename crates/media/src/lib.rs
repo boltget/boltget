@@ -20,6 +20,10 @@
 //!   subtitles, thumbnails, playlist entries), passing cookies through a
 //!   temporary file ([`CookieFile`]), and [`presets()`] turns the formats into
 //!   the picker's presets.
+//! - [`Downloader`] downloads a page's media with yt-dlp, reading its
+//!   progress from machine-readable `--progress-template` lines
+//!   ([`progress`]), and can be stopped and restarted (yt-dlp continues from
+//!   its partial files).
 //!
 //! The design is in `docs/VIDEO.md` ("Install, verification and updates") and
 //! `docs/ARCHITECTURE.md` ("Sidecars").
@@ -27,6 +31,7 @@
 
 pub mod args;
 mod cookies;
+mod download;
 mod error;
 mod extract;
 pub mod info;
@@ -36,13 +41,19 @@ pub mod pgp;
 mod platform;
 pub mod presets;
 mod probe;
+pub mod progress;
 pub mod runner;
 pub mod sources;
+mod thumbnail;
 
 use std::fmt;
 
-pub use boltget_engine::ContainerPreference;
+pub use boltget_engine::{ContainerPreference, SubtitleChoice};
 pub use cookies::CookieFile;
+pub use download::{
+    CONCURRENT_FRAGMENTS, DownloadOptions, DownloadOutcome, Downloader, PROGRESS_INTERVAL,
+    STALL_TIMEOUT, proxy_for,
+};
 pub use error::{Error, Result};
 pub use info::{Codec, Entry, Format, MediaInfo, SubtitleLanguage, SubtitleTrack, Thumbnail};
 pub use manager::{
@@ -50,7 +61,9 @@ pub use manager::{
 };
 pub use presets::{Preset, ResolvedPreset, SizeEstimate, codec_label, presets};
 pub use probe::{MAX_INFO_JSON, PROBE_TIMEOUT, PlaylistMode, ProbeOptions, Prober};
+pub use progress::{MediaProgress, Phase, ProgressTracker};
 pub use sources::{Channel, Sources};
+pub use thumbnail::{MAX_THUMBNAIL, ThumbnailImage};
 
 /// A sidecar tool, installed and updated as one unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]

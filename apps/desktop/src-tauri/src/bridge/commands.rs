@@ -9,13 +9,13 @@ use boltget_engine::{AddRequest, Checksum, Destination, RequestContext, redact_u
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-use super::Bridge;
 use super::dto::{
     AddDefaults, AddDownload, AppSettings, ChecksumInfo, DestinationCheck, DownloadDetails,
     DownloadId, DownloadRow, DownloadState, EngineMessage, EngineStatus, LimitScope, LinkSource,
     ProbePreview, QueueId, QueueInfo, QueuePatch, SegmentSpan, ShiftDirection, path_string,
 };
 use super::hub::new_row;
+use super::{Bridge, media};
 use crate::browser::Captured;
 use crate::error::UiError;
 use crate::settings::{self, SettingsPatch, SystemProxyInfo};
@@ -147,7 +147,7 @@ pub(crate) async fn add_download(
 
 /// Where a download goes when the page names no folder: its category's
 /// folder, the default download folder, or Windows' Downloads folder.
-fn default_folder(
+pub(crate) fn default_folder(
     app: &AppHandle,
     bridge: &Bridge,
     name: Option<&str>,
@@ -284,6 +284,9 @@ pub(crate) async fn pause_download(
     bridge: State<'_, Bridge>,
     id: DownloadId,
 ) -> Result<DownloadState, UiError> {
+    if let Some(job) = media::job_id(id) {
+        return bridge.pause_media(job).await;
+    }
     let state: DownloadState = bridge.engine()?.pause(id.into()).await?.into();
     // A download that was not running changes state without an event.
     bridge.set_state(id, state);
@@ -300,6 +303,11 @@ pub(crate) async fn resume_download(
     id: DownloadId,
     restart: bool,
 ) -> Result<(), UiError> {
+    if let Some(job) = media::job_id(id) {
+        // yt-dlp continues from its partial files; starting over is not
+        // offered for media downloads.
+        return bridge.resume_media(job).await;
+    }
     let engine = bridge.engine()?;
     engine
         .resume(
@@ -318,6 +326,12 @@ pub(crate) async fn requeue_download(
     bridge: State<'_, Bridge>,
     id: DownloadId,
 ) -> Result<DownloadState, UiError> {
+    if let Some(job) = media::job_id(id) {
+        // Media downloads have no queue of the engine's: they wait for a
+        // free slot of their own.
+        bridge.resume_media(job).await?;
+        return Ok(DownloadState::Queued);
+    }
     let state: DownloadState = bridge.engine()?.requeue(id.into()).await?.into();
     bridge.set_state(id, state);
     Ok(state)
@@ -440,6 +454,9 @@ pub(crate) async fn remove_download(
     id: DownloadId,
     delete_file: bool,
 ) -> Result<(), UiError> {
+    if let Some(job) = media::job_id(id) {
+        return bridge.remove_media(job, delete_file).await;
+    }
     let result = bridge.engine()?.remove(id.into(), delete_file).await;
     match result {
         Ok(_) => {
@@ -574,6 +591,17 @@ pub(crate) async fn download_details(
     bridge: State<'_, Bridge>,
     id: DownloadId,
 ) -> Result<DownloadDetails, UiError> {
+    if let Some(job) = media::job_id(id) {
+        return Ok(DownloadDetails {
+            id,
+            partial_path: None,
+            checksum: None,
+            sources: vec![LinkSource {
+                url: bridge.media_page(job).await?,
+                role: "page".into(),
+            }],
+        });
+    }
     let engine = bridge.engine()?;
     let summary = summary(engine, id).await?;
     let sources = engine
@@ -605,6 +633,16 @@ pub(crate) async fn open_file(
     engine: &boltget_engine::Engine,
     id: DownloadId,
 ) -> Result<(), UiError> {
+    if let Some(job) = media::job_id(id) {
+        let job = engine.media_job(job).await?;
+        if job.state != boltget_engine::MediaJobState::Completed {
+            return Err(UiError::key("error.invalid_state"));
+        }
+        return open_path(
+            &job.file_path
+                .ok_or_else(|| UiError::key("error.file_missing"))?,
+        );
+    }
     let summary = summary(engine, id).await?;
     if summary.state != boltget_engine::State::Completed {
         return Err(UiError::key("error.invalid_state"));
@@ -651,6 +689,17 @@ pub(crate) async fn reveal_file(
     engine: &boltget_engine::Engine,
     id: DownloadId,
 ) -> Result<(), UiError> {
+    if let Some(job) = media::job_id(id) {
+        let job = engine.media_job(job).await?;
+        let result = match job.file_path.as_deref().filter(|p| p.is_file()) {
+            Some(file) => tauri_plugin_opener::reveal_item_in_dir(file),
+            None if job.dest_dir.is_dir() => {
+                tauri_plugin_opener::open_path(&job.dest_dir, None::<&str>)
+            }
+            None => return Err(UiError::key("error.file_missing")),
+        };
+        return result.map_err(|e| UiError::with_message("error.open_failed", e.to_string()));
+    }
     let summary = summary(engine, id).await?;
     let file = [summary.path.as_deref(), summary.partial_path.as_deref()]
         .into_iter()

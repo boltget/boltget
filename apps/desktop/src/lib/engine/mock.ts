@@ -7,8 +7,11 @@
 // the empty state); `?active=20` how many of them run; `?engine=starting|
 // locked|failed` holds the engine in that state; `?theme=light|dark`
 // (read by native.ts) forces a theme; `?countdown=shut_down|sleep` shows a
-// finished queue's countdown. Queues are kept, not run: nothing starts on
-// its own.
+// finished queue's countdown; `?tools=installed` starts with the video
+// tools installed (otherwise "Look for media" walks the install sheet
+// first), `?install=fail` makes their install fail. Queues are kept, not
+// run: nothing starts on its own. Media downloads run a simulated yt-dlp:
+// they download, process for two seconds and complete.
 import type {
   AddDownload,
   AppSettings,
@@ -22,6 +25,12 @@ import type {
   FinishAction,
   FinishCountdown,
   LimitScope,
+  MediaFormat,
+  MediaInstallEvent,
+  MediaPreset,
+  MediaRequest,
+  MediaSummary,
+  MediaToolsInfo,
   ProgressItem,
   QueueId,
   QueueInfo,
@@ -65,7 +74,127 @@ interface Sim {
   segments: SegmentSpan[];
   /** Target speed while running, before limits. */
   rate: number;
+  /** A media download: when its processing ends (while processing). */
+  media?: { until: number | null; name: string };
 }
+
+const VIDEOS = String.raw`C:\Users\you\Videos`;
+
+function preset(
+  id: string,
+  height: number | null,
+  size: number,
+  container: string,
+  codecs: [string | null, string],
+  approximate = false,
+): MediaPreset {
+  const audioOnly = height === null;
+  return {
+    preset: id,
+    expression: audioOnly
+      ? container === "m4a"
+        ? "ba[ext=m4a]/ba/b"
+        : "ba/b"
+      : container === "mp4"
+        ? `bv*[height<=${height}][ext=mp4]+ba[ext=m4a]/b[height<=${height}][ext=mp4]/bv*[height<=${height}]+ba/b[height<=${height}]`
+        : `bv*[height<=${height}]+ba/b[height<=${height}]`,
+    audioOnly,
+    width: height === null ? null : Math.round((height * 16) / 9),
+    height,
+    fps: height === null ? null : height >= 1080 ? 60 : 30,
+    container,
+    videoCodec: codecs[0],
+    audioCodec: codecs[1],
+    size,
+    sizeApproximate: approximate,
+  };
+}
+
+function format(
+  id: string,
+  ext: string,
+  height: number | null,
+  vcodec: string | null,
+  acodec: string | null,
+  kbps: number,
+  size: number | null,
+  protocol = "https",
+): MediaFormat {
+  return {
+    id,
+    ext,
+    width: height === null ? null : Math.round((height * 16) / 9),
+    height,
+    fps: height === null ? null : height >= 1080 ? 60 : 30,
+    videoCodec: vcodec,
+    audioCodec: acodec,
+    bitrate: kbps,
+    size,
+    sizeApproximate: size !== null && size > 100 * MIB,
+    protocol,
+    note: null,
+  };
+}
+
+/** A page with a video, as the simulated yt-dlp describes it. */
+function videoPage(url: string, remembered: string | null): MediaSummary {
+  return {
+    url,
+    site: (() => {
+      try {
+        return new URL(url).hostname.replace(/^www\./, "");
+      } catch {
+        return "";
+      }
+    })(),
+    title: "A Video About Downloading",
+    uploader: "Example Channel",
+    duration: 212,
+    thumbnail: "https://i.example.test/thumb.jpg",
+    presets: [
+      preset("best", 1080, 131 * MIB, "mp4", ["H.264", "AAC"], true),
+      preset("720p", 720, 58 * MIB, "mp4", ["H.264", "AAC"]),
+      preset("small", 480, 24 * MIB, "mp4", ["H.264", "AAC"]),
+      preset("audio", null, 3.4 * MIB, "m4a", [null, "AAC"]),
+    ],
+    originalPresets: [
+      preset("best", 2160, 402 * MIB, "webm", ["VP9", "Opus"], true),
+      preset("1080p", 1080, 118 * MIB, "webm", ["VP9", "Opus"], true),
+      preset("720p", 720, 51 * MIB, "webm", ["VP9", "Opus"]),
+      preset("small", 480, 21 * MIB, "webm", ["VP9", "Opus"]),
+      preset("audio", null, 3.1 * MIB, "opus", [null, "Opus"]),
+    ],
+    formats: [
+      format("249", "webm", null, null, "Opus", 51, 1.3 * MIB),
+      format("140", "m4a", null, null, "AAC", 129, 3.4 * MIB),
+      format("251", "webm", null, null, "Opus", 135, 3.1 * MIB),
+      format("18", "mp4", 360, "H.264", "AAC", 520, 13 * MIB),
+      format("135", "mp4", 480, "H.264", null, 900, 21 * MIB),
+      format("244", "webm", 480, "VP9", null, 780, 18 * MIB),
+      format("136", "mp4", 720, "H.264", null, 2100, 55 * MIB),
+      format("247", "webm", 720, "VP9", null, 1800, 48 * MIB),
+      format("299", "mp4", 1080, "H.264", null, 4900, 128 * MIB),
+      format("303", "webm", 1080, "VP9", null, 4400, 115 * MIB),
+      format("96", "mp4", 1080, "H.264", "AAC", 5200, null, "m3u8_native"),
+      format("315", "webm", 2160, "VP9", null, 15000, 399 * MIB),
+    ],
+    subtitles: [
+      { code: "en", name: "English", automatic: false },
+      { code: "de", name: "German", automatic: false },
+      { code: "en", name: "English", automatic: true },
+      { code: "tr", name: "Turkish", automatic: true },
+    ],
+    isPlaylist: false,
+    entryCount: 0,
+    drm: false,
+    remembered,
+  };
+}
+
+/** A thumbnail for the simulated page, as the backend would send it. */
+const THUMBNAIL = `data:image/svg+xml;base64,${btoa(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="#3b5bdb"/><stop offset="1" stop-color="#0b7285"/></linearGradient></defs><rect width="160" height="90" fill="url(#g)"/><path d="M68 30v30l26-15z" fill="#fff" fill-opacity=".85"/></svg>',
+)}`;
 
 function mulberry(seed: number) {
   let a = seed >>> 0;
@@ -128,6 +257,44 @@ export function mockEngineApi(search: string): EngineApi {
     },
   ];
   let nextQueue = 2;
+  // The video tools and the media jobs (row ids from 2^50, as the backend's).
+  let tools: MediaToolsInfo = {
+    ready: params.get("tools") === "installed",
+    channel: "stable",
+    tools: [
+      {
+        tool: "ytDlp",
+        version: null,
+        previous: null,
+        lastCheck: null,
+        customPath: null,
+        customVersion: null,
+        supported: true,
+      },
+      {
+        tool: "ffmpeg",
+        version: null,
+        previous: null,
+        lastCheck: null,
+        customPath: null,
+        customVersion: null,
+        supported: true,
+      },
+    ],
+  };
+  const installedVersions = { ytDlp: "2026.10.26", ffmpeg: "n9.0.2-39-g7adfbe40dc" };
+  if (tools.ready) {
+    tools = {
+      ...tools,
+      tools: tools.tools.map((x) => ({
+        ...x,
+        version: installedVersions[x.tool],
+        lastCheck: Date.now() - 3_600_000,
+      })),
+    };
+  }
+  let nextMedia = 1;
+  const rememberedPresets = new Map<string, string>();
   const forcedCountdown = params.get("countdown") as FinishAction | null;
   let countdown: FinishCountdown | null = forcedCountdown
     ? { queue: 1, action: forcedCountdown, deadline: Date.now() + 60_000 }
@@ -181,6 +348,7 @@ export function mockEngineApi(search: string): EngineApi {
         queuePosition: id,
         startAt: null,
         private: false,
+        media: null,
       },
       segments: segs,
       rate: (6 + random() * 40) * MIB,
@@ -246,12 +414,63 @@ export function mockEngineApi(search: string): EngineApi {
     sim.row.connections = sim.segments.filter((s) => s.connection !== null).length;
   }
 
+  /** A media download's tick: download, process for a while, complete. */
+  function stepMedia(
+    sim: Sim,
+    progress: ProgressItem[],
+    changed: DownloadRow[],
+    events: Extract<EngineMessage, { type: "batch" }>["events"],
+  ): void {
+    const media = sim.media;
+    if (!media) return;
+    if (sim.row.state === "processing") {
+      if (media.until !== null && Date.now() >= media.until) {
+        media.until = null;
+        sim.row.state = "completed";
+        sim.row.downloaded = sim.row.total ?? sim.row.downloaded;
+        sim.row.completedAt = Date.now();
+        sim.row.fileName = media.name;
+        sim.row.path = `${VIDEOS}${SEP}${media.name}`;
+        changed.push({ ...sim.row });
+        events.push({ kind: "completed", id: sim.row.id, path: sim.row.path });
+      }
+      return;
+    }
+    if (sim.row.state !== "downloading") return;
+    const wobble = 0.8 + 0.4 * Math.sin(performance.now() / 900 + sim.row.id);
+    sim.row.downloaded = Math.min(
+      sim.row.total ?? Infinity,
+      sim.row.downloaded + (sim.rate * wobble * TICK) / 1000,
+    );
+    sim.row.bps = Math.round(sim.rate * wobble);
+    if (sim.row.downloaded >= (sim.row.total ?? Infinity)) {
+      sim.row.state = "processing";
+      sim.row.bps = 0;
+      media.until = Date.now() + 2000;
+      changed.push({ ...sim.row });
+      events.push({ kind: "stateChanged", id: sim.row.id, state: "processing", error: null });
+      return;
+    }
+    progress.push({
+      id: sim.row.id,
+      downloaded: Math.floor(sim.row.downloaded),
+      total: sim.row.total,
+      bps: sim.row.bps,
+      connections: 0,
+      segments: null,
+    });
+  }
+
   function tick(): void {
     if (status().state !== "ready") return;
     const progress: ProgressItem[] = [];
     const changed: DownloadRow[] = [];
     const events: Extract<EngineMessage, { type: "batch" }>["events"] = [];
     for (const sim of sims.values()) {
+      if (sim.media) {
+        stepMedia(sim, progress, changed, events);
+        continue;
+      }
       if (sim.row.state !== "downloading") continue;
       step(sim, TICK / 1000);
       if (sim.row.downloaded >= (sim.row.total ?? Infinity)) {
@@ -291,7 +510,45 @@ export function mockEngineApi(search: string): EngineApi {
     changeRow(sim, { state: "downloading", error: null, downloaded: sim.row.downloaded });
   }
 
+  async function wait(ms: number): Promise<void> {
+    await new Promise((r) => setTimeout(r, ms));
+  }
+
   return {
+    async installMedia(onEvent: (event: MediaInstallEvent) => void) {
+      const sizes = { ytDlp: 37.9 * MIB, ffmpeg: 86.2 * MIB };
+      for (const tool of ["ytDlp", "ffmpeg"] as const) {
+        onEvent({ tool, step: "checking", done: 0, total: null });
+        await wait(400);
+        for (let i = 1; i <= 12; i += 1) {
+          onEvent({
+            tool,
+            step: "downloading",
+            done: Math.round((sizes[tool] * i) / 12),
+            total: sizes[tool],
+          });
+          await wait(150);
+          if (params.get("install") === "fail" && tool === "ffmpeg" && i === 6) {
+            return err("error.media.download");
+          }
+        }
+        for (const step of ["verifying", "unpacking", "testing"] as const) {
+          onEvent({ tool, step, done: 0, total: null });
+          await wait(350);
+        }
+        onEvent({ tool, step: "done", done: 0, total: null });
+      }
+      tools = {
+        ...tools,
+        ready: true,
+        tools: tools.tools.map((x) => ({
+          ...x,
+          version: installedVersions[x.tool],
+          lastCheck: Date.now(),
+        })),
+      };
+      return ok(tools);
+    },
     async subscribe(onMessage) {
       emit = onMessage;
       onMessage({
@@ -396,20 +653,30 @@ export function mockEngineApi(search: string): EngineApi {
       async probeMedia(url: string) {
         // Simulated answers by link: "tools" (not installed), "nomedia",
         // "drm", "list" (a playlist) and "broken" (yt-dlp fails) pick a
-        // case; anything else is a video.
-        await new Promise((r) => setTimeout(r, /slow/.test(url) ? 2500 : 700));
-        if (/tools/.test(url)) return ok({ kind: "notInstalled" as const });
-        if (/broken/.test(url)) return err("error.media.extraction");
-        const empty = {
+        // case; anything else is a video. Until the tools are installed
+        // (Settings, or the install sheet) every page answers notInstalled.
+        await wait(/slow/.test(url) ? 2500 : 700);
+        if (!tools.ready || /tools/.test(url)) return ok({ kind: "notInstalled" as const });
+        if (/broken/.test(url)) {
+          return Promise.resolve({
+            status: "error" as const,
+            error: {
+              key: "error.media.extraction",
+              message: "[generic] Unsupported URL: " + url,
+            },
+          });
+        }
+        const page = videoPage(url, null);
+        const empty: MediaSummary = {
+          ...page,
           title: null,
           uploader: null,
           duration: null,
           thumbnail: null,
           presets: [],
+          originalPresets: [],
+          formats: [],
           subtitles: [],
-          isPlaylist: false,
-          entryCount: 0,
-          drm: false,
         };
         if (/nomedia/.test(url)) return ok({ kind: "found" as const, media: empty });
         if (/drm/.test(url)) {
@@ -430,52 +697,146 @@ export function mockEngineApi(search: string): EngineApi {
             },
           });
         }
-        const preset = (
-          preset: string,
-          height: number | null,
-          size: number,
-          audioOnly = false,
-        ) => ({
-          preset,
-          expression: audioOnly
-            ? "ba[ext=m4a]/ba/b"
-            : "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
-          audioOnly,
-          width: height === null ? null : Math.round((height * 16) / 9),
-          height,
-          fps: height === null ? null : 30,
-          container: audioOnly ? "m4a" : "mp4",
-          videoCodec: audioOnly ? null : "H.264",
-          audioCodec: "AAC",
-          size,
-          sizeApproximate: height !== null && height > 1000,
-        });
         return ok({
           kind: "found" as const,
-          media: {
-            title: "A Video About Downloading",
-            uploader: "Example Channel",
-            duration: 212,
-            thumbnail: null,
-            presets: [
-              preset("best", 1080, 31 * MIB),
-              preset("720p", 720, 18 * MIB),
-              preset("small", 480, 9 * MIB),
-              preset("audio", null, 3 * MIB, true),
-            ],
-            subtitles: [
-              { code: "en", name: "English", automatic: false },
-              { code: "de", name: "German", automatic: true },
-            ],
-            isPlaylist: false,
-            entryCount: 0,
-            drm: false,
-          },
+          media: { ...page, remembered: rememberedPresets.get(page.site) ?? null },
         });
+      },
+      async mediaThumbnail() {
+        await wait(300);
+        return ok(THUMBNAIL);
+      },
+      async addMediaDownload(request: MediaRequest) {
+        const id = 2 ** 50 + nextMedia++;
+        const title = request.title ?? "video";
+        const audio = request.preset === "audio";
+        const ext = audio
+          ? request.container === "mp4"
+            ? "m4a"
+            : "opus"
+          : request.container === "mp4"
+            ? "mp4"
+            : "webm";
+        const total = request.size ?? 64 * MIB;
+        const sim: Sim = {
+          row: {
+            id,
+            state: "downloading",
+            url: request.url.split("?")[0] ?? request.url,
+            fileName: `${title}.${audio ? "m4a" : request.container === "mp4" ? "mp4" : "mkv"}`,
+            path: null,
+            total,
+            downloaded: 0,
+            bps: 0,
+            connections: 0,
+            resumable: true,
+            speedLimit: null,
+            error: null,
+            createdAt: Date.now(),
+            completedAt: null,
+            queue: 0,
+            queuePosition: Number.MAX_SAFE_INTEGER,
+            startAt: null,
+            private: false,
+            media: { title: request.title ?? null, preset: request.preset ?? null },
+          },
+          segments: [],
+          rate: (4 + random() * 10) * MIB,
+          media: { until: null, name: `${title} [dQw4w9WgXcQ].${ext}` },
+        };
+        if (/fail/.test(request.url)) {
+          sim.row.state = "failed";
+          sim.row.error = {
+            kind: "permanent",
+            key: "error.media.failed",
+            message: "[youtube] dQw4w9WgXcQ: Requested format is not available",
+          };
+        }
+        sims.set(id, sim);
+        if (request.site && request.preset) rememberedPresets.set(request.site, request.preset);
+        return ok({ ...sim.row });
+      },
+      async mediaTools() {
+        await wait(150);
+        return ok(tools);
+      },
+      async mediaInstallPlan() {
+        await wait(500);
+        return ok(
+          tools.tools
+            .filter((x) => !x.version && !x.customPath)
+            .map((x) => ({
+              tool: x.tool,
+              version: installedVersions[x.tool],
+              size: x.tool === "ytDlp" ? 37.9 * MIB : 86.2 * MIB,
+            })),
+        );
+      },
+      async updateMediaTools() {
+        await wait(1200);
+        tools = {
+          ...tools,
+          tools: tools.tools.map((x) => ({
+            ...x,
+            lastCheck: x.version ? Date.now() : x.lastCheck,
+          })),
+        };
+        return ok(tools);
+      },
+      async removeMediaTools() {
+        if (
+          [...sims.values()].some(
+            (x) => x.media && (x.row.state === "downloading" || x.row.state === "processing"),
+          )
+        ) {
+          return err("error.media.in_use");
+        }
+        await wait(300);
+        tools = {
+          ...tools,
+          tools: tools.tools.map((x) => ({ ...x, version: null, previous: null, lastCheck: null })),
+        };
+        tools.ready = tools.tools.every((x) => x.customPath);
+        return ok(tools);
+      },
+      async setMediaChannel(channel) {
+        tools = { ...tools, channel };
+        return ok(tools);
+      },
+      async setMediaToolPath(tool, path) {
+        await wait(400);
+        if (path && !/^[a-z]:\\.+\.exe$/i.test(path.trim()))
+          return err("settings.problem.program_path");
+        if (path && /missing/i.test(path)) return err("settings.problem.program_missing");
+        tools = {
+          ...tools,
+          tools: tools.tools.map((x) =>
+            x.tool === tool
+              ? {
+                  ...x,
+                  customPath: path?.trim() || null,
+                  customVersion: path
+                    ? tool === "ytDlp"
+                      ? "2026.11.01"
+                      : "ffmpeg version 7.1"
+                    : null,
+                }
+              : x,
+          ),
+        };
+        tools.ready = tools.tools.every((x) => x.version || x.customPath);
+        const key = tool === "ytDlp" ? "ytDlpPath" : "ffmpegPath";
+        settings = { ...settings, video: { ...settings.video, [key]: path?.trim() || null } };
+        emit({ type: "settings", settings });
+        return ok(tools);
+      },
+      async openMediaProject() {
+        return ok(null);
       },
       async pauseDownload(id: DownloadId) {
         const sim = sims.get(id);
         if (!sim) return err("error.unknown_download");
+        if (sim.media) sim.media.until = null;
         for (const s of sim.segments) s.connection = null;
         changeRow(sim, { state: "paused", bps: 0, connections: 0 });
         return ok("paused" as const);
@@ -484,6 +845,10 @@ export function mockEngineApi(search: string): EngineApi {
         const sim = sims.get(id);
         if (!sim) return err("error.unknown_download");
         if (sim.row.state === "completed") return err("error.invalid_state");
+        if (sim.media) {
+          setTimeout(() => changeRow(sim, { state: "downloading", error: null }), 300);
+          return ok(null);
+        }
         setTimeout(() => start(sim, restart || sim.row.state === "corrupt"), 300);
         return ok(null);
       },
@@ -635,6 +1000,8 @@ export function mockEngineApi(search: string): EngineApi {
         if (patch.clipboard != null) next.clipboard = patch.clipboard;
         if (patch.browserAsk != null) next.browserAsk = patch.browserAsk;
         if (patch.forgetPrivate != null) next.forgetPrivate = patch.forgetPrivate;
+        if (patch.video?.container)
+          next.video = { ...next.video, container: patch.video.container };
         if (patch.capture) {
           const c = patch.capture;
           next.capture = {

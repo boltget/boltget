@@ -67,7 +67,7 @@ pub use media_job::{
     ContainerPreference, DEFAULT_OUTPUT_TEMPLATE, MediaJob, MediaJobError, MediaJobId,
     MediaJobState, MediaJobUpdate, NewMediaJob, SubtitleChoice,
 };
-pub use platform::{Preallocation, available_space, is_sparse};
+pub use platform::{Preallocation, available_space, is_sparse, mark_of_the_web};
 pub use probe::{ProbeResult, RangeSupport, ServerDigest};
 pub use proxy::{NoProxy, Proxy, ProxyChoice, ProxyKind, ProxyRules};
 pub use queue::{

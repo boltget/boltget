@@ -281,10 +281,12 @@
           <dt>{t("details.left")}</dt>
           <dd><span class="v"><b>{eta === null ? "–" : formatDuration(eta)}</b></span></dd>
         </div>
-        <div class="stat">
-          <dt>{t("details.connections")}</dt>
-          <dd><span class="v"><b>{d.connections}</b></span></dd>
-        </div>
+        {#if !d.media}
+          <div class="stat">
+            <dt>{t("details.connections")}</dt>
+            <dd><span class="v"><b>{d.connections}</b></span></dd>
+          </div>
+        {/if}
       {:else if complete}
         <div class="stat">
           <dt>{t("details.size")}</dt>
@@ -312,26 +314,29 @@
       {/if}
     </dl>
 
-    <section class="block">
-      <div class="label">
-        <h3>{t("details.map")}</h3>
-        <span class="note" class:ok={verified}>
-          {#if verified}<Icon name="check" size={14} />{/if}{mapNote}
-        </span>
-      </div>
-      {#if d.total}
-        <FileMap
-          segments={d.segments}
-          total={d.total}
-          downloaded={d.downloaded}
-          {complete}
-          live={running}
-          label={t("details.map.label", { percent: t("percent", { value: pct ?? 0 }) })}
-        />
-      {:else}
-        <p class="muted">{t("details.map.unknown")}</p>
-      {/if}
-    </section>
+    <!-- yt-dlp's downloads have no file map: it writes them itself. -->
+    {#if !d.media}
+      <section class="block">
+        <div class="label">
+          <h3>{t("details.map")}</h3>
+          <span class="note" class:ok={verified}>
+            {#if verified}<Icon name="check" size={14} />{/if}{mapNote}
+          </span>
+        </div>
+        {#if d.total}
+          <FileMap
+            segments={d.segments}
+            total={d.total}
+            downloaded={d.downloaded}
+            {complete}
+            live={running}
+            label={t("details.map.label", { percent: t("percent", { value: pct ?? 0 }) })}
+          />
+        {:else}
+          <p class="muted">{t("details.map.unknown")}</p>
+        {/if}
+      </section>
+    {/if}
 
     {#if running}
       <section class="block">
@@ -388,25 +393,27 @@
             {@render copyButton("fresh", refreshed.url, t("action.copy"))}
           </div>
         {/if}
-        <div class="fact">
-          <dt>{t("details.checksum")}</dt>
-          <dd>
-            <span class:ok={verified}>{checksumText}</span>
-            {#if info?.checksum}
-              <span class="mono small selectable">{info.checksum.expected}</span>
-              {#if info.checksum.header}
-                <span class="small"
-                  >{t("details.checksum.from", { header: info.checksum.header })}</span
-                >
+        {#if !d.media}
+          <div class="fact">
+            <dt>{t("details.checksum")}</dt>
+            <dd>
+              <span class:ok={verified}>{checksumText}</span>
+              {#if info?.checksum}
+                <span class="mono small selectable">{info.checksum.expected}</span>
+                {#if info.checksum.header}
+                  <span class="small"
+                    >{t("details.checksum.from", { header: info.checksum.header })}</span
+                  >
+                {/if}
               {/if}
-            {/if}
-          </dd>
-          {#if info?.checksum}{@render copyButton(
-              "sum",
-              info.checksum.expected,
-              t("action.copy_value"),
-            )}{/if}
-        </div>
+            </dd>
+            {#if info?.checksum}{@render copyButton(
+                "sum",
+                info.checksum.expected,
+                t("action.copy_value"),
+              )}{/if}
+          </div>
+        {/if}
         <div class="fact">
           <dt>{t("details.resume")}</dt>
           <dd>{d.resumable ? t("details.resumable") : t("details.not_resumable")}</dd>
@@ -414,7 +421,7 @@
       </dl>
     </section>
 
-    {#if !complete}
+    {#if !complete && !d.media}
       <section class="block">
         <label class="label" for="speed-limit"><span>{t("details.limit")}</span></label>
         <div class="limit">

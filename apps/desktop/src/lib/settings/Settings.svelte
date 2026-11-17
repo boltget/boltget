@@ -43,6 +43,7 @@
   } from "./model";
   import { ROWS, SECTIONS, searchRows, type RowId, type SectionId } from "./registry";
   import CaptureRows from "./CaptureRows.svelte";
+  import VideoRows from "./VideoRows.svelte";
   import SettingRow from "./SettingRow.svelte";
   import Toasts from "../Toasts.svelte";
 
@@ -293,7 +294,7 @@
   // Keyboard -----------------------------------------------------------------
 
   function onkeydown(event: KeyboardEvent) {
-    if (event.key !== "Escape" || app.palette || app.adding) return;
+    if (event.key !== "Escape" || app.palette || app.adding || app.media) return;
     // Esc in a text field puts its stored value back; elsewhere (a switch,
     // a section, a button) it returns to the downloads.
     const el = event.target as HTMLElement | null;
@@ -788,6 +789,8 @@
                 {/if}
               </SettingRow>
             {/if}
+
+            <VideoRows video={s.video} {shown} {highlighted} {problems} {problem} {save} />
 
             {#if shown.has("shortcuts")}
               <SettingRow

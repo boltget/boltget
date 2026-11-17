@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   browserAsk: false,
   capture: DEFAULT_CAPTURE,
   forgetPrivate: false,
+  video: { container: "mp4", ytDlpPath: null, ffmpegPath: null },
 };
 
 export type Check<T> = { ok: true; value: T } | { ok: false; problem: string };

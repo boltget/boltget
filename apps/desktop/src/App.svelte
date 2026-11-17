@@ -23,6 +23,7 @@
   import ListHeader from "./lib/list/ListHeader.svelte";
   import Notice from "./lib/list/Notice.svelte";
   import AddSheet from "./lib/add/AddSheet.svelte";
+  import MediaSheet from "./lib/media/MediaSheet.svelte";
   import { hostOf } from "./lib/format";
   import {
     onClipboardOffer,
@@ -134,7 +135,7 @@
   // question) and the engine is ready.
   $effect(() => {
     if (status.state !== "ready" || app.offers.length === 0) return;
-    if (app.confirmation || app.adding) return;
+    if (app.confirmation || app.adding || app.media) return;
     app.askNextOffer();
   });
 
@@ -187,12 +188,12 @@
     // Ctrl+K opens the palette, and closes it again.
     if (withCtrl(event) && event.code === "KeyK") {
       event.preventDefault();
-      if (!app.adding) app.palette = !app.palette;
+      if (!app.adding && !app.media) app.palette = !app.palette;
       return;
     }
     // The add sheet, the palette and the dialogs are modal: the window's
     // shortcuts wait.
-    if (app.adding || app.palette || app.queueEditing || app.startingLater) return;
+    if (app.adding || app.media || app.palette || app.queueEditing || app.startingLater) return;
     if (downloads.countdown) return;
     if (withCtrl(event) && event.code === "KeyN") {
       event.preventDefault();
@@ -275,6 +276,7 @@
 </div>
 
 <AddSheet />
+<MediaSheet />
 <Palette />
 <ConfirmDialog />
 <QueueSettings />

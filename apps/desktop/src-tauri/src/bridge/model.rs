@@ -398,6 +398,7 @@ mod tests {
             queue_position: i64::try_from(id).unwrap(),
             start_at: None,
             private: false,
+            media: None,
         }
     }
 

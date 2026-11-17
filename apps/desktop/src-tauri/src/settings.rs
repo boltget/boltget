@@ -132,6 +132,68 @@ pub(crate) struct ProxySettings {
     pub(crate) bypass: String,
 }
 
+/// The picker's container toggle (docs/VIDEO.md): "Prefer MP4" (the
+/// default, for compatibility) or "Prefer original".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum MediaContainer {
+    #[default]
+    Mp4,
+    Original,
+}
+
+impl From<MediaContainer> for boltget_engine::ContainerPreference {
+    fn from(c: MediaContainer) -> Self {
+        match c {
+            MediaContainer::Mp4 => Self::Mp4,
+            MediaContainer::Original => Self::Original,
+        }
+    }
+}
+
+impl From<boltget_engine::ContainerPreference> for MediaContainer {
+    fn from(c: boltget_engine::ContainerPreference) -> Self {
+        match c {
+            boltget_engine::ContainerPreference::Original => Self::Original,
+            boltget_engine::ContainerPreference::Mp4 => Self::Mp4,
+        }
+    }
+}
+
+/// Settings, Video (docs/APP-DESIGN.md, "Video as built").
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VideoSettings {
+    /// What the picker prefers until the user flips the toggle.
+    pub(crate) container: MediaContainer,
+    /// A yt-dlp the user chose instead of the one Boltget installs: used as
+    /// it is, neither verified nor updated by Boltget.
+    pub(crate) yt_dlp_path: Option<String>,
+    /// An `ffmpeg` the user chose (its folder must also hold `ffprobe`),
+    /// likewise unverified.
+    pub(crate) ffmpeg_path: Option<String>,
+}
+
+/// Settings, Video as stored: a field missing (an older version wrote it)
+/// is its default.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct StoredVideo {
+    container: MediaContainer,
+    yt_dlp_path: Option<String>,
+    ffmpeg_path: Option<String>,
+}
+
+/// A change to Settings, Video; absent fields stay, an empty path goes back
+/// to the installed tool.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct VideoPatch {
+    pub(crate) container: Option<MediaContainer>,
+    pub(crate) yt_dlp_path: Option<String>,
+    pub(crate) ffmpeg_path: Option<String>,
+}
+
 /// The app's theme.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
@@ -234,6 +296,8 @@ pub(crate) struct AppSettings {
     /// completes; the file stays (off by default:
     /// docs/BROWSER-INTEGRATION.md, "What is never captured").
     pub(crate) forget_private: bool,
+    /// Video and audio from web pages.
+    pub(crate) video: VideoSettings,
 }
 
 impl Default for AppSettings {
@@ -252,6 +316,7 @@ impl Default for AppSettings {
             browser_ask: false,
             capture: CaptureSettings::default(),
             forget_private: false,
+            video: VideoSettings::default(),
         }
     }
 }
@@ -275,6 +340,7 @@ pub(crate) struct SettingsPatch {
     /// Some of the capture rules.
     pub(crate) capture: Option<CapturePatch>,
     pub(crate) forget_private: Option<bool>,
+    pub(crate) video: Option<VideoPatch>,
 }
 
 /// A change to some capture rules; absent fields stay as they are. The
@@ -315,6 +381,7 @@ const KEY_CLIPBOARD: &str = "clipboard";
 const KEY_BROWSER_ASK: &str = "browser_ask";
 const KEY_CAPTURE: &str = "capture";
 const KEY_FORGET_PRIVATE: &str = "forget_private";
+const KEY_VIDEO: &str = "video";
 
 /// Reads one stored value; a missing or unreadable one is the default.
 async fn read<T: serde::de::DeserializeOwned>(engine: &Engine, key: &str) -> Option<T> {
@@ -383,6 +450,13 @@ pub(crate) async fn load(engine: &Engine) -> Result<AppSettings, UiError> {
     }
     if let Some(b) = read(engine, KEY_FORGET_PRIVATE).await {
         s.forget_private = b;
+    }
+    if let Some(v) = read::<StoredVideo>(engine, KEY_VIDEO).await {
+        s.video = VideoSettings {
+            container: v.container,
+            yt_dlp_path: v.yt_dlp_path.filter(|p| Path::new(p).is_absolute()),
+            ffmpeg_path: v.ffmpeg_path.filter(|p| Path::new(p).is_absolute()),
+        };
     }
     s.start_with_windows = platform::autostart_enabled();
     Ok(s)
@@ -556,6 +630,28 @@ fn parse_folder(text: &str) -> Result<Option<String>, UiError> {
     Ok(Some(text.to_owned()))
 }
 
+/// A program the user points the video tools at: an absolute path to a
+/// file (an `.exe` on Windows); empty goes back to the installed tool. The
+/// program itself is checked by running it (`set_media_tool_path`).
+pub(crate) fn parse_program_path(text: &str) -> Result<Option<String>, UiError> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let path = Path::new(text);
+    let exe = !cfg!(windows)
+        || path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("exe"));
+    if !path.is_absolute() || !exe {
+        return Err(UiError::key("settings.problem.program_path"));
+    }
+    if !path.is_file() {
+        return Err(UiError::key("settings.problem.program_missing"));
+    }
+    Ok(Some(text.to_owned()))
+}
+
 /// A manual proxy: a valid proxy URL without a password (Boltget keeps no
 /// secrets in its database; docs/ARCHITECTURE.md, Security).
 pub(crate) fn parse_proxy_url(text: &str) -> Result<Proxy, UiError> {
@@ -652,6 +748,17 @@ pub(crate) fn patched(
     if let Some(b) = patch.forget_private {
         next.forget_private = b;
     }
+    if let Some(v) = &patch.video {
+        if let Some(c) = v.container {
+            next.video.container = c;
+        }
+        if let Some(p) = &v.yt_dlp_path {
+            next.video.yt_dlp_path = parse_program_path(p)?;
+        }
+        if let Some(p) = &v.ffmpeg_path {
+            next.video.ffmpeg_path = parse_program_path(p)?;
+        }
+    }
     Ok(next)
 }
 
@@ -702,6 +809,9 @@ pub(crate) async fn store(
     }
     if old.forget_private != new.forget_private {
         write(engine, KEY_FORGET_PRIVATE, &new.forget_private).await?;
+    }
+    if old.video != new.video {
+        write(engine, KEY_VIDEO, &new.video).await?;
     }
     Ok(())
 }

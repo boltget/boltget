@@ -170,8 +170,11 @@ pub fn is_sparse(path: &Path) -> bool {
 
 /// Writes the `Zone.Identifier` alternate data stream (Mark of the Web), as
 /// browsers do, so SmartScreen and Office Protected View keep working.
-/// Silently does nothing where alternate data streams are unsupported.
-pub(crate) fn mark_of_the_web(path: &Path, host_url: &str, referrer: Option<&str>) {
+/// Silently does nothing where alternate data streams are unsupported (and
+/// on other systems). `host_url` should carry no query or credentials. Public
+/// so that files other programs downloaded for Boltget (yt-dlp's media) are
+/// marked the same way.
+pub fn mark_of_the_web(path: &Path, host_url: &str, referrer: Option<&str>) {
     #[cfg(windows)]
     {
         let mut content = String::from("[ZoneTransfer]\r\nZoneId=3\r\n");

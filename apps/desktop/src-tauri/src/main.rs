@@ -92,8 +92,8 @@ fn main() {
             ipc.mount_events(app);
             tauri::async_runtime::spawn(hub);
             let dir = data_dir();
-            app.manage(media::MediaTools::new(dir.clone()));
             if let Some(dir) = &dir {
+                app.state::<Bridge>().set_tools_dir(dir.join("tools"));
                 pipe::start(app.handle(), dir.clone());
             }
             start_engine(app.handle(), dir);

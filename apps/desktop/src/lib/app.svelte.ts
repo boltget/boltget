@@ -93,6 +93,12 @@ class AppState {
    * with, and a number that changes when more arrive while it is open.
    */
   adding = $state<{ text: string; key: number } | null>(null);
+  /**
+   * The media sheet (docs/VIDEO.md: the tools' install, then the picker)
+   * while it is open: the page it looks at, and a number that changes when
+   * another page is asked for.
+   */
+  media = $state<{ url: string; key: number } | null>(null);
   /** The queue settings while open: a queue's id, or `null` for a new one. */
   queueEditing = $state<{ id: QueueId | null } | null>(null);
   /** The downloads "Start later" is choosing a time for. */
@@ -130,6 +136,15 @@ class AppState {
 
   closeAdd(): void {
     this.adding = null;
+  }
+
+  /** Opens the media sheet for a web page. */
+  openMedia(url: string): void {
+    this.media = { url, key: ++this.#addKey };
+  }
+
+  closeMedia(): void {
+    this.media = null;
   }
 
   /** Selects downloads and shows the first in the details pane. */
@@ -193,7 +208,9 @@ class AppState {
         for (const d of items) if (canResume(d.state)) void downloads.resume(d.id);
         break;
       case "restart":
-        for (const d of items) if (canRestart(d.state)) void downloads.resume(d.id, true);
+        for (const d of items) {
+          if (canRestart(d.state)) void downloads.resume(d.id, d.media === null);
+        }
         break;
       case "refresh":
         if (first) {
@@ -390,7 +407,7 @@ class AppState {
   /** Asks the oldest waiting offer, when nothing else is being asked. */
   askNextOffer(): void {
     const offer = this.offers[0];
-    if (!offer || this.confirmation || this.adding) return;
+    if (!offer || this.confirmation || this.adding || this.media) return;
     const answer = (resume: boolean) => {
       // A newer capture of the same download may have replaced it.
       const current = this.offers.find((o) => o.id === offer.id) ?? offer;
