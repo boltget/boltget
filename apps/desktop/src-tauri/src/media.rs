@@ -10,8 +10,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use boltget_engine::{ContainerPreference, NewMediaJob, NewMediaPlaylist, SubtitleChoice};
 use boltget_ipc::browser::{MediaKind, MediaPage};
 use boltget_media::{
-    Channel as ToolChannel, Format, InstallEvent, ItemRange, MediaInfo, PlaylistEntry,
-    PlaylistMode, Preset, Program, ResolvedPreset, Tool, codec_label, playlist, presets,
+    Channel as ToolChannel, ErrorCategory, Format, InstallEvent, ItemRange, MediaInfo,
+    PlaylistEntry, PlaylistMode, Preset, Program, ResolvedPreset, Tool, codec_label, playlist,
+    presets,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -249,9 +250,7 @@ fn hint_link(pages: &MediaPages, captured: &Captured, id: u32, url: &str) -> Res
     Ok(())
 }
 
-fn media_error(e: &boltget_media::Error) -> UiError {
-    UiError::with_message(e.message_key(), e.to_string())
-}
+use media::media_error;
 
 /// A video tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -395,6 +394,10 @@ pub(crate) enum MediaProbe {
 /// A page's media, as the picker shows it.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts about a page for the window, not a state"
+)]
 pub(crate) struct MediaSummary {
     /// The page, as yt-dlp names it (else as given).
     pub(crate) url: String,
@@ -425,6 +428,9 @@ pub(crate) struct MediaSummary {
     pub(crate) drm: bool,
     /// The preset last used on this site, if any.
     pub(crate) remembered: Option<String>,
+    /// yt-dlp could not read the page because the site had changed; Boltget
+    /// installed a newer yt-dlp and this is its second look.
+    pub(crate) updated: bool,
 }
 
 /// A page of a playlist's entries, as yt-dlp listed them with
@@ -513,6 +519,9 @@ pub(crate) struct MediaPreset {
     pub(crate) size: Option<u64>,
     /// The size is an estimate ("about").
     pub(crate) size_approximate: bool,
+    /// "Prefer MP4", but these streams cannot go into MP4: `container` is
+    /// their own, and the download keeps it ("Prefer original").
+    pub(crate) kept_original: bool,
 }
 
 /// One format of the page, for the advanced table.
@@ -603,6 +612,7 @@ impl From<&ResolvedPreset> for MediaPreset {
             audio_codec: r.audio_codec.as_deref().map(codec_label),
             size: r.size.map(|s| s.bytes),
             size_approximate: r.size.is_some_and(|s| s.approximate),
+            kept_original: r.kept_original,
         }
     }
 }
@@ -700,6 +710,7 @@ impl MediaSummary {
             in_playlist: !info.is_playlist() && playlist::names_a_list(url),
             drm: info.drm_only(),
             remembered,
+            updated: false,
         }
     }
 }
@@ -944,9 +955,12 @@ pub(crate) async fn set_media_tool_path(
 /// Looks for video or audio on a web page with yt-dlp. Answers
 /// `notInstalled` without running anything while a tool is missing (the
 /// window offers the install sheet); otherwise installs due updates first
-/// (yt-dlp at most once a day; a failed check keeps the installed
-/// version), then probes through the app's proxy. yt-dlp's own failure is
-/// `error.media.extraction`, with its message. With `page`, a page the
+/// (yt-dlp at most once a day, waited for at most `UPDATE_WAIT`; a failed
+/// or slow check keeps the installed version), then probes through the
+/// app's proxy. yt-dlp's own failure carries its category's key
+/// (`error.media.sign_in`, ...) and its message; when the site changed,
+/// a newer yt-dlp is looked for and, if one was installed, the page is
+/// probed once more (`updated` in the answer). With `page`, a page the
 /// browser extension sent (or one of its hints), yt-dlp gets the browser's
 /// cookies, `User-Agent` and `Referer`. `playlist` chooses between the
 /// video an address names and the playlist it belongs to (`single` when
@@ -968,9 +982,7 @@ pub(crate) async fn probe_media(
     if !media::tools_ready(&sidecars, &settings.video) {
         return Ok(MediaProbe::NotInstalled);
     }
-    if let Err(e) = sidecars.update_if_due(SystemTime::now(), &|_| {}).await {
-        tracing::warn!(error = %e, "the video tools' update check failed");
-    }
+    media::update_if_due(&sidecars).await;
     let prober = media::prober(&sidecars, &settings.video)?;
     let url = url.trim();
     let start = start.unwrap_or(1).max(1);
@@ -988,18 +1000,35 @@ pub(crate) async fn probe_media(
         opts.user_agent = auth.user_agent;
         opts.referer = auth.referer;
     }
-    let info = prober
-        .probe(url, &opts)
-        .await
-        .map_err(|e| media_error(&e))?;
+    let (info, updated) = match prober.probe(url, &opts).await {
+        Ok(info) => (info, false),
+        Err(e) if e.category() == Some(ErrorCategory::SiteChanged) => {
+            tracing::info!(error = %e, "the site changed");
+            if let Some(key) = media::update_for_site_change(&sidecars, &settings.video).await {
+                return Err(media::media_error_as(key, &e));
+            }
+            // A newer yt-dlp is active: once more, with it.
+            let prober = media::prober(&sidecars, &settings.video)?;
+            match prober.probe(url, &opts).await {
+                Ok(info) => (info, true),
+                Err(e) if e.category() == Some(ErrorCategory::SiteChanged) => {
+                    return Err(media::media_error_as(media::SITE_CHANGED_UPDATED, &e));
+                }
+                Err(e) => return Err(media_error(&e)),
+            }
+        }
+        Err(e) => return Err(media_error(&e)),
+    };
     let site = site_of(info.webpage_url.as_deref().unwrap_or(url));
     let remembered = remembered_presets(&bridge)
         .await
         .into_iter()
         .find(|(s, _)| *s == site)
         .map(|(_, p)| p);
+    let mut summary = MediaSummary::listed(&info, url, remembered, start);
+    summary.updated = updated;
     Ok(MediaProbe::Found {
-        media: Box::new(MediaSummary::listed(&info, url, remembered, start)),
+        media: Box::new(summary),
     })
 }
 

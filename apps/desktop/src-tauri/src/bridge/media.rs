@@ -21,6 +21,12 @@
 //!   both alike; merging or converting is the `processing` state.
 //! - **Pause** ends the yt-dlp process (its Job Object); resume starts it
 //!   again with the same arguments and it continues from its `.part` files.
+//!   A job that is processing (FFmpeg merging or converting) is not paused:
+//!   it finishes. Removing an unfinished job deletes its partial files,
+//!   found by the stem yt-dlp names them after ([`boltget_media::partial`]).
+//! - **Errors** are yt-dlp's, sorted into the categories the user sees
+//!   ([`boltget_media::ErrorCategory`]); "the site changed" checks for a
+//!   newer yt-dlp and, when one was installed, tries once more.
 //! - **On start**, jobs that were running or waiting run again; quitting
 //!   leaves them as they were, so they continue on the next start.
 //! - **The browser's cookies and headers** (a page the extension sent) stay
@@ -38,14 +44,14 @@ use boltget_engine::{
     MediaJobUpdate, MediaPlaylist, MediaPlaylistId, NewMediaJob, NewMediaPlaylist,
 };
 use boltget_media::{
-    DownloadOptions, DownloadOutcome, Downloader, MediaProgress, Phase, Prober, Program, Sidecars,
-    Sources,
+    AfterFailure, DownloadOptions, DownloadOutcome, Downloader, ErrorCategory, MediaProgress,
+    Phase, Prober, Program, Sidecars, Sources, partial,
 };
 use tokio::sync::watch;
 
 use super::Bridge;
 use super::dto::{
-    DownloadError, DownloadId, DownloadRow, DownloadState, ErrorKind, MediaRowInfo,
+    DownloadError, DownloadId, DownloadRow, DownloadState, ErrorKind, MediaNote, MediaRowInfo,
     MediaRowPlaylist, QueueId,
 };
 use super::hub::{HubHandle, Request};
@@ -64,6 +70,26 @@ pub(crate) const MAX_RUNNING: usize = 2;
 /// downloads its entries in order, one by one.
 pub(crate) const PLAYLIST_RUNNING: usize = 1;
 
+/// How long a probe or a job's start waits for the daily update check
+/// before it goes on with the installed yt-dlp; the check goes on in the
+/// background (docs/VIDEO.md, "Errors and pause/resume: as built").
+pub(crate) const UPDATE_WAIT: Duration = Duration::from_secs(5);
+
+/// How long a "the site changed" failure waits for yt-dlp's update before
+/// it gives up on trying again; the update goes on in the background.
+pub(crate) const UPDATE_ON_FAILURE_WAIT: Duration = Duration::from_secs(60);
+
+/// "The site changed": the check found no newer yt-dlp (or ran within the
+/// hour).
+pub(crate) const SITE_CHANGED_CURRENT: &str = "error.media.site_changed.current";
+/// "The site changed": a newer yt-dlp was installed and the second try
+/// failed the same way.
+pub(crate) const SITE_CHANGED_UPDATED: &str = "error.media.site_changed.updated";
+/// "The site changed": the update is still being installed.
+pub(crate) const SITE_CHANGED_UPDATING: &str = "error.media.site_changed.updating";
+/// "The site changed", with the user's own yt-dlp (not Boltget's to update).
+pub(crate) const SITE_CHANGED_CUSTOM: &str = "error.media.site_changed.custom";
+
 /// The row id of a job.
 pub(crate) fn row_id(id: MediaJobId) -> DownloadId {
     DownloadId(ROW_BASE + id.0)
@@ -76,8 +102,61 @@ pub(crate) fn job_id(id: DownloadId) -> Option<MediaJobId> {
         .map(MediaJobId)
 }
 
-fn media_error(e: &boltget_media::Error) -> UiError {
-    UiError::with_message(e.message_key(), e.to_string())
+/// A media error for the window: its category's key (or Boltget's own
+/// error's), with yt-dlp's own message as the detail when it has one.
+pub(crate) fn media_error(e: &boltget_media::Error) -> UiError {
+    media_error_as(e.message_key(), e)
+}
+
+/// [`media_error`] with another key (one of the "site changed" ones).
+pub(crate) fn media_error_as(key: &str, e: &boltget_media::Error) -> UiError {
+    let detail = match e {
+        boltget_media::Error::Extraction { message, .. }
+        | boltget_media::Error::Failed { message, .. } => message.clone(),
+        other => other.to_string(),
+    };
+    UiError::with_message(key, detail)
+}
+
+/// What follows a "the site changed" failure, once the update check said
+/// what it did: `None` to try once more (a newer yt-dlp is active), else
+/// the key to show.
+pub(crate) fn after_site_changed(after: &AfterFailure) -> Option<&'static str> {
+    match after {
+        AfterFailure::Updated { .. } => None,
+        AfterFailure::UpToDate | AfterFailure::CheckedRecently => Some(SITE_CHANGED_CURRENT),
+        AfterFailure::Pending => Some(SITE_CHANGED_UPDATING),
+        AfterFailure::CheckFailed(_) => Some(ErrorCategory::SiteChanged.message_key()),
+        AfterFailure::NotInstalled => Some(SITE_CHANGED_CUSTOM),
+    }
+}
+
+/// Checks for a newer yt-dlp after "the site changed" (at most once an
+/// hour, waiting at most [`UPDATE_ON_FAILURE_WAIT`]): `None` to try again,
+/// else the key to show. The user's own yt-dlp is not Boltget's to update.
+pub(crate) async fn update_for_site_change(
+    sidecars: &Sidecars,
+    video: &VideoSettings,
+) -> Option<&'static str> {
+    if video.yt_dlp_path.is_some() {
+        return Some(SITE_CHANGED_CUSTOM);
+    }
+    let after = sidecars
+        .update_after_failure(SystemTime::now(), UPDATE_ON_FAILURE_WAIT)
+        .await;
+    tracing::info!(?after, "yt-dlp checked after the site changed");
+    after_site_changed(&after)
+}
+
+/// Installs a due update (yt-dlp at most once a day) before yt-dlp is used,
+/// waiting at most [`UPDATE_WAIT`] for it.
+pub(crate) async fn update_if_due(sidecars: &Sidecars) {
+    if !sidecars
+        .update_if_due_within(SystemTime::now(), UPDATE_WAIT)
+        .await
+    {
+        tracing::debug!("the video tools' update check goes on in the background");
+    }
 }
 
 /// The sidecar manager for the tools in `dir`; its downloads use the app's
@@ -151,8 +230,14 @@ fn row_state(s: MediaJobState) -> DownloadState {
 }
 
 fn row_error(e: &MediaJobError) -> DownloadError {
+    // A network failure may work when tried again; the rest needs a change.
+    let kind = if ErrorCategory::from_key(&e.key).is_some_and(ErrorCategory::retryable) {
+        ErrorKind::Transient
+    } else {
+        ErrorKind::Permanent
+    };
     DownloadError {
-        kind: ErrorKind::Permanent,
+        kind,
         key: e.key.clone(),
         message: e.message.clone(),
     }
@@ -227,6 +312,7 @@ pub(crate) fn row_in(job: &MediaJob, playlist: Option<&MediaPlaylist>) -> Downlo
                     .and_then(|p| p.title.clone()),
                 index: job.playlist_index,
             }),
+            note: None,
         }),
     }
 }
@@ -270,6 +356,8 @@ enum Then {
 struct Running {
     stop: watch::Sender<bool>,
     then: Then,
+    /// FFmpeg is merging or converting: the job is not paused now.
+    processing: bool,
 }
 
 #[derive(Debug, Default)]
@@ -278,6 +366,9 @@ struct Runs {
     waiting: VecDeque<MediaJobId>,
     /// Files each job wrote in this session, for removing with its file.
     files: HashMap<MediaJobId, Vec<PathBuf>>,
+    /// The stem each job's files are named after, as recorded (also in the
+    /// job, for after a restart).
+    stems: HashMap<MediaJobId, String>,
     /// The browser's cookies and headers of jobs from the extension, until
     /// they complete or are removed.
     auth: HashMap<MediaJobId, MediaAuth>,
@@ -459,6 +550,11 @@ impl Bridge {
         {
             let mut runs = lock(&ctx.runs);
             if let Some(r) = runs.running.get_mut(&id) {
+                if r.processing {
+                    // FFmpeg's work cannot be continued, only redone: the
+                    // job finishes instead (docs/VIDEO.md).
+                    return Ok(DownloadState::Processing);
+                }
                 r.then = Then::Pause;
                 r.stop.send_replace(true);
                 // The run reports the state once yt-dlp has stopped.
@@ -496,8 +592,10 @@ impl Bridge {
         Ok(())
     }
 
-    /// Removes a media job, stopping it first; with `delete_file`, its file
-    /// too (or the partial files it wrote in this session).
+    /// Removes a media job, stopping it first. An unfinished job's partial
+    /// and temporary files go with it (found by their stem in its folder,
+    /// unless another unfinished job there shares the stem); with
+    /// `delete_file`, its file too (or the files it wrote in this session).
     pub(crate) async fn remove_media(
         &self,
         id: MediaJobId,
@@ -530,13 +628,25 @@ impl Bridge {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }
-        let files = {
+        let (files, stem) = {
             let mut runs = lock(&ctx.runs);
             runs.auth.remove(&id);
             runs.playlists.remove(&id);
-            runs.files.remove(&id).unwrap_or_default()
+            (
+                runs.files.remove(&id).unwrap_or_default(),
+                runs.stems.remove(&id),
+            )
         };
         if let Some(job) = &job {
+            let stem = stem.or_else(|| job.file_stem.clone());
+            if job.state != MediaJobState::Completed
+                && let Some(stem) = &stem
+                && !self.stem_in_use(job, stem).await
+            {
+                for p in partial::files(&job.dest_dir, stem, partial::Scope::Unfinished) {
+                    remove_file(&p);
+                }
+            }
             if delete_file {
                 delete_files(job, &files);
             }
@@ -544,6 +654,24 @@ impl Bridge {
         }
         self.removed(row_id(id));
         Ok(())
+    }
+
+    /// Whether another unfinished job writes files named after `stem` in
+    /// `job`'s folder (the same video added twice): its partial files are
+    /// then left alone.
+    async fn stem_in_use(&self, job: &MediaJob, stem: &str) -> bool {
+        let others = match self.engine() {
+            Ok(engine) => engine.media_jobs().await.unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+        let running = lock(&self.media.inner).stems.clone();
+        others.iter().any(|j| {
+            j.id != job.id
+                && j.state != MediaJobState::Completed
+                && j.dest_dir == job.dest_dir
+                && (j.file_stem.as_deref() == Some(stem)
+                    || running.get(&j.id).map(String::as_str) == Some(stem))
+        })
     }
 
     /// The page a media job downloads from, redacted.
@@ -649,7 +777,8 @@ impl Bridge {
     }
 }
 
-/// Deletes a job's file, or the partial files it wrote in this session.
+/// Deletes a job's file, or the files it wrote in this session (a format
+/// downloaded but not yet merged or converted, for one).
 fn delete_files(job: &MediaJob, seen: &[PathBuf]) {
     let mut paths: Vec<PathBuf> = job.file_path.iter().cloned().collect();
     for f in seen {
@@ -660,13 +789,16 @@ fn delete_files(job: &MediaJob, seen: &[PathBuf]) {
         paths.extend([f.clone(), part.into(), ytdl.into()]);
     }
     for p in paths {
-        // Only inside the job's folder: the names came from yt-dlp.
-        if p.starts_with(&job.dest_dir)
-            && p.is_file()
-            && let Err(e) = std::fs::remove_file(&p)
-        {
-            tracing::warn!(path = %p.display(), error = %e, "could not delete a media file");
+        // Only directly in the job's folder: the names came from yt-dlp.
+        if p.parent() == Some(job.dest_dir.as_path()) && p.is_file() {
+            remove_file(&p);
         }
+    }
+}
+
+fn remove_file(p: &Path) {
+    if let Err(e) = std::fs::remove_file(p) {
+        tracing::warn!(path = %p.display(), error = %e, "could not delete a media file");
     }
 }
 
@@ -733,6 +865,7 @@ fn pump(ctx: &Ctx) {
                 Running {
                     stop: tx,
                     then: Then::Pause,
+                    processing: false,
                 },
             );
             started.push((id, rx));
@@ -755,7 +888,14 @@ async fn run(ctx: Ctx, id: MediaJobId, stop: watch::Receiver<bool>) {
     };
     if !closing && then != Then::Remove {
         match result {
-            Ok(DownloadOutcome::Completed { path, size }) => {
+            Ok((
+                DownloadOutcome::Completed {
+                    path,
+                    size,
+                    kept_original,
+                },
+                updated,
+            )) => {
                 let change = MediaJobUpdate {
                     state: Some(MediaJobState::Completed),
                     error: Some(None),
@@ -769,12 +909,21 @@ async fn run(ctx: Ctx, id: MediaJobId, stop: watch::Receiver<bool>) {
                 {
                     let mut runs = lock(&ctx.runs);
                     runs.files.remove(&id);
+                    runs.stems.remove(&id);
                     runs.auth.remove(&id);
                 }
                 ctx.hub
                     .send(Request::MediaCompleted(row_id(id), path, size));
+                let note = if updated {
+                    Some(MediaNote::Updated)
+                } else {
+                    kept_original.then_some(MediaNote::KeptOriginal)
+                };
+                if let Some(note) = note {
+                    noted(&ctx, id, note).await;
+                }
             }
-            Ok(DownloadOutcome::Stopped) => {
+            Ok((DownloadOutcome::Stopped, _)) => {
                 set_state(&ctx, id, MediaJobState::Paused, None).await;
             }
             Err(e) => {
@@ -790,20 +939,42 @@ async fn run(ctx: Ctx, id: MediaJobId, stop: watch::Receiver<bool>) {
     pump(&ctx);
 }
 
-/// Downloads a job's media with yt-dlp, reporting progress to the hub.
+/// Shows a completed job's row again with `note` (the details pane says it).
+async fn noted(ctx: &Ctx, id: MediaJobId, note: MediaNote) {
+    let Ok(job) = ctx.engine.media_job(id).await else {
+        return;
+    };
+    let playlist = match job.playlist {
+        Some(list) => ctx
+            .engine
+            .media_playlists()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .find(|p| p.id == list),
+        None => None,
+    };
+    let mut row = row_in(&job, playlist.as_ref());
+    if let Some(media) = &mut row.media {
+        media.note = Some(note);
+    }
+    ctx.hub.send(Request::Upsert(row));
+}
+
+/// Downloads a job's media with yt-dlp, reporting progress to the hub. When
+/// yt-dlp says the site changed, a newer yt-dlp is looked for and, if one
+/// was installed, the job runs once more (`true` with the outcome).
 async fn download(
     ctx: &Ctx,
     id: MediaJobId,
     stop: watch::Receiver<bool>,
-) -> Result<DownloadOutcome, UiError> {
+) -> Result<(DownloadOutcome, bool), UiError> {
     let job = ctx.engine.media_job(id).await?;
     let settings = ctx.settings.borrow().clone();
     let sidecars = sidecars(&ctx.tools, &settings);
     // yt-dlp is checked at most once a day while video is in use; a failed
-    // check keeps the installed version.
-    if let Err(e) = sidecars.update_if_due(SystemTime::now(), &|_| {}).await {
-        tracing::debug!(error = %e, "the video tools' update check did not run");
-    }
+    // or slow check keeps the installed version.
+    update_if_due(&sidecars).await;
     let downloader = downloader(&sidecars, &settings.video)?;
     set_state(ctx, id, MediaJobState::Downloading, None).await;
     let mut opts = DownloadOptions::new(job.format_expression.clone(), job.dest_dir.clone());
@@ -832,14 +1003,33 @@ async fn download(
         if let Some(file) = &p.file {
             let path = job.dest_dir.join(file);
             let mut runs = lock(&ctx.runs);
+            let stem = partial::stem_of(&path)
+                .filter(|_| path.parent() == Some(job.dest_dir.as_path()))
+                .filter(|s| runs.stems.get(&id) != Some(s));
             let files = runs.files.entry(id).or_default();
             if !files.contains(&path) {
                 files.push(path);
+            }
+            if let Some(stem) = stem {
+                // Kept with the job, so its partial files can be found
+                // after a restart too.
+                runs.stems.insert(id, stem.clone());
+                let engine = ctx.engine.clone();
+                tokio::spawn(async move {
+                    let change = MediaJobUpdate {
+                        file_stem: Some(Some(stem)),
+                        ..MediaJobUpdate::default()
+                    };
+                    let _ = engine.update_media_job(id, change).await;
+                });
             }
         }
         let mut current = phase.lock().unwrap_or_else(PoisonError::into_inner);
         if *current != p.phase {
             *current = p.phase;
+            if let Some(r) = lock(&ctx.runs).running.get_mut(&id) {
+                r.processing = p.phase == Phase::Processing;
+            }
             let state = match p.phase {
                 Phase::Processing => MediaJobState::Processing,
                 Phase::Downloading => MediaJobState::Downloading,
@@ -856,10 +1046,31 @@ async fn download(
             });
         }
     };
-    downloader
-        .run(&job.page_url, &opts, &on_progress, stop)
+    match downloader
+        .run(&job.page_url, &opts, &on_progress, stop.clone())
         .await
-        .map_err(|e| media_error(&e))
+    {
+        Ok(outcome) => Ok((outcome, false)),
+        Err(e) if e.category() == Some(ErrorCategory::SiteChanged) => {
+            tracing::info!(job = id.0, error = %e, "the site changed");
+            if let Some(key) = update_for_site_change(&sidecars, &settings.video).await {
+                return Err(media_error_as(key, &e));
+            }
+            // A newer yt-dlp is active: once more, with it.
+            let downloader = self::downloader(&sidecars, &settings.video)?;
+            match downloader
+                .run(&job.page_url, &opts, &on_progress, stop)
+                .await
+            {
+                Ok(outcome) => Ok((outcome, true)),
+                Err(e) if e.category() == Some(ErrorCategory::SiteChanged) => {
+                    Err(media_error_as(SITE_CHANGED_UPDATED, &e))
+                }
+                Err(e) => Err(media_error(&e)),
+            }
+        }
+        Err(e) => Err(media_error(&e)),
+    }
 }
 
 #[cfg(test)]
@@ -878,6 +1089,44 @@ mod tests {
         let text = format!("{auth:?}");
         assert!(!text.contains("s3cret"), "{text}");
         assert!(text.contains("cookies: 1"), "{text}");
+    }
+
+    #[test]
+    fn every_media_error_has_its_words_in_the_catalog() {
+        for c in ErrorCategory::ALL {
+            assert!(crate::catalog::has(c.message_key()), "{c:?}");
+        }
+        for key in [
+            SITE_CHANGED_CURRENT,
+            SITE_CHANGED_UPDATED,
+            SITE_CHANGED_UPDATING,
+            SITE_CHANGED_CUSTOM,
+        ] {
+            assert!(crate::catalog::has(key), "{key}");
+            assert_eq!(
+                ErrorCategory::from_key(key),
+                Some(ErrorCategory::SiteChanged)
+            );
+        }
+    }
+
+    #[test]
+    fn network_failures_may_be_tried_again() {
+        let error = |key: &str| MediaJobError {
+            key: key.into(),
+            message: String::new(),
+        };
+        assert_eq!(
+            row_error(&error("error.media.network")).kind,
+            ErrorKind::Transient
+        );
+        for key in [
+            "error.media.sign_in",
+            "error.media.site_changed.current",
+            "error.media.failed",
+        ] {
+            assert_eq!(row_error(&error(key)).kind, ErrorKind::Permanent);
+        }
     }
 
     #[test]

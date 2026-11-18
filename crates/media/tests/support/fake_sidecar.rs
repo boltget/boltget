@@ -12,15 +12,23 @@
 //! `--progress-template` (a download) it copies the cookies the same way,
 //! prints `fake-download-error.txt` to stderr and fails if that exists,
 //! otherwise prints the lines of `fake-progress.txt` (if any; 50 ms apart
-//! with `fake-slow`), hangs with `fake-hang-download` (leaving
-//! `fake video [v1].mp4.part` in the `-P` folder), then writes
-//! `fake video [v1].mp4` there (the `-o` template with `%(title)s` as
-//! `fake video`, `%(id)s` as `v1`, `%(ext)s` as `mp4`; `fake-resumed.txt`
-//! records whether a `.part` file was there to continue from) and reports
-//! it as yt-dlp's `--print after_move:` template would. While a download
-//! runs it keeps a `fake-running-<pid>` file next to it, and appends how
-//! many there were when it started to `fake-overlap.txt`, so tests can see
-//! how many ran at once.
+//! with `fake-slow`; else a progress line of its own for the file), hangs
+//! with `fake-hang-download` (leaving the first 5 bytes of the file in
+//! `fake video [v1].mp4.part`, with a `.ytdl` and a `.part-Frag1` beside it,
+//! in the `-P` folder), then writes `fake video [v1].mp4` there (the `-o`
+//! template with `%(title)s` as `fake video`, `%(id)s` as `v1`, `%(ext)s` as
+//! the content of `fake-ext.txt`, else `mp4`), continuing a `.part` file that
+//! is there as yt-dlp does (`fake-resumed.txt` records whether there was one,
+//! `fake-resumed-from.txt` from which byte), and reports it as yt-dlp's
+//! `--print after_move:` template would; the file holds `fake media`. With
+//! `fake-remux-fails`, a run asked to remux or merge into MP4 leaves the
+//! downloaded file, FFmpeg's `….temp.mp4` and an empty `….mp4`, and fails as
+//! yt-dlp does when the streams cannot go into MP4; a run without those
+//! options finds the file already there. `fake-linger-ms.txt` makes it wait
+//! that long before it reports the finished file (FFmpeg still at work).
+//! While a download runs it keeps a `fake-running-<pid>` file next to it,
+//! and appends how many there were when it started to `fake-overlap.txt`, so
+//! tests can see how many ran at once.
 #![allow(clippy::print_stdout)]
 
 use std::path::Path;
@@ -128,6 +136,9 @@ fn version_dir(dir: &Path) -> Option<String> {
     }
 }
 
+/// What every downloaded file holds.
+const CONTENT: &[u8] = b"fake media";
+
 /// yt-dlp downloading: see the module documentation.
 fn fake_download(dir: &Path, args: &[String]) -> ExitCode {
     use std::io::Write as _;
@@ -145,20 +156,30 @@ fn fake_download(dir: &Path, args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
     let dest = std::path::PathBuf::from(value("-P").unwrap_or_default());
+    let ext = std::fs::read_to_string(dir.join("fake-ext.txt"))
+        .map_or_else(|_| "mp4".to_owned(), |e| e.trim().to_owned());
     let name = value("-o")
         .unwrap_or_else(|| "%(title)s [%(id)s].%(ext)s".into())
         .replace("%(title)s", "fake video")
         .replace("%(id)s", "v1")
-        .replace("%(ext)s", "mp4");
+        .replace("%(ext)s", &ext);
     let out = dest.join(&name);
     let part = dest.join(format!("{name}.part"));
+    let resumed_from = std::fs::read(&part)
+        .ok()
+        .filter(|b| CONTENT.starts_with(b))
+        .map(|b| b.len());
     let _ = std::fs::write(
         dir.join("fake-resumed.txt"),
         if part.exists() { "yes" } else { "no" },
     );
+    if let Some(from) = resumed_from {
+        let _ = std::fs::write(dir.join("fake-resumed-from.txt"), from.to_string());
+    }
     let slow = dir.join("fake-slow").exists();
     let mut stdout = std::io::stdout();
-    if let Ok(lines) = std::fs::read_to_string(dir.join("fake-progress.txt")) {
+    let scripted = std::fs::read_to_string(dir.join("fake-progress.txt"));
+    if let Ok(lines) = &scripted {
         for line in lines.lines() {
             let _ = writeln!(stdout, "{line}");
             let _ = stdout.flush();
@@ -167,14 +188,55 @@ fn fake_download(dir: &Path, args: &[String]) -> ExitCode {
             }
         }
     }
-    if dir.join("fake-hang-download").exists() {
-        let _ = std::fs::write(&part, b"partial");
-        std::thread::sleep(std::time::Duration::from_secs(60));
+    let progress = |done: usize| {
+        let file = serde_json::to_string(&out.to_string_lossy()).unwrap_or_default();
+        format!(
+            "[boltget] download {{\"status\": \"downloading\", \"downloaded_bytes\": {done}, \"total_bytes\": {}, \"filename\": {file}}}",
+            CONTENT.len()
+        )
+    };
+    if scripted.is_err() {
+        let _ = writeln!(stdout, "{}", progress(resumed_from.unwrap_or(0)));
+        let _ = stdout.flush();
     }
-    let _ = std::fs::remove_file(&part);
-    if std::fs::write(&out, b"fake media").is_err() {
-        eprintln!("ERROR: cannot write {}", out.display());
+    let to_mp4 = ["--remux-video", "--merge-output-format"]
+        .iter()
+        .any(|o| value(o).as_deref() == Some("mp4"));
+    if dir.join("fake-remux-fails").exists() && to_mp4 {
+        let _ = std::fs::write(&out, CONTENT);
+        let _ = std::fs::write(dest.join("fake video [v1].temp.mp4"), b"");
+        let _ = std::fs::write(dest.join("fake video [v1].mp4"), b"");
+        eprintln!("ERROR: Postprocessing: Conversion failed!");
         return ExitCode::from(1);
+    }
+    if out.exists() {
+        // yt-dlp: "has already been downloaded".
+    } else if dir.join("fake-hang-download").exists() {
+        let _ = std::fs::write(&part, &CONTENT[..5]);
+        let _ = std::fs::write(dest.join(format!("{name}.ytdl")), b"{}");
+        let _ = std::fs::write(dest.join(format!("{name}.part-Frag1")), b"x");
+        let _ = writeln!(stdout, "{}", progress(5));
+        let _ = stdout.flush();
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    } else {
+        let mut content = std::fs::read(&part)
+            .ok()
+            .filter(|b| CONTENT.starts_with(b))
+            .unwrap_or_default();
+        content.extend_from_slice(&CONTENT[content.len()..]);
+        if std::fs::write(&part, &content).is_err() || std::fs::rename(&part, &out).is_err() {
+            eprintln!("ERROR: cannot write {}", out.display());
+            return ExitCode::from(1);
+        }
+        let _ = std::fs::remove_file(dest.join(format!("{name}.ytdl")));
+        let _ = std::fs::remove_file(dest.join(format!("{name}.part-Frag1")));
+    }
+    if let Some(ms) = std::fs::read_to_string(dir.join("fake-linger-ms.txt"))
+        .ok()
+        .and_then(|t| t.trim().parse::<u64>().ok())
+    {
+        // Still "processing", as FFmpeg would be.
+        std::thread::sleep(std::time::Duration::from_millis(ms));
     }
     let path = serde_json::to_string(&out.to_string_lossy()).unwrap_or_default();
     let _ = writeln!(stdout, "[boltget] file {path}");

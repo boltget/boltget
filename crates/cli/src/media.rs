@@ -8,10 +8,10 @@ use std::time::{Duration, SystemTime};
 
 use boltget_engine::{CookieJar, EngineConfig, ProxyRules};
 use boltget_media::{
-    Channel, ContainerPreference, DownloadOptions, DownloadOutcome, Downloader, Error,
-    InstallEvent, MediaInfo, MediaProgress, Outcome, Phase, PlaylistMode, Preset, ProbeOptions,
-    ResolvedPreset, Sidecars, Sources, Status, SubtitleChoice, Tool, ToolStatus, codec_label,
-    playlist, presets,
+    AfterFailure, Channel, ContainerPreference, DownloadOptions, DownloadOutcome, Downloader,
+    Error, ErrorCategory, InstallEvent, MediaInfo, MediaProgress, Outcome, Phase, PlaylistMode,
+    Preset, ProbeOptions, ResolvedPreset, Sidecars, Sources, Status, SubtitleChoice, Tool,
+    ToolStatus, codec_label, playlist, presets,
 };
 use clap::{Args, Subcommand, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -476,7 +476,7 @@ async fn probe(sidecars: &Sidecars, shown: &Shown, args: ProbeArgs) -> u8 {
         eprintln!("boltget: the update check failed: {e}");
     }
     shown.finish();
-    let result = probe_page(sidecars, &args).await;
+    let result = after_update(sidecars, async || probe_page(sidecars, &args).await).await;
     match result {
         Ok((info, container)) => {
             if args.json {
@@ -543,7 +543,7 @@ async fn get(sidecars: &Sidecars, shown: &Shown, args: GetArgs) -> u8 {
         eprintln!("boltget: the update check failed: {e}");
     }
     shown.finish();
-    match download(sidecars, &args).await {
+    match after_update(sidecars, async || download(sidecars, &args).await).await {
         Ok(Got::File(path)) => {
             println!("{}", path.display());
             0
@@ -567,40 +567,114 @@ async fn get(sidecars: &Sidecars, shown: &Shown, args: GetArgs) -> u8 {
     }
 }
 
-/// The format expression, whether it is audio only, and the expected size,
-/// for `get`'s preset (or `--format`).
+/// How long a "site changed" failure waits for yt-dlp's update before the
+/// command gives up on trying again (the update goes on regardless).
+const UPDATE_ON_FAILURE_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Runs `work`; when yt-dlp failed because the site changed, checks for a
+/// newer yt-dlp (at most once an hour) and, if one was installed, runs
+/// `work` once more (docs/VIDEO.md, "Errors and pause/resume: as built").
+async fn after_update<T>(
+    sidecars: &Sidecars,
+    work: impl AsyncFn() -> boltget_media::Result<T>,
+) -> boltget_media::Result<T> {
+    let first = work().await;
+    match &first {
+        Err(e) if e.category() == Some(ErrorCategory::SiteChanged) => {
+            eprintln!("boltget: {e}");
+            eprintln!("boltget: checking for a newer yt-dlp…");
+            match sidecars
+                .update_after_failure(SystemTime::now(), UPDATE_ON_FAILURE_WAIT)
+                .await
+            {
+                AfterFailure::Updated { version } => {
+                    eprintln!("boltget: updated yt-dlp to {version}; trying again");
+                    work().await
+                }
+                AfterFailure::UpToDate => {
+                    eprintln!("boltget: yt-dlp is up to date; a fix may take a few days");
+                    first
+                }
+                AfterFailure::CheckedRecently => {
+                    eprintln!("boltget: yt-dlp was checked for updates within the hour");
+                    first
+                }
+                AfterFailure::Pending => {
+                    eprintln!("boltget: the update check goes on; try again in a few minutes");
+                    first
+                }
+                AfterFailure::CheckFailed(why) => {
+                    eprintln!("boltget: the update check failed: {why}");
+                    first
+                }
+                AfterFailure::NotInstalled => first,
+            }
+        }
+        _ => first,
+    }
+}
+
+/// The format expression, whether it is audio only, the expected size and
+/// the container preference to download with, for `get`'s preset (or
+/// `--format`): "Prefer MP4" becomes "Prefer original" for a preset whose
+/// streams cannot go into MP4.
 fn resolve(
     info: &MediaInfo,
     args: &GetArgs,
     container: ContainerPreference,
-) -> boltget_media::Result<(String, bool, Option<u64>)> {
-    let refuse = |message: &str| Error::Failed {
+) -> boltget_media::Result<(String, bool, Option<u64>, ContainerPreference)> {
+    let refuse = |category: ErrorCategory, message: &str| Error::Failed {
+        category,
         message: message.to_owned(),
     };
     if info.is_playlist() {
         return Err(refuse(
+            ErrorCategory::Other,
             "this page is a playlist; add --playlist to download its entries",
         ));
     }
     if info.drm_only() {
-        return Err(refuse("DRM-protected: Boltget cannot download this"));
+        return Err(refuse(
+            ErrorCategory::Drm,
+            "DRM-protected: Boltget cannot download this",
+        ));
     }
     if let Some(expr) = &args.format {
-        return Ok((expr.trim().to_owned(), false, None));
+        return Ok((expr.trim().to_owned(), false, None, container));
     }
     let wanted = args.preset.preset();
     let list = presets(info, container);
-    // A preset collapsed into another resolves to the same file.
+    // A preset collapsed into another resolves to the same formats, so it
+    // is resolved itself; a height above the page's highest video is not
+    // offered and resolves to the best video, as yt-dlp would.
+    let own = boltget_media::presets::resolve(info, wanted, container);
     let chosen = list
         .iter()
         .find(|r| r.preset == wanted)
+        .or(own.as_ref())
         .or_else(|| list.iter().find(|r| r.audio_only == wanted.audio_only()))
-        .ok_or_else(|| refuse("no video or audio for this preset on this page"))?;
+        .ok_or_else(|| {
+            refuse(
+                ErrorCategory::NoMedia,
+                "no video or audio for this preset on this page",
+            )
+        })?;
     eprintln!("{}", preset_line(chosen).trim());
+    if chosen.kept_original {
+        eprintln!(
+            "these streams cannot go into MP4; keeping {}",
+            chosen.container.to_ascii_uppercase()
+        );
+    }
     Ok((
         chosen.expression.clone(),
         chosen.audio_only,
         chosen.size.map(|s| s.bytes),
+        if chosen.kept_original {
+            ContainerPreference::Original
+        } else {
+            container
+        },
     ))
 }
 
@@ -673,7 +747,7 @@ async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<
     if args.playlist && info.is_playlist() {
         return download_playlist(&downloader, &info, args, container, cookies, &dest).await;
     }
-    let (format, audio_only, expected) = resolve(&info, args, container)?;
+    let (format, audio_only, expected, container) = resolve(&info, args, container)?;
     let mut opts = DownloadOptions::new(format, dest);
     opts.container = container;
     opts.audio_only = audio_only;
@@ -686,7 +760,16 @@ async fn download(sidecars: &Sidecars, args: &GetArgs) -> boltget_media::Result<
     }
     Ok(
         match run_one(&downloader, url, &opts, expected.unwrap_or(0)).await? {
-            DownloadOutcome::Completed { path, .. } => Got::File(path),
+            DownloadOutcome::Completed {
+                path,
+                kept_original,
+                ..
+            } => {
+                if kept_original {
+                    eprintln!("these streams cannot go into MP4; kept the original format");
+                }
+                Got::File(path)
+            }
             DownloadOutcome::Stopped => Got::Stopped,
         },
     )

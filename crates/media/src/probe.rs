@@ -8,6 +8,7 @@ use std::time::Duration;
 use boltget_engine::CookieJar;
 
 use crate::cookies::{CookieFile, JOBS_DIR};
+use crate::failure::Failure;
 use crate::info::MediaInfo;
 use crate::playlist::ItemRange;
 use crate::runner::Invocation;
@@ -153,8 +154,10 @@ impl Prober {
             .await?;
         drop(cookie_file);
         if !out.status.success() {
+            let failure = Failure::from_stderr(&out.stderr_text(), out.status);
             return Err(Error::Extraction {
-                message: error_message(&out.stderr_text(), out.status),
+                category: failure.category,
+                message: failure.message,
             });
         }
         if out.stdout.len() > MAX_INFO_JSON {
@@ -178,62 +181,9 @@ pub(crate) fn header_value(v: &str) -> Result<String> {
     Ok(v.to_owned())
 }
 
-/// The message of a failed yt-dlp: its last `ERROR:` line without the
-/// prefix, else its last line of output, else the exit status.
-pub(crate) fn error_message(stderr: &str, status: std::process::ExitStatus) -> String {
-    const MAX: usize = 2000;
-    let lines: Vec<&str> = stderr
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect();
-    let message = lines
-        .iter()
-        .rev()
-        .find_map(|l| l.strip_prefix("ERROR:"))
-        .or_else(|| lines.last().copied())
-        .map_or_else(
-            || format!("yt-dlp exited with {status}"),
-            |m| m.trim().to_owned(),
-        );
-    match message.char_indices().nth(MAX) {
-        Some((cut, _)) => format!("{}…", &message[..cut]),
-        None => message,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn status(code: i32) -> std::process::ExitStatus {
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::ExitStatusExt;
-            std::process::ExitStatus::from_raw(code as u32)
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::ExitStatusExt;
-            std::process::ExitStatus::from_raw(code << 8)
-        }
-    }
-
-    #[test]
-    fn error_messages() {
-        let s = status(1);
-        assert_eq!(
-            error_message(
-                "WARNING: [youtube] something\nERROR: [youtube] abc: Video unavailable\n",
-                s
-            ),
-            "[youtube] abc: Video unavailable"
-        );
-        assert_eq!(error_message("Traceback\n  oops\n\n", s), "oops");
-        assert!(error_message("", s).starts_with("yt-dlp exited with"));
-        let long = format!("ERROR: {}", "x".repeat(5000));
-        assert_eq!(error_message(&long, s).chars().count(), 2001);
-    }
 
     #[test]
     fn arguments() {

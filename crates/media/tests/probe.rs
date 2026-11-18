@@ -144,12 +144,14 @@ async fn a_failed_probe_keeps_yt_dlps_message_and_deletes_the_cookies() {
         .await
         .unwrap_err();
     match &err {
-        Error::Extraction { message } => {
+        Error::Extraction { category, message } => {
             assert_eq!(message, "Unsupported URL: https://example.com/");
+            // No video or audio there, not a broken extractor.
+            assert_eq!(*category, boltget_media::ErrorCategory::NoMedia);
         }
         other => panic!("{other}"),
     }
-    assert_eq!(err.message_key(), "error.media.extraction");
+    assert_eq!(err.message_key(), "error.media.no_media");
     assert!(dir.join("fake-cookies.txt").exists());
     assert_eq!(std::fs::read_dir(dir.join(".jobs")).unwrap().count(), 0);
     let args = std::fs::read_to_string(dir.join("fake-args.txt")).unwrap();

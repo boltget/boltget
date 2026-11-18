@@ -134,6 +134,27 @@ pub enum Outcome {
     },
 }
 
+/// What [`Sidecars::update_after_failure`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterFailure {
+    /// A newer yt-dlp is active now: try again.
+    Updated {
+        /// Its version.
+        version: String,
+    },
+    /// The active yt-dlp is the newest release: no fix yet.
+    UpToDate,
+    /// A failure already caused a check within the last hour
+    /// ([`FAILURE_RECHECK`]).
+    CheckedRecently,
+    /// The check did not finish in time; it goes on in the background.
+    Pending,
+    /// The check failed (offline, another process installing, ...).
+    CheckFailed(String),
+    /// yt-dlp is not installed by Boltget (the user's own copy is used).
+    NotInstalled,
+}
+
 /// The installed state of one tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolStatus {
@@ -928,6 +949,44 @@ impl Sidecars {
             m.save(&self.dir)?;
         }
         self.update(tool, on_event).await
+    }
+
+    /// [`Sidecars::update_if_due`] in the background, waited for at most
+    /// `wait`: a probe or a download that needs yt-dlp now uses the
+    /// installed version if the check takes longer, while the check goes on
+    /// (an update never replaces files a running yt-dlp uses: versions live
+    /// in their own folders). `true` when it finished in time.
+    pub async fn update_if_due_within(&self, now: SystemTime, wait: Duration) -> bool {
+        let me = self.clone();
+        let task = tokio::spawn(async move {
+            if let Err(e) = me.update_if_due(now, &|_| {}).await {
+                // Busy (another check runs), offline, ...: the installed
+                // version stays in use.
+                tracing::debug!(error = %e, "the video tools' update check did not run");
+            }
+        });
+        tokio::time::timeout(wait, task).await.is_ok()
+    }
+
+    /// What to do after yt-dlp failed in a way that says "the site changed"
+    /// ([`crate::ErrorCategory::SiteChanged`]): [`Sidecars::on_extractor_failure`]
+    /// in the background (at most once an hour), waited for at most `wait`.
+    /// [`AfterFailure::Updated`] means a newer yt-dlp is now active, so the
+    /// failed probe or download is worth one more try.
+    pub async fn update_after_failure(&self, now: SystemTime, wait: Duration) -> AfterFailure {
+        let me = self.clone();
+        let task = tokio::spawn(async move { me.on_extractor_failure(now, &|_| {}).await });
+        match tokio::time::timeout(wait, task).await {
+            Err(_) => AfterFailure::Pending,
+            Ok(Err(e)) => AfterFailure::CheckFailed(e.to_string()),
+            Ok(Ok(Err(e))) => AfterFailure::CheckFailed(e.to_string()),
+            Ok(Ok(Ok(outcome))) => match outcome {
+                Outcome::Installed { version, .. } => AfterFailure::Updated { version },
+                Outcome::UpToDate { .. } => AfterFailure::UpToDate,
+                Outcome::NotDue { .. } => AfterFailure::CheckedRecently,
+                Outcome::NotInstalled { .. } => AfterFailure::NotInstalled,
+            },
+        }
     }
 
     fn engine(&self) -> Result<Engine> {

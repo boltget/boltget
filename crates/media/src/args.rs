@@ -162,6 +162,7 @@ const YT_DLP_VALUED: &[&str] = &[
     "--sleep-interval",
     "--max-sleep-interval",
     "--sleep-subtitles",
+    "--compat-options",
 ];
 
 /// yt-dlp options that are never passed, whatever the caller asks for. Not
@@ -189,7 +190,6 @@ pub const YT_DLP_FORBIDDEN: &[&str] = &[
     "--plugin-dirs",
     "--alias",
     "--remote-components",
-    "--compat-options",
     // Replace the verified binary.
     "-U",
     "--update",
@@ -356,6 +356,8 @@ const SUBTITLE_FORMATS: &[&str] = &["srt", "vtt", "ass", "lrc", "none", "best"];
 /// - `--add-headers`: `User-Agent:` or `Referer:` with a value, nothing else
 ///   (the browser's two; no cookies or credentials this way).
 /// - `--referer`: an `http` or `https` URL.
+/// - `--compat-options`: only `no-keep-subs` (delete a subtitle file once it
+///   is embedded); every other compatibility option is refused.
 /// - `-I`/`--playlist-items`: places and ranges of places only: digits,
 ///   `:` and `-` between them, `,` between items (`1:200`, `1-5,8`); no
 ///   negative places, nothing else.
@@ -430,6 +432,9 @@ fn yt_dlp_value(option: &str, value: &str) -> Result<()> {
             if !ok {
                 return bad("places and ranges of places of the playlist");
             }
+        }
+        "--compat-options" if value != "no-keep-subs" => {
+            return bad("only no-keep-subs");
         }
         "--merge-output-format" if !MERGE_FORMATS.contains(&value) => {
             return bad("not a known container");
@@ -566,6 +571,24 @@ mod tests {
                 assert!(check_yt_dlp(&args).is_err(), "{args:?} passed");
             }
         }
+    }
+
+    #[test]
+    fn only_one_compatibility_option() {
+        check_yt_dlp(&v(&["--compat-options", "no-keep-subs"])).unwrap();
+        for bad in [
+            "all",
+            "youtube-dl",
+            "no-keep-subs,filename",
+            "",
+            "-no-keep-subs",
+        ] {
+            assert!(
+                check_yt_dlp(&v(&["--compat-options", bad])).is_err(),
+                "{bad:?} passed"
+            );
+        }
+        assert!(check_yt_dlp(&v(&["--compat-options=all"])).is_err());
     }
 
     #[test]

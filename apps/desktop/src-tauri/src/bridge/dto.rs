@@ -215,6 +215,20 @@ pub(crate) struct MediaRowInfo {
     pub(crate) preset: Option<String>,
     /// The playlist it is an entry of, if any.
     pub(crate) playlist: Option<MediaRowPlaylist>,
+    /// Something worth saying about how it went, in this session.
+    pub(crate) note: Option<MediaNote>,
+}
+
+/// What the details pane says about how a media download went
+/// (docs/VIDEO.md, "Errors and pause/resume: as built"). Kept in memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum MediaNote {
+    /// The site had changed: Boltget updated yt-dlp and tried again.
+    Updated,
+    /// "Prefer MP4", but the streams cannot go into MP4: the file keeps its
+    /// original container.
+    KeptOriginal,
 }
 
 /// The playlist a media download belongs to (docs/VIDEO.md, "Playlists: as

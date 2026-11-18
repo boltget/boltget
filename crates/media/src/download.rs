@@ -8,6 +8,16 @@
 //! goes, so a restart with the same arguments continues from them, and a
 //! console Ctrl+Break would need the app and yt-dlp to share a console, which
 //! a GUI app does not have.
+//!
+//! **Prefer MP4 that cannot be MP4.** Under "Prefer MP4" a video is merged
+//! into MP4 and a single format remuxed into it. When the streams yt-dlp
+//! chose cannot go into MP4 as they are (VP8, Theora or Vorbis: see
+//! [`crate::presets::mp4_compatible`]) FFmpeg fails ("Conversion failed!");
+//! the run is then tried once more with "Prefer original", which finds the
+//! downloaded streams already there and keeps their container. The picker
+//! avoids this for a single page by starting such a preset with "Prefer
+//! original" ([`crate::ResolvedPreset::kept_original`]); the second run is
+//! for playlists and typed expressions, whose streams only yt-dlp knows.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -17,7 +27,9 @@ use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, BufReader};
 use tokio::sync::watch;
 
 use crate::cookies::{CookieFile, JOBS_DIR};
-use crate::probe::{error_message, header_value};
+use crate::failure::{ErrorCategory, Failure};
+use crate::partial;
+use crate::probe::header_value;
 use crate::progress::{
     self, DOWNLOAD_TEMPLATE, FILE_TEMPLATE, Line, MediaProgress, Phase, ProgressTracker,
 };
@@ -109,6 +121,10 @@ pub enum DownloadOutcome {
         path: PathBuf,
         /// Its size.
         size: Option<u64>,
+        /// "Prefer MP4" was asked for, but the streams could not go into MP4,
+        /// so the file kept its original container (a second run with
+        /// "Prefer original").
+        kept_original: bool,
     },
     /// The caller stopped it; yt-dlp's partial files are kept.
     Stopped,
@@ -213,7 +229,14 @@ impl Downloader {
             }
             args.extend(["--sub-langs".into(), subs.languages.join(",")]);
             if subs.embed && !opts.audio_only {
-                args.push("--embed-subs".into());
+                // With `--write-subs`, yt-dlp keeps the subtitle file next to
+                // the video after embedding it; this makes it delete the
+                // file, as it does without `--write-subs`.
+                args.extend([
+                    "--embed-subs".into(),
+                    "--compat-options".into(),
+                    "no-keep-subs".into(),
+                ]);
             } else {
                 // Files next to the video: SubRip, which every player reads.
                 args.extend(["--convert-subs".into(), "srt".into()]);
@@ -242,8 +265,46 @@ impl Downloader {
     /// Downloads the media of `url`, calling `on_progress` as it goes (at
     /// most every [`PROGRESS_INTERVAL`], and whenever the phase changes),
     /// until it completes, fails, or `stop` becomes `true`. Cookies, if any,
-    /// go through a temporary file deleted when this returns.
+    /// go through a temporary file deleted when this returns. A video whose
+    /// streams cannot go into MP4 under "Prefer MP4" keeps its original
+    /// container (see the module documentation).
     pub async fn run(
+        &self,
+        url: &str,
+        opts: &DownloadOptions,
+        on_progress: &(dyn Fn(&MediaProgress) + Sync),
+        stop: watch::Receiver<bool>,
+    ) -> Result<DownloadOutcome> {
+        let first = self.run_once(url, opts, on_progress, stop.clone()).await;
+        let mp4_video = opts.container == ContainerPreference::Mp4 && !opts.audio_only;
+        match first {
+            Err(Error::Failed {
+                category: ErrorCategory::Processing,
+                message,
+            }) if mp4_video => {
+                tracing::info!(%message, "MP4 failed; keeping the original container");
+                let original = DownloadOptions {
+                    container: ContainerPreference::Original,
+                    ..opts.clone()
+                };
+                Ok(
+                    match self.run_once(url, &original, on_progress, stop).await? {
+                        DownloadOutcome::Completed { path, size, .. } => {
+                            DownloadOutcome::Completed {
+                                path,
+                                size,
+                                kept_original: true,
+                            }
+                        }
+                        DownloadOutcome::Stopped => DownloadOutcome::Stopped,
+                    },
+                )
+            }
+            other => other,
+        }
+    }
+
+    async fn run_once(
         &self,
         url: &str,
         opts: &DownloadOptions,
@@ -260,6 +321,7 @@ impl Downloader {
             _ => None,
         };
         let args = self.args(url, opts, cookie_file.as_ref().map(CookieFile::path))?;
+        let started = std::time::SystemTime::now();
         let mut running = Invocation::yt_dlp(&self.yt_dlp, self.ffmpeg_dir.as_deref(), &args)?
             .current_dir(&opts.dest_dir)
             .spawn()?;
@@ -284,6 +346,7 @@ impl Downloader {
         });
         let mut tracker = ProgressTracker::new(opts.expected_size);
         let mut file: Option<PathBuf> = None;
+        let mut stems: Vec<String> = Vec::new();
         let mut last_sent: Option<(Instant, Phase)> = None;
         let mut send = |tracker: &ProgressTracker, force: bool| {
             let p = tracker.progress();
@@ -307,7 +370,17 @@ impl Downloader {
                             Ok(0) | Err(_) => break,
                             Ok(_) => {
                                 let text = String::from_utf8_lossy(&line);
-                                match progress::parse_line(&text) {
+                                let line = progress::parse_line(&text);
+                                if let Some(Line::Download(p)) = &line
+                                    && let Some(stem) = p
+                                        .filename
+                                        .as_deref()
+                                        .and_then(|f| partial::stem_of(Path::new(f)))
+                                    && !stems.contains(&stem)
+                                {
+                                    stems.push(stem);
+                                }
+                                match line {
                                     Some(Line::File(path)) => file = Some(path),
                                     Some(l) if tracker.apply(&l) => send(&tracker, false),
                                     _ => {}
@@ -344,11 +417,21 @@ impl Downloader {
         let stderr = stderr_task.await.unwrap_or_default();
         drop(cookie_file);
         if !status.success() {
+            let failure = Failure::from_stderr(&String::from_utf8_lossy(&stderr), status);
+            if failure.category == ErrorCategory::Processing {
+                // FFmpeg's unfinished output is of no use; the downloaded
+                // streams stay for the next run.
+                for stem in &stems {
+                    remove_failed_outputs(&opts.dest_dir, stem, started);
+                }
+            }
             return Err(Error::Failed {
-                message: error_message(&String::from_utf8_lossy(&stderr), status),
+                category: failure.category,
+                message: failure.message,
             });
         }
         let path = file.ok_or_else(|| Error::Failed {
+            category: ErrorCategory::Other,
             message: "yt-dlp finished without naming the file it wrote".into(),
         })?;
         // yt-dlp prints the path as it saw it; relative only if -P was.
@@ -362,7 +445,39 @@ impl Downloader {
             boltget_engine::mark_of_the_web(&path, &redacted(url), None);
         }
         send(&tracker, true);
-        Ok(DownloadOutcome::Completed { path, size })
+        Ok(DownloadOutcome::Completed {
+            path,
+            size,
+            kept_original: false,
+        })
+    }
+}
+
+/// Deletes what FFmpeg left of a failed post-processing step of the job
+/// named `stem` in `dir`: the merger's `<stem>.temp.<ext>`, and the MP4 the
+/// remuxer writes directly (`<stem>.mp4`) if this run, started at `started`,
+/// wrote it. Nothing else.
+fn remove_failed_outputs(dir: &Path, stem: &str, started: std::time::SystemTime) {
+    let mut doomed: Vec<PathBuf> = partial::files(dir, stem, partial::Scope::Temporary)
+        .into_iter()
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix(stem))
+                .is_some_and(|rest| rest.starts_with(".temp."))
+        })
+        .collect();
+    let mp4 = dir.join(format!("{stem}.mp4"));
+    let ours = std::fs::metadata(&mp4)
+        .and_then(|m| m.modified())
+        .is_ok_and(|at| at >= started);
+    if ours {
+        doomed.push(mp4);
+    }
+    for p in doomed {
+        if let Err(e) = std::fs::remove_file(&p) {
+            tracing::debug!(path = %p.display(), error = %e, "could not delete FFmpeg's output");
+        }
     }
 }
 
@@ -450,6 +565,8 @@ mod tests {
         assert_eq!(after(&args, "--remux-video"), Some("mp4"));
         assert_eq!(after(&args, "--concurrent-fragments"), Some("4"));
         assert_eq!(after(&args, "--sub-langs"), Some("en,pt-BR"));
+        // The subtitle file goes once it is in the video.
+        assert_eq!(after(&args, "--compat-options"), Some("no-keep-subs"));
         assert_eq!(after(&args, "--proxy"), Some("socks5h://127.0.0.1:1080"));
         assert_eq!(
             after(&args, "--print"),
@@ -496,9 +613,9 @@ mod tests {
         // Audio files cannot carry subtitles: they are saved next to it.
         assert_eq!(after(&args, "--convert-subs"), Some("srt"));
         assert!(
-            !args
-                .iter()
-                .any(|a| a == "--write-auto-subs" || a == "--embed-subs")
+            !args.iter().any(|a| a == "--write-auto-subs"
+                || a == "--embed-subs"
+                || a == "--compat-options")
         );
         opts.container = ContainerPreference::Original;
         let args = d().args("https://v.test/a", &opts, None).unwrap();

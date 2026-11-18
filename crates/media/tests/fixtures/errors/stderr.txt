@@ -1,0 +1,163 @@
+# yt-dlp's standard error on failure, one sample per block, for
+# `tests/errors.rs`. The samples mirror yt-dlp's own wording as of its
+# 2026.10.x releases (extractor and post-processor messages from its source,
+# with made-up ids and addresses); WARNING lines are kept where yt-dlp prints
+# them before the error, since only the last ERROR line is classified.
+#
+# A block starts with "== <category>" (sign_in, unavailable, site_changed,
+# drm, network, no_media, processing, other) and runs to the next one.
+
+== sign_in
+ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm your age. This video may be inappropriate for some users. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+
+== sign_in
+WARNING: [youtube] dQw4w9WgXcQ: Unable to fetch GVS PO Token for web client: Missing required Visitor Data.
+ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+
+== sign_in
+ERROR: [youtube] abcdefghijk: Join this channel to get access to members-only content like this video, and other exclusive perks.
+
+== sign_in
+ERROR: [instagram] C1a2b3c4d5e: Requested content is not available, rate-limit reached or login required. Use --cookies, --cookies-from-browser, --username and --password, --netrc-cmd, or --netrc (instagram) to provide account credentials
+
+== sign_in
+ERROR: [vimeo] 123456789: This video is only available for registered users. Use --cookies, --cookies-from-browser, --username and --password, --netrc-cmd, or --netrc (vimeo) to provide account credentials
+
+== sign_in
+ERROR: [twitter] 1700000000000000000: NSFW tweet requires authentication. Use --cookies, --cookies-from-browser, --username and --password, --netrc-cmd, or --netrc (twitter) to provide account credentials
+
+== sign_in
+ERROR: [patreon] 98765432: You need to log in to access this content. Use --cookies, --cookies-from-browser, --username and --password, --netrc-cmd, or --netrc (patreon) to provide account credentials
+
+== sign_in
+ERROR: [generic] Unable to download webpage: HTTP Error 401: Unauthorized (caused by <HTTPError 401: Unauthorized>)
+
+== unavailable
+ERROR: [youtube] dQw4w9WgXcQ: Video unavailable
+
+== unavailable
+ERROR: [youtube] dQw4w9WgXcQ: Video unavailable. This video has been removed by the uploader
+
+== unavailable
+ERROR: [youtube] dQw4w9WgXcQ: Video unavailable. This video is no longer available because the YouTube account associated with this video has been terminated.
+
+== unavailable
+ERROR: [youtube] dQw4w9WgXcQ: Video unavailable. This video contains content from SomeLabel, who has blocked it in your country on copyright grounds
+
+== unavailable
+ERROR: [youtube] dQw4w9WgXcQ: Private video. Sign in if you've been granted access to this video. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies.
+
+== unavailable
+ERROR: [youtube] dQw4w9WgXcQ: This live event will begin in 3 hours.
+
+== unavailable
+ERROR: [BBC] p0abcdef: The uploader has not made this video available in your country. You might want to use a VPN or a proxy server (with --proxy) to workaround.
+
+== unavailable
+ERROR: [dailymotion] x8abcd: This video is not available from your location due to geo restriction
+
+== unavailable
+ERROR: [vimeo] 123456789: Unable to download webpage: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)
+
+== unavailable
+ERROR: [generic] Unable to download webpage: HTTP Error 403: Forbidden (caused by <HTTPError 403: Forbidden>)
+
+== unavailable
+ERROR: [Bandcamp] some-track: This track is not available. It may have been removed.
+
+== site_changed
+ERROR: [youtube] dQw4w9WgXcQ: Unable to extract initial player response; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+
+== site_changed
+ERROR: [vimeo] 123456789: Unable to extract info section; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+
+== site_changed
+WARNING: [youtube] dQw4w9WgXcQ: nsig extraction failed: Some formats may be missing
+ERROR: [youtube] dQw4w9WgXcQ: No video formats found!; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+
+== site_changed
+ERROR: [twitch:vod] 1234567890: Failed to parse JSON (caused by JSONDecodeError("Expecting value in '': line 1 column 1 (char 0)")); please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+
+== site_changed
+ERROR: [tiktok] 7300000000000000000: KeyError('itemInfo'); please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+
+== site_changed
+[download] Destination: C:\Users\you\Videos\Clip [dQw4w9WgXcQ].f137.mp4
+ERROR: unable to download video data: HTTP Error 403: Forbidden
+
+== site_changed
+ERROR: [youtube] dQw4w9WgXcQ: Signature extraction failed: Some formats may be missing
+
+== drm
+ERROR: [Hotstar] 1260000000: This video is DRM protected
+
+== drm
+ERROR: [ThePlatform] abc123: The requested content is DRM-protected and cannot be downloaded
+
+== network
+ERROR: [generic] Unable to download webpage: <urlopen error [Errno 11001] getaddrinfo failed> (caused by TransportError('<urlopen error [Errno 11001] getaddrinfo failed>'))
+
+== network
+ERROR: [youtube] dQw4w9WgXcQ: Unable to download API page: The read operation timed out (caused by TransportError('The read operation timed out'))
+
+== network
+ERROR: unable to download video data: [WinError 10054] An existing connection was forcibly closed by the remote host
+
+== network
+[download] Got error: HTTPSConnectionPool(host='rr1---sn-abc.googlevideo.com', port=443): Read timed out. (read timeout=20). Retrying (1/10)...
+ERROR: fragment 12 not found, unable to continue
+
+== network
+ERROR: [vimeo] 123456789: Unable to download JSON metadata: HTTP Error 503: Service Unavailable (caused by <HTTPError 503: Service Unavailable>)
+
+== network
+ERROR: [generic] Unable to download webpage: ('Unable to connect to proxy', OSError('Tunnel connection failed: 407 Proxy Authentication Required')) (caused by ProxyError("('Unable to connect to proxy', ...)"))
+
+== network
+ERROR: [youtube] dQw4w9WgXcQ: Unable to download webpage: HTTP Error 429: Too Many Requests (caused by <HTTPError 429: Too Many Requests>)
+
+== network
+ERROR: [generic] Unable to download webpage: Remote end closed connection without response (caused by TransportError('Remote end closed connection without response'))
+
+== network
+ERROR: [Errno 104] Connection reset by peer
+
+== no_media
+ERROR: Unsupported URL: https://example.com/about
+
+== no_media
+WARNING: [generic] Falling back on generic information extractor
+ERROR: [generic] Unsupported URL: https://www.example.org/blog/post-without-video
+
+== no_media
+ERROR: [twitter] 1700000000000000000: No video could be found in this tweet
+
+== no_media
+ERROR: [instagram] C1a2b3c4d5e: There is no video in this post
+
+== processing
+ERROR: Postprocessing: Conversion failed!
+
+== processing
+WARNING: [youtube] dQw4w9WgXcQ: You have requested merging of multiple formats but ffmpeg is not installed. The formats won't be merged
+ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location
+
+== processing
+ERROR: Postprocessing: Error opening output files: Invalid argument
+
+== processing
+ERROR: ffmpeg exited with code 1
+
+== other
+ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats
+
+== other
+ERROR: unable to open for writing: [Errno 28] No space left on device
+
+== other
+Usage: yt-dlp [OPTIONS] URL [URL...]
+
+yt-dlp: error: no such option: --frobnicate
+
+== other
+ERROR: Something nobody has seen before

@@ -266,6 +266,9 @@ pub struct MediaJob {
     pub playlist: Option<MediaPlaylistId>,
     /// Its place in that playlist (from 1).
     pub playlist_index: Option<u32>,
+    /// The stem yt-dlp names the job's files after (`Title [id]`), once it
+    /// has reported one: how its partial files are found.
+    pub file_stem: Option<String>,
     /// Creation time, Unix milliseconds.
     pub created_at: u64,
     /// Last change, Unix milliseconds.
@@ -301,6 +304,8 @@ pub struct MediaJobUpdate {
     pub file_path: Option<Option<PathBuf>>,
     /// A new size.
     pub size: Option<Option<u64>>,
+    /// The stem of its files.
+    pub file_stem: Option<Option<String>>,
 }
 
 /// Checks what a job must have: an http(s) page URL, a format expression and

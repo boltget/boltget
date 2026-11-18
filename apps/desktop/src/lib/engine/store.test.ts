@@ -86,7 +86,7 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
       ok(
         row(2 ** 50 + 1, {
           url: req.url,
-          media: { title: req.title ?? null, preset: null, playlist: null },
+          media: { title: req.title ?? null, preset: null, playlist: null, note: null },
         }),
       ),
     ),
@@ -100,6 +100,7 @@ function fakeApi(overrides: Partial<EngineApi["commands"]> = {}) {
               title: e.title ?? null,
               preset: req.preset,
               playlist: { id: 1, title: req.title ?? null, index: e.index },
+              note: null,
             },
           }),
         ),
@@ -484,7 +485,7 @@ describe("media downloads", () => {
     expect(result.status).toBe("ok");
     expect(commands.addMediaDownload).toHaveBeenCalledOnce();
     const row = store.get(2 ** 50 + 1);
-    expect(row?.media).toEqual({ title: "A Video", preset: null, playlist: null });
+    expect(row?.media).toEqual({ title: "A Video", preset: null, playlist: null, note: null });
     expect(store.ids).toContain(2 ** 50 + 1);
   });
 
@@ -515,7 +516,10 @@ describe("media downloads", () => {
   it("a processing media download takes progress like a running one", async () => {
     const id = 2 ** 50 + 2;
     const { store, emit } = await connected({}, [
-      row(id, { state: "processing", media: { title: "x", preset: "best", playlist: null } }),
+      row(id, {
+        state: "processing",
+        media: { title: "x", preset: "best", playlist: null, note: null },
+      }),
     ]);
     emit(batch({ progress: [progress(id, 600, { connections: 0 })] }));
     expect(store.get(id)?.downloaded).toBe(600);

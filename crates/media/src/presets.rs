@@ -228,6 +228,11 @@ pub struct ResolvedPreset {
     /// The file's extension after merging or extracting (`mp4`, `webm`,
     /// `mkv`, `m4a`, `opus`, ...).
     pub container: String,
+    /// "Prefer MP4" was asked for, but the chosen streams cannot go into MP4
+    /// without converting them ([`mp4_compatible`]), so the file keeps its
+    /// original container (`container` says which). A download of such a
+    /// preset is started with "Prefer original".
+    pub kept_original: bool,
     /// The estimated size: the formats' sizes added up (or their bit rates
     /// times the duration); `None` when unknown.
     pub size: Option<SizeEstimate>,
@@ -281,8 +286,14 @@ pub fn resolve(
     let audio_only = preset.audio_only();
     let video = (!audio_only).then(|| chosen.first().copied()).flatten();
     let audio = chosen.iter().rev().find(|f| f.has_audio()).copied();
+    // Audio is converted to M4A when MP4 is preferred, which always works;
+    // video is only remuxed, which needs codecs MP4 can carry.
+    let kept_original =
+        !audio_only && container == ContainerPreference::Mp4 && !mp4_compatible(&chosen);
     let ext = if audio_only {
         audio_container(audio, container)
+    } else if kept_original {
+        video_container(&chosen, ContainerPreference::Original)
     } else {
         video_container(&chosen, container)
     };
@@ -300,8 +311,46 @@ pub fn resolve(
         video_codec: video.and_then(|v| v.vcodec.name().map(str::to_owned)),
         audio_codec: audio.and_then(|a| a.acodec.name().map(str::to_owned)),
         container: ext,
+        kept_original,
         size: estimate(&chosen, info.duration),
     })
+}
+
+/// Video codecs FFmpeg's MP4 muxer takes as they are (checked with FFmpeg
+/// n9.0.2: `-c copy` into `.mp4`): H.264, H.265, AV1, VP9 and MPEG-4 Part 2.
+/// Not VP8 or Theora ("Could not find tag for codec … not currently supported
+/// in container").
+const MP4_VIDEO: &[&str] = &[
+    "avc", "h264", "hev", "hvc", "h265", "av01", "vp09", "vp9", "mp4v",
+];
+
+/// Audio codecs that go into MP4 as they are: AAC, MP3, Opus, FLAC, ALAC,
+/// AC-3 and E-AC-3. Not Vorbis: FFmpeg writes it, but with a warning and in a
+/// form few players read.
+const MP4_AUDIO: &[&str] = &[
+    "mp4a", "aac", "mp3", "opus", "flac", "alac", "ac-3", "ac3", "ec-3", "eac3",
+];
+
+/// Extensions whose streams are MP4's own, for formats whose codecs yt-dlp
+/// does not name.
+const MP4_EXTS: &[&str] = &["mp4", "m4a", "m4v", "mov"];
+
+/// Whether the chosen formats can be merged or remuxed into MP4 without
+/// converting a stream: each stream's codec is one MP4 carries
+/// ([`MP4_VIDEO`], [`MP4_AUDIO`]); a stream whose codec yt-dlp does not name
+/// counts only when its format is already MP4-family (`mp4`, `m4a`, ...).
+pub fn mp4_compatible(chosen: &[&Format]) -> bool {
+    let fits = |codec: &crate::info::Codec, known: &[&str], f: &Format| match codec {
+        crate::info::Codec::None => true,
+        crate::info::Codec::Named(name) => {
+            let name = name.to_ascii_lowercase();
+            known.iter().any(|k| name.starts_with(k))
+        }
+        crate::info::Codec::Unknown => f.ext.as_deref().is_some_and(|e| MP4_EXTS.contains(&e)),
+    };
+    chosen
+        .iter()
+        .all(|f| fits(&f.vcodec, MP4_VIDEO, f) && fits(&f.acodec, MP4_AUDIO, f))
 }
 
 /// The container of a video result: MP4 when preferred (yt-dlp merges or
@@ -443,6 +492,60 @@ mod tests {
             // Every expression passes the argument allowlist.
             crate::args::check_yt_dlp(&["-f".into(), p.expression(Mp4)]).unwrap();
         }
+    }
+
+    fn page(formats: &str) -> MediaInfo {
+        MediaInfo::from_json(format!(r#"{{"duration": 10, "formats": [{formats}]}}"#).as_bytes())
+            .unwrap()
+    }
+
+    #[test]
+    fn mp4_is_claimed_only_for_streams_mp4_can_carry() {
+        use ContainerPreference::{Mp4, Original};
+        // Wikimedia Commons: one WebM with VP8 and Vorbis. Prefer MP4 keeps
+        // the WebM, and says so.
+        let commons = page(
+            r#"{"format_id": "original", "ext": "webm", "vcodec": "vp8", "acodec": "vorbis", "height": 720, "filesize": 1632033}"#,
+        );
+        let best = resolve(&commons, Preset::Best, Mp4).unwrap();
+        assert_eq!(best.container, "webm");
+        assert!(best.kept_original);
+        assert_eq!(best.format_ids, ["original"]);
+        let original = resolve(&commons, Preset::Best, Original).unwrap();
+        assert_eq!(original.container, "webm");
+        assert!(!original.kept_original);
+        // Audio is converted to M4A, which always works.
+        let audio = resolve(&commons, Preset::Audio, Mp4).unwrap();
+        assert_eq!(
+            (audio.container.as_str(), audio.kept_original),
+            ("m4a", false)
+        );
+
+        // VP9 and Opus go into MP4 as they are.
+        let vp9 = page(
+            r#"{"format_id": "a", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 130},
+               {"format_id": "v", "ext": "webm", "vcodec": "vp09.00.40.08", "acodec": "none", "height": 1080}"#,
+        );
+        let best = resolve(&vp9, Preset::Best, Mp4).unwrap();
+        assert_eq!(
+            (best.container.as_str(), best.kept_original),
+            ("mp4", false)
+        );
+
+        // H.264 with Vorbis does not: merged as yt-dlp merges, into MKV.
+        let vorbis = page(
+            r#"{"format_id": "a", "ext": "ogg", "vcodec": "none", "acodec": "vorbis"},
+               {"format_id": "v", "ext": "mp4", "vcodec": "avc1.4d401f", "acodec": "none", "height": 480}"#,
+        );
+        let best = resolve(&vorbis, Preset::Best, Mp4).unwrap();
+        assert_eq!((best.container.as_str(), best.kept_original), ("mkv", true));
+
+        // Codecs yt-dlp does not name count by the format's extension.
+        let unknown = page(r#"{"format_id": "0", "ext": "mp4", "height": 360}"#);
+        assert!(!resolve(&unknown, Preset::Best, Mp4).unwrap().kept_original);
+        let unknown = page(r#"{"format_id": "0", "ext": "flv", "height": 360}"#);
+        let best = resolve(&unknown, Preset::Best, Mp4).unwrap();
+        assert_eq!((best.container.as_str(), best.kept_original), ("flv", true));
     }
 
     #[test]

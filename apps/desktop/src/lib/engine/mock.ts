@@ -16,7 +16,11 @@
 // private, one deleted; `biglist`: 450, listed 200 at a time), and a
 // `watch` link with `list` offers this video or the whole playlist. Clipboard
 // monitoring is simulated by mock-clipboard.ts (`?clipboard=on` starts with
-// it on).
+// it on). yt-dlp's failures are simulated by words in a page's link
+// (`signin`, `unavailable`, `changed`, `network`, `processing`, `custom`,
+// `broken`; with `fail`, the download fails that way instead of the look),
+// `vp8` is a page whose streams cannot go into MP4 and `updated` one found
+// after updating yt-dlp.
 import type {
   AddDownload,
   AppSettings,
@@ -115,7 +119,47 @@ function preset(
     audioCodec: codecs[1],
     size,
     sizeApproximate: approximate,
+    keptOriginal: false,
   };
+}
+
+/**
+ * yt-dlp's failures by link, as the backend sorts them (docs/VIDEO.md,
+ * "Errors and pause/resume: as built"): a word of the link picks one.
+ */
+const SIMULATED_ERRORS: [RegExp, string, string][] = [
+  [
+    /signin/,
+    "error.media.sign_in",
+    "[youtube] dQw4w9WgXcQ: Sign in to confirm your age. This video may be inappropriate for some users. Use --cookies-from-browser or --cookies for the authentication.",
+  ],
+  [
+    /unavailable/,
+    "error.media.unavailable",
+    "[youtube] dQw4w9WgXcQ: Video unavailable. This video has been removed by the uploader",
+  ],
+  [
+    /changed/,
+    "error.media.site_changed.current",
+    "[vimeo] 123456789: Unable to extract info section; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U",
+  ],
+  [
+    /network/,
+    "error.media.network",
+    "[generic] Unable to download webpage: <urlopen error [Errno 11001] getaddrinfo failed>",
+  ],
+  [/processing/, "error.media.processing", "Postprocessing: Conversion failed!"],
+  [
+    /custom/,
+    "error.media.site_changed.custom",
+    "[tiktok] 7300000000000000000: KeyError('itemInfo'); please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= ",
+  ],
+  [/broken/, "error.media.no_media", "[generic] Unsupported URL: https://example.com/broken"],
+];
+
+function simulatedError(url: string): { key: string; message: string } | null {
+  const hit = SIMULATED_ERRORS.find(([pattern]) => pattern.test(url));
+  return hit ? { key: hit[1], message: hit[2] } : null;
 }
 
 function format(
@@ -198,6 +242,7 @@ function videoPage(url: string, remembered: string | null): MediaSummary {
     inPlaylist: false,
     drm: false,
     remembered,
+    updated: false,
   };
 }
 
@@ -735,19 +780,17 @@ export function mockEngineApi(search: string): EngineApi {
         start: number | null,
       ) {
         // Simulated answers by link: "tools" (not installed), "nomedia",
-        // "drm", "list" (a playlist) and "broken" (yt-dlp fails) pick a
-        // case; anything else is a video. Until the tools are installed
-        // (Settings, or the install sheet) every page answers notInstalled.
+        // "drm", "list" (a playlist), "vp8" (a page whose streams cannot go
+        // into MP4), "updated" (found after updating yt-dlp), and yt-dlp's
+        // failures ("signin", "unavailable", "changed", "network",
+        // "processing", "custom", "broken") pick a case; anything else is a
+        // video. Until the tools are installed (Settings, or the install
+        // sheet) every page answers notInstalled.
         await wait(/slow/.test(url) ? 2500 : 700);
         if (!tools.ready || /tools/.test(url)) return ok({ kind: "notInstalled" as const });
-        if (/broken/.test(url)) {
-          return Promise.resolve({
-            status: "error" as const,
-            error: {
-              key: "error.media.extraction",
-              message: "[generic] Unsupported URL: " + url,
-            },
-          });
+        const failure = simulatedError(url);
+        if (failure && !/fail/.test(url)) {
+          return Promise.resolve({ status: "error" as const, error: failure });
         }
         const page = videoPage(url, null);
         const empty: MediaSummary = {
@@ -791,12 +834,37 @@ export function mockEngineApi(search: string): EngineApi {
             },
           });
         }
+        if (/vp8/.test(url)) {
+          // Wikimedia Commons: one WebM with VP8 and Vorbis.
+          const webm = {
+            ...preset("best", 720, 1.6 * MIB, "webm", ["VP8", "Vorbis"]),
+            expression: "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
+          };
+          return ok({
+            kind: "found" as const,
+            media: {
+              ...page,
+              title: "Urmia lake drought",
+              presets: [
+                { ...webm, keptOriginal: true },
+                preset("audio", null, 1.6 * MIB, "m4a", [null, "Vorbis"], true),
+              ],
+              originalPresets: [
+                { ...webm, expression: "bv*+ba/b" },
+                preset("audio", null, 1.6 * MIB, "ogg", [null, "Vorbis"], true),
+              ],
+              formats: [format("original", "webm", 720, "VP8", "Vorbis", 380, 1.6 * MIB)],
+              subtitles: [],
+            },
+          });
+        }
         return ok({
           kind: "found" as const,
           media: {
             ...page,
             inPlaylist: watchInList,
             remembered: rememberedPresets.get(page.site) ?? null,
+            updated: /updated/.test(url),
           },
         });
       },
@@ -836,18 +904,34 @@ export function mockEngineApi(search: string): EngineApi {
             queuePosition: Number.MAX_SAFE_INTEGER,
             startAt: null,
             private: false,
-            media: { title: request.title ?? null, preset: request.preset ?? null, playlist: null },
+            media: {
+              title: request.title ?? null,
+              preset: request.preset ?? null,
+              playlist: null,
+              // How it went, as the details pane says it.
+              note: /vp8/.test(request.url)
+                ? "keptOriginal"
+                : /updated/.test(request.url)
+                  ? "updated"
+                  : null,
+            },
           },
           segments: [],
           rate: (4 + random() * 10) * MIB,
           media: { until: null, name: `${title} [dQw4w9WgXcQ].${ext}` },
         };
         if (/fail/.test(request.url)) {
+          // "fail" with one of the failures' words fails that way; alone,
+          // as "other".
+          const failure = simulatedError(request.url) ?? {
+            key: "error.media.other",
+            message:
+              "[youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
+          };
           sim.row.state = "failed";
           sim.row.error = {
-            kind: "permanent",
-            key: "error.media.failed",
-            message: "[youtube] dQw4w9WgXcQ: Requested format is not available",
+            kind: failure.key === "error.media.network" ? "transient" : "permanent",
+            ...failure,
           };
         }
         sims.set(id, sim);
@@ -890,6 +974,7 @@ export function mockEngineApi(search: string): EngineApi {
                 title: entry.title ?? null,
                 preset: request.preset,
                 playlist: { id: playlist, title: request.title ?? null, index: entry.index },
+                note: null,
               },
             },
             segments: [],
@@ -908,7 +993,8 @@ export function mockEngineApi(search: string): EngineApi {
       async pauseMediaPlaylist(playlist: number) {
         for (const sim of sims.values()) {
           if (sim.media?.playlist !== playlist) continue;
-          if (["queued", "downloading", "processing"].includes(sim.row.state)) {
+          // One that is processing finishes (it is not paused).
+          if (["queued", "downloading"].includes(sim.row.state)) {
             sim.media.until = null;
             changeRow(sim, { state: "paused", bps: 0 });
           }

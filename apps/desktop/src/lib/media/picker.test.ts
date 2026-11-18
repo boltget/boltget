@@ -5,6 +5,7 @@ import {
   expressionFor,
   expressionIsAudio,
   expressionProblem,
+  failureHint,
   formatRows,
   hintLine,
   initialPreset,
@@ -18,6 +19,7 @@ import {
   presetName,
   presetsFor,
   protocolName,
+  requestContainer,
   resolution,
   sizeText,
   subtitleOptions,
@@ -38,6 +40,7 @@ function preset(over: Partial<MediaPreset> = {}): MediaPreset {
     audioCodec: "AAC",
     size: 31 * MIB,
     sizeApproximate: false,
+    keptOriginal: false,
     ...over,
   };
 }
@@ -60,6 +63,7 @@ function summary(over: Partial<MediaSummary> = {}): MediaSummary {
     inPlaylist: false,
     drm: false,
     remembered: null,
+    updated: false,
     ...over,
   };
 }
@@ -321,5 +325,31 @@ describe("hints from the browser", () => {
     expect(linkResolution("https://a.test/v/12345678.mp4")).toBeNull();
     expect(linkResolution("https://a.test/mp4p/a.mp4")).toBeNull();
     expect(linkResolution("not a link")).toBeNull();
+  });
+});
+
+describe("failures and containers", () => {
+  it("adds a hint where the message alone does not say what to do", () => {
+    expect(failureHint("error.media.sign_in")).toBe("media.error.sign_in.hint");
+    expect(failureHint("error.media.site_changed.custom")).toBe("media.error.custom.hint");
+    for (const key of [
+      "error.media.unavailable",
+      "error.media.site_changed",
+      "error.media.site_changed.current",
+      "error.media.network",
+      "error.media.other",
+    ]) {
+      expect(failureHint(key)).toBeNull();
+    }
+  });
+
+  it("keeps the original container for streams MP4 cannot hold", () => {
+    const webm = preset({ container: "webm", keptOriginal: true });
+    expect(requestContainer("mp4", webm, false)).toBe("original");
+    expect(requestContainer("mp4", preset(), false)).toBe("mp4");
+    expect(requestContainer("original", preset(), false)).toBe("original");
+    // A typed expression: the switch decides (the backend falls back).
+    expect(requestContainer("mp4", webm, true)).toBe("mp4");
+    expect(requestContainer("mp4", null, false)).toBe("mp4");
   });
 });

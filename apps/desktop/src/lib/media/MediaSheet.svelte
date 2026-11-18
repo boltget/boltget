@@ -67,6 +67,7 @@
     expressionFor,
     expressionIsAudio,
     expressionProblem,
+    failureHint,
     formatRows,
     hintLine,
     initialPreset,
@@ -78,6 +79,7 @@
     presetDetails,
     presetName,
     presetsFor,
+    requestContainer,
     subtitleOptions,
   } from "./picker";
 
@@ -168,6 +170,9 @@
       : [],
   );
   let hintBusy = $state(false);
+  /** yt-dlp's message was copied (the failure's "Copy the message"). */
+  let copied = $state(false);
+  const failureExtra = $derived(failure ? failureHint(failure.key) : null);
   const canDownload = $derived(
     phase === "picker" &&
       !submitting &&
@@ -194,6 +199,7 @@
     hintBusy = false;
     media = null;
     failure = null;
+    copied = false;
     thumbnail = null;
     plan = null;
     planFailed = false;
@@ -244,6 +250,16 @@
     );
   }
 
+  /** Copies yt-dlp's message, for a bug report or a search. */
+  async function copyMessage(message: string) {
+    try {
+      await navigator.clipboard.writeText(message);
+      copied = true;
+    } catch {
+      app.toast(t("error.clipboard"));
+    }
+  }
+
   function cancel(event?: Event) {
     event?.preventDefault();
     // An install runs on; only the sheet goes.
@@ -256,6 +272,7 @@
     const page = url;
     phase = "looking";
     failure = null;
+    copied = false;
     const wanted = scope;
     const result = await downloads.probeMedia(page, browserPage?.page ?? null, wanted, null);
     if (page !== url || !open || wanted !== scope) return;
@@ -459,7 +476,7 @@
     submitError = null;
     const result = await downloads.addMedia({
       url: media.url,
-      container,
+      container: requestContainer(container, chosen, typed),
       title: media.title,
       site: media.site,
       page: browserPage?.page ?? null,
@@ -591,16 +608,21 @@
         {:else if phase === "failed"}
           <p class="line warning">
             <Icon name="alert" size={14} />
-            <span
-              >{failure?.key === "error.media.extraction"
-                ? t("media.failed")
-                : errorText(failure ?? { key: "error.unknown" })}</span
-            >
+            <span>{errorText(failure ?? { key: "error.unknown" })}</span>
           </p>
+          {#if failureExtra}
+            <p class="line muted failure-hint">{t(failureExtra)}</p>
+          {/if}
           {#if failure?.message}
+            {@const message = failure.message}
             <details class="technical">
               <summary>{t("media.details")}</summary>
-              <code>{failure.message}</code>
+              <code>{message}</code>
+              <button type="button" class="copy" onclick={() => void copyMessage(message)}>
+                <Icon name={copied ? "check" : "copy"} size={14} />{copied
+                  ? t("media.error.copied")
+                  : t("media.error.copy")}
+              </button>
             </details>
           {/if}
           {@render hintList()}
@@ -684,6 +706,12 @@
               {#if meta.length}<p class="meta">{@render dots(meta)}</p>{/if}
             </div>
           </div>
+
+          {#if media.updated}
+            <p class="line info">
+              <Icon name="info" size={14} /><span>{t("media.updated")}</span>
+            </p>
+          {/if}
 
           {#if offerScope}
             {@render scopeChoice()}
@@ -781,6 +809,14 @@
             </fieldset>
 
             {@render mp4Option()}
+
+            {#if container === "mp4" && !typed && chosen?.keptOriginal}
+              <p class="line info" id="media-kept-original">
+                <Icon name="info" size={14} /><span
+                  >{t("media.kept_original", { container: chosen.container.toUpperCase() })}</span
+                >
+              </p>
+            {/if}
 
             {#if subtitles.length}
               <div class="option">
@@ -1127,6 +1163,30 @@
     cursor: default;
     font-size: var(--text-12);
     color: var(--color-text-subtle);
+  }
+  .failure-hint {
+    padding-left: calc(14px + var(--space-2));
+  }
+  .technical .copy {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-control-stroke);
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: var(--text-12);
+  }
+  .technical .copy:hover {
+    background: var(--color-overlay-hover);
+    color: var(--color-text);
+  }
+  .technical .copy:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
   }
   .technical code {
     display: block;

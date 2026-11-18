@@ -353,6 +353,56 @@ async fn update_checks_are_daily_and_on_extractor_failure() {
 }
 
 #[tokio::test]
+async fn a_site_changed_failure_updates_in_the_background_and_says_what_it_did() {
+    use boltget_media::AfterFailure;
+    let server = Server::start().await;
+    let key = TestKey::load();
+    let tmp = tempfile::tempdir().unwrap();
+    let m = manager(tmp.path(), &server, &key);
+    let wait = Duration::from_secs(60);
+    let now = SystemTime::now();
+    assert_eq!(
+        m.update_after_failure(now, wait).await,
+        AfterFailure::NotInstalled
+    );
+
+    publish_yt_dlp(&server, &key, "stable", "2026.01.01", &Fake::default());
+    m.install(Tool::YtDlp, &quiet).await.unwrap();
+    assert_eq!(
+        m.update_after_failure(now, wait).await,
+        AfterFailure::UpToDate
+    );
+    // Within the hour: not again.
+    let later = now + Duration::from_secs(60);
+    assert_eq!(
+        m.update_after_failure(later, wait).await,
+        AfterFailure::CheckedRecently
+    );
+    publish_yt_dlp(&server, &key, "stable", "2026.02.02", &Fake::default());
+    let next_hour = now + Duration::from_secs(3601);
+    assert_eq!(
+        m.update_after_failure(next_hour, wait).await,
+        AfterFailure::Updated {
+            version: "2026.02.02".into()
+        }
+    );
+    // A daily check that cannot finish in time goes on without the caller.
+    publish_yt_dlp(&server, &key, "stable", "2026.03.03", &Fake::default());
+    let tomorrow = now + Duration::from_secs(25 * 3600);
+    assert!(!m.update_if_due_within(tomorrow, Duration::ZERO).await);
+    for _ in 0..200 {
+        if m.status().unwrap().tools[0].active.as_deref() == Some("2026.03.03") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        m.status().unwrap().tools[0].active.as_deref(),
+        Some("2026.03.03")
+    );
+}
+
+#[tokio::test]
 async fn the_nightly_channel_reads_its_own_releases() {
     let server = Server::start().await;
     let key = TestKey::load();

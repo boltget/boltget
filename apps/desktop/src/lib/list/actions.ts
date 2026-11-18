@@ -29,13 +29,23 @@ export function primaryAction(state: DownloadState): ActionId {
       return "restart";
     case "paused":
       return "resume";
+    case "processing":
+      // FFmpeg finishes the file; it is not paused (canPause).
+      return "show";
     default:
       return "pause";
   }
 }
 
+/**
+ * Pausing is offered while a download runs or waits, except while it is
+ * verifying or processing (FFmpeg finishing a video's file): those finish
+ * instead, since their work could only be redone, not continued.
+ */
 export function canPause(state: DownloadState): boolean {
-  return state === "queued" || (isRunning(state) && state !== "verifying");
+  return (
+    state === "queued" || (isRunning(state) && state !== "verifying" && state !== "processing")
+  );
 }
 
 export function canResume(state: DownloadState): boolean {

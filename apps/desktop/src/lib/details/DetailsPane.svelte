@@ -37,6 +37,7 @@
   import { categoryIcon } from "../list/category";
   import { isRunning, needsAttention } from "../list/model";
   import { rowMenu } from "../list/rowMenu";
+  import { failureHint } from "../media/picker";
   import { connections as connectionsOf } from "./fileMap";
   import FileMap from "./FileMap.svelte";
   import Sparkline from "./Sparkline.svelte";
@@ -239,6 +240,10 @@
         <span class="sign"><Icon name="alert" /></span>
         <div class="problem-text">
           <p class="what">{errorText(d.error)}</p>
+          {#if d.media}
+            {@const hint = failureHint(d.error.key)}
+            {#if hint}<p class="hint">{t(hint)}</p>{/if}
+          {/if}
           {#if d.state === "needs_new_link"}
             <form class="refresh" onsubmit={submitRefresh}>
               <label class="visually-hidden" for="refresh-url">{t("details.refresh.label")}</label>
@@ -260,11 +265,22 @@
           {#if d.error.message}
             <details class="technical">
               <summary>{t("details.technical")}</summary>
-              <code>{d.error.message}</code>
+              <div class="technical-body">
+                <code>{d.error.message}</code>
+                {@render copyButton("error", d.error.message, t("media.error.copy"))}
+              </div>
             </details>
           {/if}
         </div>
       </section>
+    {/if}
+
+    {#if complete && d.media?.note}
+      <p class="media-note">
+        <Icon name="info" size={14} /><span
+          >{t(d.media.note === "updated" ? "media.note.updated" : "media.note.kept_original")}</span
+        >
+      </p>
     {/if}
 
     <dl class="stats">
@@ -572,6 +588,28 @@
     color: var(--color-text-subtle);
     font-size: var(--text-12);
     cursor: default;
+  }
+  .technical-body {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+  .technical-body code {
+    flex: 1;
+    min-width: 0;
+  }
+  .media-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-12);
+  }
+  .media-note :global(.icon) {
+    flex: none;
+    margin-top: 1px;
+    color: var(--color-text-subtle);
   }
   .technical code {
     display: block;

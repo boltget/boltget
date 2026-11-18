@@ -1,6 +1,6 @@
 //! Rows of the `media_job` table (schema version 7; `file_path` and `size`
-//! since version 8; `playlist_id` and `playlist_index` since version 9) and
-//! of `media_playlist` (version 9).
+//! since version 8; `playlist_id` and `playlist_index` since version 9;
+//! `file_stem` since version 10) and of `media_playlist` (version 9).
 
 use std::path::PathBuf;
 
@@ -16,7 +16,7 @@ use crate::media_job::{
 
 const COLUMNS: &str = "id, download_id, state, page_url, title, format_expression, preset, \
                        container, subtitles, output_template, dest_dir, error_key, error_detail, \
-                       created_at, updated_at, file_path, size, playlist_id, playlist_index";
+                       created_at, updated_at, file_path, size, playlist_id, playlist_index,                        file_stem";
 
 fn int(v: u64) -> Result<i64> {
     i64::try_from(v).map_err(|_| Error::Database(format!("value {v} does not fit the database")))
@@ -76,6 +76,7 @@ fn row(r: &Row<'_>) -> rusqlite::Result<MediaJob> {
         playlist_index: r
             .get::<_, Option<i64>>(18)?
             .and_then(|i| u32::try_from(i).ok()),
+        file_stem: r.get(19)?,
     })
 }
 
@@ -245,12 +246,15 @@ pub(crate) fn update(conn: &Connection, id: MediaJobId, change: &MediaJobUpdate)
     if let Some(v) = c.size {
         job.size = v;
     }
+    if let Some(v) = c.file_stem {
+        job.file_stem = v;
+    }
     crate::media_job::validate(&job.page_url, &job.format_expression, &job.output_template)?;
     conn.execute(
         "UPDATE media_job SET download_id = ?2, state = ?3, title = ?4, format_expression = ?5,
                 preset = ?6, container = ?7, subtitles = ?8, output_template = ?9,
                 dest_dir = ?10, error_key = ?11, error_detail = ?12, updated_at = ?13,
-                file_path = ?14, size = ?15
+                file_path = ?14, size = ?15, file_stem = ?16
          WHERE id = ?1",
         params![
             int(id.0)?,
@@ -267,7 +271,8 @@ pub(crate) fn update(conn: &Connection, id: MediaJobId, change: &MediaJobUpdate)
             job.error.as_ref().map(|e| e.message.as_str()),
             now_ms(),
             job.file_path.as_deref().map(path_text),
-            job.size.map(int).transpose()?
+            job.size.map(int).transpose()?,
+            job.file_stem
         ],
     )?;
     Ok(true)
@@ -336,6 +341,15 @@ mod tests {
                     ..MediaJobUpdate::default()
                 };
                 assert!(update(c, b, &done)?);
+                let stem = MediaJobUpdate {
+                    file_stem: Some(Some("A video [1]".into())),
+                    ..MediaJobUpdate::default()
+                };
+                assert!(update(c, b, &stem)?);
+                assert_eq!(
+                    get(c, b)?.unwrap().file_stem.as_deref(),
+                    Some("A video [1]")
+                );
                 let got = get(c, b)?.unwrap();
                 assert_eq!(got.file_path, Some(PathBuf::from("/media/A video [1].mp4")));
                 assert_eq!(got.size, Some(1234));

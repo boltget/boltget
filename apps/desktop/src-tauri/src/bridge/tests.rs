@@ -981,14 +981,22 @@ async fn media_jobs_run_as_rows_pause_continue_and_go() {
         user_agent: Some("Browser UA".into()),
         referer: Some("https://v.test/watch?v=v1".into()),
     };
+    // Downloading only: a job that is processing is not paused.
+    std::fs::write(
+        tools.path().join("fake-progress.txt"),
+        "[boltget] download {\"status\": \"downloading\", \"downloaded_bytes\": 50, \"total_bytes\": 100, \"filename\": \"f.mp4\", \"speed\": 10}
+",
+    )
+    .unwrap();
     let second = bridge.add_media(job, Some(auth)).await.unwrap().id;
     let job2 = super::media::job_id(second).unwrap();
-    until(&mut rx, |m| {
-        state_of(m, second) == Some(DownloadState::Processing)
-    })
-    .await;
     // The fake writes its partial file after its last progress line.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    for _ in 0..600 {
+        if videos.join("fake video [v1].mp4.part").exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     assert_eq!(
         bridge.pause_media(job2).await.unwrap(),
         DownloadState::Paused
@@ -1028,7 +1036,7 @@ https://v.test/watch?v=v1"
     .await;
     assert!(bridge.engine().unwrap().media_job(job2).await.is_err());
 
-    // A job whose yt-dlp fails shows yt-dlp's message.
+    // A job whose yt-dlp fails shows its category, with yt-dlp's message.
     std::fs::write(
         tools.path().join("fake-download-error.txt"),
         "ERROR: [generic] Unsupported URL: https://v.test/x\n",
@@ -1053,11 +1061,233 @@ https://v.test/watch?v=v1"
         .find(|r| r.id == third)
         .unwrap();
     let error = failed.error.unwrap();
-    assert_eq!(error.key, "error.media.failed");
-    assert!(
-        error.message.contains("Unsupported URL"),
-        "{}",
-        error.message
+    assert_eq!(error.key, "error.media.no_media");
+    assert_eq!(error.kind, super::dto::ErrorKind::Permanent);
+    assert_eq!(error.message, "[generic] Unsupported URL: https://v.test/x");
+    let stored = bridge
+        .engine()
+        .unwrap()
+        .media_job(super::media::job_id(third).unwrap())
+        .await
+        .unwrap()
+        .error
+        .unwrap();
+    assert_eq!(stored.key, "error.media.no_media");
+
+    // A network failure may work when tried again.
+    std::fs::write(
+        tools.path().join("fake-download-error.txt"),
+        "ERROR: [generic] Unable to download webpage: <urlopen error [Errno 11001] getaddrinfo failed>\n",
+    )
+    .unwrap();
+    bridge
+        .resume_media(super::media::job_id(third).unwrap())
+        .await
+        .unwrap();
+    let mut error = None;
+    until(&mut rx, |m| match m {
+        EngineMessage::Batch { rows, .. } => rows
+            .iter()
+            .find(|r| r.id == third && r.state == DownloadState::Failed)
+            .and_then(|r| r.error.clone())
+            .filter(|e| e.key == "error.media.network")
+            .map(|e| error = Some(e))
+            .is_some(),
+        _ => false,
+    })
+    .await;
+    assert_eq!(error.unwrap().kind, super::dto::ErrorKind::Transient);
+    bridge.shutdown().await;
+}
+
+/// The key a "site changed" failure shows, after the update check.
+#[test]
+fn a_changed_site_tries_again_only_after_an_update() {
+    use super::media::after_site_changed;
+    use boltget_media::AfterFailure;
+    assert_eq!(
+        after_site_changed(&AfterFailure::Updated {
+            version: "2026.11.18".into()
+        }),
+        None
+    );
+    assert_eq!(
+        after_site_changed(&AfterFailure::UpToDate),
+        Some("error.media.site_changed.current")
+    );
+    assert_eq!(
+        after_site_changed(&AfterFailure::CheckedRecently),
+        Some("error.media.site_changed.current")
+    );
+    assert_eq!(
+        after_site_changed(&AfterFailure::Pending),
+        Some("error.media.site_changed.updating")
+    );
+    assert_eq!(
+        after_site_changed(&AfterFailure::CheckFailed("offline".into())),
+        Some("error.media.site_changed")
+    );
+    assert_eq!(
+        after_site_changed(&AfterFailure::NotInstalled),
+        Some("error.media.site_changed.custom")
+    );
+}
+
+/// A media job that is processing (FFmpeg merging or converting) is not
+/// paused: it finishes. A "site changed" failure with the user's own
+/// yt-dlp asks them to update it (Boltget does not update it).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_processing_job_finishes_instead_of_pausing() {
+    let Some(fake) = fake_sidecar() else {
+        eprintln!("skipped: boltget-fake-sidecar is not built (cargo test --workspace builds it)");
+        return;
+    };
+    let state = tempfile::tempdir().unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let videos = state.path().join("Videos");
+    let (bridge, mut rx) = media_bridge(&fake, state.path(), tools.path(), 1).await;
+    std::fs::write(
+        tools.path().join("fake-progress.txt"),
+        "[boltget] postprocess {\"status\": \"started\", \"postprocessor\": \"Merger\"}\n",
+    )
+    .unwrap();
+    std::fs::write(tools.path().join("fake-linger-ms.txt"), "1500").unwrap();
+    let id = bridge
+        .add_media(
+            boltget_engine::NewMediaJob::new("https://v.test/watch?v=v1", "b", &videos),
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+    let job = super::media::job_id(id).unwrap();
+    until(&mut rx, |m| {
+        state_of(m, id) == Some(DownloadState::Processing)
+    })
+    .await;
+    assert_eq!(
+        bridge.pause_media(job).await.unwrap(),
+        DownloadState::Processing
+    );
+    until(&mut rx, |m| media_completed(m, id).is_some()).await;
+
+    std::fs::remove_file(tools.path().join("fake-linger-ms.txt")).unwrap();
+    std::fs::write(
+        tools.path().join("fake-download-error.txt"),
+        "ERROR: [vimeo] 1: Unable to extract info section; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U\n",
+    )
+    .unwrap();
+    let id = bridge
+        .add_media(
+            boltget_engine::NewMediaJob::new("https://v.test/watch?v=v2", "b", &videos),
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+    until(&mut rx, |m| state_of(m, id) == Some(DownloadState::Failed)).await;
+    let row = bridge
+        .list()
+        .await
+        .into_iter()
+        .find(|r| r.id == id)
+        .unwrap();
+    assert_eq!(row.error.unwrap().key, "error.media.site_changed.custom");
+    bridge.shutdown().await;
+}
+
+/// The bridge again on the same data folder, as when the app starts again.
+async fn reopen(state: &Path) -> (Bridge, mpsc::UnboundedReceiver<EngineMessage>) {
+    let bridge = bridge();
+    bridge.set_tools_dir(state.join("tools"));
+    let mut rx = subscribe(&bridge);
+    bridge
+        .open(state.into(), cfg(), Duration::from_millis(50))
+        .await;
+    let _snapshot = next(&mut rx).await;
+    (bridge, rx)
+}
+
+/// Media jobs across a restart: a paused one stays paused, one that was
+/// downloading continues from its partial file, and removing the paused
+/// one afterwards deletes its partial files (found by the stem recorded
+/// with it) and nothing else in the folder.
+#[tokio::test(flavor = "multi_thread")]
+async fn media_jobs_survive_a_restart_and_take_their_partial_files_with_them() {
+    let Some(fake) = fake_sidecar() else {
+        eprintln!("skipped: boltget-fake-sidecar is not built (cargo test --workspace builds it)");
+        return;
+    };
+    let state = tempfile::tempdir().unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let videos = state.path().join("Videos");
+    let (bridge, mut rx) = media_bridge(&fake, state.path(), tools.path(), 1).await;
+    // The fake reports its own file (so its stem is recorded) and hangs.
+    std::fs::remove_file(tools.path().join("fake-progress.txt")).unwrap();
+    std::fs::write(tools.path().join("fake-hang-download"), "").unwrap();
+
+    let a = bridge
+        .add_media(
+            boltget_engine::NewMediaJob::new("https://v.test/watch?v=a", "b", &videos),
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+    let job_a = super::media::job_id(a).unwrap();
+    let mut job = boltget_engine::NewMediaJob::new("https://v.test/watch?v=b", "b", &videos);
+    job.output_template = "B %(title)s [%(id)s].%(ext)s".into();
+    let b = bridge.add_media(job, None).await.unwrap().id;
+    let job_b = super::media::job_id(b).unwrap();
+    let engine = bridge.engine().unwrap().clone();
+    for (job, stem) in [(job_a, "fake video [v1]"), (job_b, "B fake video [v1]")] {
+        let mut recorded = None;
+        for _ in 0..200 {
+            recorded = engine.media_job(job).await.unwrap().file_stem;
+            if recorded.is_some() && videos.join(format!("{stem}.mp4.part")).exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(recorded.as_deref(), Some(stem));
+    }
+    assert_eq!(
+        bridge.pause_media(job_a).await.unwrap(),
+        DownloadState::Paused
+    );
+    until(&mut rx, |m| state_of(m, a) == Some(DownloadState::Paused)).await;
+    // The app quits while `b` downloads.
+    bridge.shutdown().await;
+    drop(engine);
+    std::fs::remove_file(tools.path().join("fake-hang-download")).unwrap();
+    std::fs::write(videos.join("fake video [v1] (my edit).mp4"), b"mine").unwrap();
+
+    let (bridge, mut rx) = reopen(state.path()).await;
+    until(&mut rx, |m| media_completed(m, b).is_some()).await;
+    assert_eq!(
+        std::fs::read_to_string(tools.path().join("fake-resumed-from.txt")).unwrap(),
+        "5",
+        "continued from its partial file"
+    );
+    assert_eq!(
+        std::fs::read(videos.join("B fake video [v1].mp4")).unwrap(),
+        b"fake media"
+    );
+    let rows = bridge.list().await;
+    let paused = rows.iter().find(|r| r.id == a).unwrap();
+    assert_eq!(paused.state, DownloadState::Paused, "stays paused");
+    assert!(videos.join("fake video [v1].mp4.part").exists());
+
+    // Removed (not "with its file"): its partial files go, nothing else.
+    bridge.remove_media(job_a, false).await.unwrap();
+    let mut left: Vec<String> = std::fs::read_dir(&videos)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        ["B fake video [v1].mp4", "fake video [v1] (my edit).mp4"]
     );
     bridge.shutdown().await;
 }

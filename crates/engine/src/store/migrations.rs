@@ -56,6 +56,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: 9,
         sql: include_str!("migrations/0009_media_playlist.sql"),
     },
+    Migration {
+        version: 10,
+        sql: include_str!("migrations/0010_media_job_stem.sql"),
+    },
 ];
 
 /// The schema version this build writes.
@@ -349,6 +353,25 @@ mod tests {
             .query_row("SELECT playlist_id FROM media_job", [], |r| r.get(0))
             .unwrap();
         assert_eq!(list, None);
+    }
+
+    #[test]
+    fn media_jobs_of_an_older_database_have_no_stem_yet() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut c, p) = open(dir.path());
+        migrate(&mut c, &p, &MIGRATIONS[..9]).unwrap();
+        c.execute(
+            "INSERT INTO media_job (state, page_url, format_expression, container,
+                                    output_template, dest_dir, created_at, updated_at)
+             VALUES ('paused', 'https://v.test/watch', 'b', 'mp4', 't', '/d', 0, 0)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(migrate(&mut c, &p, MIGRATIONS).unwrap(), 10);
+        let stem: Option<String> = c
+            .query_row("SELECT file_stem FROM media_job", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(stem, None);
     }
 
     #[test]

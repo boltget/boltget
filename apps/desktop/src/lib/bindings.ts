@@ -44,9 +44,12 @@ export const commands = {
 	 *  Looks for video or audio on a web page with yt-dlp. Answers
 	 *  `notInstalled` without running anything while a tool is missing (the
 	 *  window offers the install sheet); otherwise installs due updates first
-	 *  (yt-dlp at most once a day; a failed check keeps the installed
-	 *  version), then probes through the app's proxy. yt-dlp's own failure is
-	 *  `error.media.extraction`, with its message. With `page`, a page the
+	 *  (yt-dlp at most once a day, waited for at most `UPDATE_WAIT`; a failed
+	 *  or slow check keeps the installed version), then probes through the
+	 *  app's proxy. yt-dlp's own failure carries its category's key
+	 *  (`error.media.sign_in`, ...) and its message; when the site changed,
+	 *  a newer yt-dlp is looked for and, if one was installed, the page is
+	 *  probed once more (`updated` in the answer). With `page`, a page the
 	 *  browser extension sent (or one of its hints), yt-dlp gets the browser's
 	 *  cookies, `User-Agent` and `Referer`. `playlist` chooses between the
 	 *  video an address names and the playlist it belongs to (`single` when
@@ -785,6 +788,19 @@ export type MediaInstallEvent = {
 export type MediaInstallStep = "checking" | "downloading" | "verifying" | "unpacking" | "testing" | "done";
 
 /**
+ *  What the details pane says about how a media download went
+ *  (docs/VIDEO.md, "Errors and pause/resume: as built"). Kept in memory.
+ */
+export type MediaNote = 
+/**  The site had changed: Boltget updated yt-dlp and tried again. */
+"updated" | 
+/**
+ *  "Prefer MP4", but the streams cannot go into MP4: the file keeps its
+ *  original container.
+ */
+"keptOriginal";
+
+/**
  *  Whether to look at the video an address names or at the playlist it
  *  belongs to.
  */
@@ -870,6 +886,11 @@ export type MediaPreset = {
 	size: number | null,
 	/**  The size is an estimate ("about"). */
 	sizeApproximate: boolean,
+	/**
+	 *  "Prefer MP4", but these streams cannot go into MP4: `container` is
+	 *  their own, and the download keeps it ("Prefer original").
+	 */
+	keptOriginal: boolean,
 };
 
 /**  What "Look for media on this page" found. */
@@ -919,6 +940,8 @@ export type MediaRowInfo = {
 	preset: string | null,
 	/**  The playlist it is an entry of, if any. */
 	playlist: MediaRowPlaylist | null,
+	/**  Something worth saying about how it went, in this session. */
+	note: MediaNote | null,
 };
 
 /**
@@ -987,6 +1010,11 @@ export type MediaSummary = {
 	drm: boolean,
 	/**  The preset last used on this site, if any. */
 	remembered: string | null,
+	/**
+	 *  yt-dlp could not read the page because the site had changed; Boltget
+	 *  installed a newer yt-dlp and this is its second look.
+	 */
+	updated: boolean,
 };
 
 /**  A video tool. */

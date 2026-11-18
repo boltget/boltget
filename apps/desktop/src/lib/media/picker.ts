@@ -89,6 +89,35 @@ export function initialPreset(
   return list[0]?.preset ?? null;
 }
 
+/**
+ * What a media failure adds to its message (docs/VIDEO.md, "Errors and
+ * pause/resume: as built"): how to sign in so the cookies come along, or
+ * where to update one's own yt-dlp. The message itself is the key's.
+ */
+export function failureHint(key: string): PlainMessageKey | null {
+  switch (key) {
+    case "error.media.sign_in":
+      return "media.error.sign_in.hint";
+    case "error.media.site_changed.custom":
+      return "media.error.custom.hint";
+    default:
+      return null;
+  }
+}
+
+/**
+ * The container a single page's download asks for: a preset whose streams
+ * cannot go into MP4 keeps its own ("Prefer original"), so FFmpeg is never
+ * asked for what it cannot do; a typed expression keeps the switch's.
+ */
+export function requestContainer(
+  container: MediaContainer,
+  chosen: MediaPreset | null,
+  typed: boolean,
+): MediaContainer {
+  return !typed && chosen?.keptOriginal ? "original" : container;
+}
+
 /** What the picker shows instead of presets, if anything. */
 export type PickerNotice = "playlist" | "drm" | "none" | null;
 

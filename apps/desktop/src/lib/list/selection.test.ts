@@ -118,11 +118,14 @@ describe("actions by state", () => {
     expect(primaryAction("needs_new_link")).toBe("refresh");
     expect(primaryAction("corrupt")).toBe("restart");
     expect(primaryAction("completed")).toBe("open");
+    expect(primaryAction("processing")).toBe("show");
   });
 
   it("pause, resume and restart only where the engine allows it", () => {
     expect(canPause("downloading")).toBe(true);
     expect(canPause("verifying")).toBe(false);
+    // A video being finished by FFmpeg finishes rather than pausing.
+    expect(canPause("processing")).toBe(false);
     expect(canResume("paused")).toBe(true);
     expect(canResume("needs_new_link")).toBe(false);
     expect(canRestart("completed")).toBe(false);

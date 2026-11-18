@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::Tool;
+use crate::{ErrorCategory, Tool};
 
 /// Convenience alias.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -116,21 +116,23 @@ pub enum Error {
     },
 
     /// yt-dlp could not read the page (unsupported site, no such video,
-    /// sign-in needed, network failure, ...). `message` is yt-dlp's own,
-    /// without its `ERROR:` prefix; step 6 of v0.4 sorts these into the
-    /// user-facing categories of `docs/VIDEO.md`.
-    #[error("yt-dlp could not read the page: {message}")]
+    /// sign-in needed, network failure, ...), sorted into the user-facing
+    /// categories of `docs/VIDEO.md` ([`crate::failure`]).
+    #[error("yt-dlp could not read the page: {category}: {message}")]
     Extraction {
-        /// yt-dlp's message.
+        /// What kind of failure it is.
+        category: ErrorCategory,
+        /// yt-dlp's message, without its `ERROR:` prefix.
         message: String,
     },
 
     /// A media download failed: yt-dlp exited with an error, or did not say
-    /// what it wrote. `message` is yt-dlp's last `ERROR:` line (without the
-    /// prefix); step 6 of v0.4 sorts these into the user-facing categories.
-    #[error("the media download failed: {message}")]
+    /// what it wrote, sorted into the user-facing categories.
+    #[error("the media download failed: {category}: {message}")]
     Failed {
-        /// yt-dlp's message.
+        /// What kind of failure it is.
+        category: ErrorCategory,
+        /// yt-dlp's last `ERROR:` line (without the prefix).
         message: String,
     },
 
@@ -183,6 +185,15 @@ impl Error {
         }
     }
 
+    /// The category of a yt-dlp failure (probing or downloading); `None` for
+    /// Boltget's own errors.
+    pub fn category(&self) -> Option<ErrorCategory> {
+        match self {
+            Error::Extraction { category, .. } | Error::Failed { category, .. } => Some(*category),
+            _ => None,
+        }
+    }
+
     /// A stable message-catalog key for front ends.
     pub fn message_key(&self) -> &'static str {
         match self {
@@ -197,9 +208,10 @@ impl Error {
             Error::Busy(_) => "error.media.busy",
             Error::Argument { .. } => "error.media.argument",
             Error::Timeout { .. } => "error.media.timeout",
-            Error::Extraction { .. } => "error.media.extraction",
+            Error::Extraction { category, .. } | Error::Failed { category, .. } => {
+                category.message_key()
+            }
             Error::InfoJson { .. } => "error.media.info_json",
-            Error::Failed { .. } => "error.media.failed",
             Error::CustomProgram { .. } => "error.media.custom_program",
             Error::Thumbnail(_) => "error.media.thumbnail",
             Error::Io { .. } | Error::Manifest { .. } => "error.media.disk",

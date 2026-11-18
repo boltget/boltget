@@ -24,7 +24,10 @@
 //! - [`Downloader`] downloads a page's media with yt-dlp, reading its
 //!   progress from machine-readable `--progress-template` lines
 //!   ([`progress`]), and can be stopped and restarted (yt-dlp continues from
-//!   its partial files).
+//!   its partial files); [`partial`] finds a job's partial and temporary
+//!   files to delete when it is removed.
+//! - [`failure`] sorts yt-dlp's failures into the categories the user sees
+//!   ([`ErrorCategory`]).
 //!
 //! The design is in `docs/VIDEO.md` ("Install, verification and updates") and
 //! `docs/ARCHITECTURE.md` ("Sidecars").
@@ -35,9 +38,11 @@ mod cookies;
 mod download;
 mod error;
 mod extract;
+pub mod failure;
 pub mod info;
 mod manager;
 mod manifest;
+pub mod partial;
 pub mod pgp;
 mod platform;
 pub mod playlist;
@@ -57,9 +62,11 @@ pub use download::{
     STALL_TIMEOUT, proxy_for,
 };
 pub use error::{Error, Result};
+pub use failure::{ErrorCategory, Failure, classify};
 pub use info::{Codec, Entry, Format, MediaInfo, SubtitleLanguage, SubtitleTrack, Thumbnail};
 pub use manager::{
-    DAILY, FAILURE_RECHECK, InstallEvent, Outcome, Release, Sidecars, Status, ToolStatus,
+    AfterFailure, DAILY, FAILURE_RECHECK, InstallEvent, Outcome, Release, Sidecars, Status,
+    ToolStatus,
 };
 pub use playlist::{ItemRange, PlaylistEntry};
 pub use presets::{Preset, ResolvedPreset, SizeEstimate, codec_label, presets};
